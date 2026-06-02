@@ -1,0 +1,17 @@
+[Unit]
+Description=AI Search Food Spring Boot service
+After=network.target
+
+[Service]
+Type=simple
+User=ai-search-food
+Group=ai-search-food
+WorkingDirectory=/opt/ai-search-food
+EnvironmentFile=-/etc/ai-search-food/ai-search-food.env
+ExecStart=/opt/java/jre17/bin/java -jar /opt/ai-search-food/app.jar
+Restart=always
+RestartSec=5
+SuccessExitStatus=143
+
+[Install]
+WantedBy=multi-user.target

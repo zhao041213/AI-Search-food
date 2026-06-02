@@ -1,0 +1,7 @@
+target/
+.m2/
+.env
+*.log
+.codex-ssh/
+.idea/
+.deploy/*.tar.gz
