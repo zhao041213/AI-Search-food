@@ -104,14 +104,6 @@ GET http://8.166.138.245/api/recipes/search?keyword=鸡蛋
 POST http://8.166.138.245/api/recipes/generate
 ```
 
-## 测试
-
-```powershell
-mvn "-Dmaven.repo.local=D:\AI-Search-food\.m2" test
-```
-
-测试不会真实调用 DeepSeek，DeepSeek 客户端测试使用 mocked `RestTemplate`。
-
 ## 打包
 
 ```powershell
