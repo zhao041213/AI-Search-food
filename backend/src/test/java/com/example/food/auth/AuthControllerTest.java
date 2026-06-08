@@ -57,7 +57,19 @@ class AuthControllerTest {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
-                .andExpect(jsonPath("$.data").value("123456"));
+                .andExpect(jsonPath("$.data.code").value("123456"));
+    }
+
+    @Test
+    void userCodeRejectsOverlongPhoneAsInvalidRequest() throws Exception {
+        mockMvc.perform(post("/api/auth/user/code")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"phone":"139000000000000000000000000000000"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.message").value("Invalid request parameters"));
     }
 
     @Test
@@ -84,6 +96,30 @@ class AuthControllerTest {
                                 """))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(400));
+    }
+
+    @Test
+    void userLoginRejectsOverlongPhoneAsInvalidRequest() throws Exception {
+        mockMvc.perform(post("/api/auth/user/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"phone":"139000000000000000000000000000000","code":"123456"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.message").value("Invalid request parameters"));
+    }
+
+    @Test
+    void userLoginRejectsOverlongCodeAsInvalidRequest() throws Exception {
+        mockMvc.perform(post("/api/auth/user/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"phone":"13900000006","code":"12345678901234567"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.message").value("Invalid request parameters"));
     }
 
     @Test
@@ -145,6 +181,18 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.data.id").isNumber())
                 .andExpect(jsonPath("$.data.displayName").value("Auth Test Admin"))
                 .andExpect(jsonPath("$.data.token").isNotEmpty());
+    }
+
+    @Test
+    void seedAdminCannotLoginWithDefaultPassword() throws Exception {
+        mockMvc.perform(post("/api/auth/admin/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"username":"admin","password":"admin123"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.message").value("Invalid admin credentials"));
     }
 
     @Test

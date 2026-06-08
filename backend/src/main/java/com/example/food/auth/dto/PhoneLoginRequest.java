@@ -1,9 +1,16 @@
 package com.example.food.auth.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 
 public record PhoneLoginRequest(
-        @NotBlank String phone,
-        @NotBlank String code
+        @NotBlank
+        @Size(max = 32)
+        @Pattern(regexp = "^\\+?\\d+$")
+        String phone,
+        @NotBlank
+        @Size(max = 16)
+        String code
 ) {
 }

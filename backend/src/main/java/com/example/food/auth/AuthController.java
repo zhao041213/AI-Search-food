@@ -3,6 +3,7 @@ package com.example.food.auth;
 import com.example.food.auth.dto.AdminLoginRequest;
 import com.example.food.auth.dto.AuthResponse;
 import com.example.food.auth.dto.PhoneCodeRequest;
+import com.example.food.auth.dto.PhoneCodeResponse;
 import com.example.food.auth.dto.PhoneLoginRequest;
 import com.example.food.common.ApiResponse;
 import jakarta.validation.Valid;
@@ -22,8 +23,8 @@ public class AuthController {
     }
 
     @PostMapping("/user/code")
-    public ApiResponse<String> issueUserCode(@Valid @RequestBody PhoneCodeRequest request) {
-        return ApiResponse.ok(authService.issueMockCode(request.phone()));
+    public ApiResponse<PhoneCodeResponse> issueUserCode(@Valid @RequestBody PhoneCodeRequest request) {
+        return ApiResponse.ok(new PhoneCodeResponse(authService.issueMockCode(request.phone())));
     }
 
     @PostMapping("/user/login")

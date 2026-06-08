@@ -12,6 +12,7 @@ import com.example.food.security.JwtService;
 import com.example.food.user.User;
 import com.example.food.user.UserMapper;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -57,16 +58,12 @@ public class AuthService {
             throw new IllegalArgumentException("Invalid verification code");
         }
 
-        User user = userMapper.selectOne(new QueryWrapper<User>().eq("phone", request.phone()));
         LocalDateTime now = LocalDateTime.now();
+        User user = selectUserByPhone(request.phone());
         if (user == null) {
             user = createUser(request.phone(), now);
         } else {
-            if (!Boolean.TRUE.equals(user.getEnabled())) {
-                throw new IllegalArgumentException("User account disabled");
-            }
-            user.setLastLoginAt(now);
-            userMapper.updateById(user);
+            updateEnabledUserLoginTime(user, now);
         }
 
         return userResponse(user);
@@ -91,8 +88,29 @@ public class AuthService {
         user.setRole(AppRole.USER.name());
         user.setEnabled(true);
         user.setLastLoginAt(now);
-        userMapper.insert(user);
+        try {
+            userMapper.insert(user);
+        } catch (DuplicateKeyException exception) {
+            User existingUser = selectUserByPhone(phone);
+            if (existingUser == null) {
+                throw exception;
+            }
+            updateEnabledUserLoginTime(existingUser, now);
+            return existingUser;
+        }
         return user;
+    }
+
+    private User selectUserByPhone(String phone) {
+        return userMapper.selectOne(new QueryWrapper<User>().eq("phone", phone));
+    }
+
+    private void updateEnabledUserLoginTime(User user, LocalDateTime now) {
+        if (!Boolean.TRUE.equals(user.getEnabled())) {
+            throw new IllegalArgumentException("User account disabled");
+        }
+        user.setLastLoginAt(now);
+        userMapper.updateById(user);
     }
 
     private AuthResponse userResponse(User user) {
