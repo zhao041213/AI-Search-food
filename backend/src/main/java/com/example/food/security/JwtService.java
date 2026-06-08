@@ -1,10 +1,13 @@
 package com.example.food.security;
 
 import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
@@ -42,13 +45,38 @@ public class JwtService {
     }
 
     public AuthPrincipal parseToken(String token) {
-        Claims claims = Jwts.parser()
-                .verifyWith(secretKey)
-                .build()
-                .parseSignedClaims(token)
-                .getPayload();
+        if (!StringUtils.hasText(token)) {
+            throw invalidToken();
+        }
+        try {
+            Claims claims = Jwts.parser()
+                    .verifyWith(secretKey)
+                    .build()
+                    .parseSignedClaims(token)
+                    .getPayload();
+            return toPrincipal(claims);
+        } catch (JwtException | IllegalArgumentException exception) {
+            throw invalidToken(exception);
+        }
+    }
+
+    private AuthPrincipal toPrincipal(Claims claims) {
         Number id = claims.get("id", Number.class);
+        String username = claims.getSubject();
         String role = claims.get("role", String.class);
-        return new AuthPrincipal(id.longValue(), claims.getSubject(), AppRole.valueOf(role));
+
+        if (id == null || !StringUtils.hasText(username) || !StringUtils.hasText(role)) {
+            throw invalidToken();
+        }
+
+        return new AuthPrincipal(id.longValue(), username, AppRole.valueOf(role));
+    }
+
+    private BadCredentialsException invalidToken() {
+        return new BadCredentialsException("Invalid JWT token");
+    }
+
+    private BadCredentialsException invalidToken(Exception exception) {
+        return new BadCredentialsException("Invalid JWT token", exception);
     }
 }
