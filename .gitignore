@@ -2,6 +2,7 @@ target/
 .m2/
 .env
 *.log
+.worktrees/
 .codex-ssh/
 .idea/
 .deploy/*.tar.gz
