@@ -1,10 +1,10 @@
 INSERT INTO admins (username, password_hash, nickname, role, enabled)
 VALUES (
     'admin',
-    '$2a$10$2lvuuqfw/LzUavFxPZQMfeii910kX1Yz7JXSH5yIOqNkSdgtoNt4K',
+    '$2a$10$h5iMLTLYAg3jEI5twAg/P.7p/qPBLYXOMwd/UHIHRPdjyRxwa7Cc6',
     'Administrator',
     'ADMIN',
-    0
+    1
 );
 
 INSERT INTO ai_model_configs (provider, model_name, purpose, primary_model, enabled)

@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { getMe } from '../api/auth'
 import { useAuthStore } from '../stores/auth'
 import HomeView from '../views/HomeView.vue'
 import LoginView from '../views/LoginView.vue'
@@ -26,14 +27,33 @@ const router = createRouter({
   ]
 })
 
-router.beforeEach((to) => {
+function loginRedirect(to) {
+  return {
+    name: 'login',
+    query: { redirect: to.fullPath }
+  }
+}
+
+router.beforeEach(async (to) => {
   const auth = useAuthStore()
 
-  if (to.meta.requiresAdmin && (!auth.isLoggedIn || !auth.isAdmin)) {
-    return {
-      name: 'login',
-      query: { redirect: to.fullPath }
-    }
+  if (!to.meta.requiresAdmin) {
+    return true
+  }
+
+  if (!auth.isLoggedIn) {
+    return loginRedirect(to)
+  }
+
+  try {
+    const response = await getMe()
+    auth.setPrincipal(response.data.data)
+  } catch {
+    return loginRedirect(to)
+  }
+
+  if (!auth.isAdmin) {
+    return loginRedirect(to)
   }
 
   return true

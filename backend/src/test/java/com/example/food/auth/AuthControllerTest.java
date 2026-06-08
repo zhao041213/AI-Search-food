@@ -256,6 +256,20 @@ class AuthControllerTest {
     }
 
     @Test
+    void seedAdminCanLoginWithInitialPassword() throws Exception {
+        mockMvc.perform(post("/api/auth/admin/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"username":"admin","password":"Admin@123456"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.role").value("ADMIN"))
+                .andExpect(jsonPath("$.data.displayName").value("Administrator"))
+                .andExpect(jsonPath("$.data.token").isNotEmpty());
+    }
+
+    @Test
     void seedAdminCannotLoginWithDefaultPassword() throws Exception {
         mockMvc.perform(post("/api/auth/admin/login")
                         .contentType(MediaType.APPLICATION_JSON)

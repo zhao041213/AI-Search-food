@@ -1,131 +1,86 @@
-# 智能菜谱生成与搜索系统 Demo
+# AI 智能菜谱推荐系统
 
-基于 Spring Boot 3 和 DeepSeek API 的最小可运行 Demo，包含本地菜谱搜索和 AI 菜谱生成。
+基于多模态大模型的食材识别与智能菜谱推荐系统。当前分支是 Phase 1 基础工程：标准前后端分离结构、MySQL/Flyway 数据库基础、JWT 认证、模拟手机号登录、管理员登录和前端基础页面。
 
-## 线上访问
-
-当前服务器访问地址：
+## 项目结构
 
 ```text
-http://8.166.138.245/food/
+backend/   Spring Boot 3 后端服务
+frontend/  Vue 3 + Vite 前端应用
+docs/      需求设计与阶段计划
 ```
-
-根路径 `http://8.166.138.245/` 会通过 nginx 自动跳转到 `/food/`。
 
 ## 环境要求
 
 - Java 17+
 - Maven 3.8+
-- DeepSeek API Key
+- Node.js 20+
+- MySQL 8+
 
-## 本地配置 API Key
+## 后端配置
 
-不要把 API Key 写入代码。PowerShell 中这样设置当前终端会话的环境变量：
+默认读取本地 MySQL：
 
-```powershell
-$env:DEEPSEEK_API_KEY="你的DeepSeek API Key"
+```env
+MYSQL_URL=jdbc:mysql://localhost:3306/ai_smart_recipe?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+MYSQL_USERNAME=root
+MYSQL_PASSWORD=root
+JWT_SECRET=change-this-secret-change-this-secret-32
+MOCK_LOGIN_CODE=123456
 ```
 
-默认模型是 `deepseek-v4-flash`。如需切换模型：
-
-```powershell
-$env:DEEPSEEK_MODEL="deepseek-v4-pro"
-```
+生产或演示部署时必须替换 `JWT_SECRET`。Flyway 会自动创建业务表和初始配置。
 
 ## 本地启动
 
-```powershell
-mvn "-Dmaven.repo.local=D:\AI-Search-food\.m2" spring-boot:run
-```
-
-启动后访问：
-
-```text
-http://localhost:8080
-```
-
-## 服务器配置 DeepSeek API Key
-
-线上服务通过 systemd 读取这个环境变量文件：
-
-```text
-/etc/ai-search-food/ai-search-food.env
-```
-
-在服务器上编辑它：
-
-```bash
-vi /etc/ai-search-food/ai-search-food.env
-```
-
-配置内容示例：
-
-```env
-DEEPSEEK_API_KEY=你的DeepSeek API Key
-DEEPSEEK_MODEL=deepseek-v4-flash
-```
-
-保存后重启服务：
-
-```bash
-systemctl restart ai-search-food
-```
-
-查看运行状态和日志：
-
-```bash
-systemctl status ai-search-food
-journalctl -u ai-search-food -f
-```
-
-## 接口
-
-搜索菜谱：
-
-```http
-GET /api/recipes/search?keyword=鸡蛋
-```
-
-AI 生成菜谱：
-
-```http
-POST /api/recipes/generate
-Content-Type: application/json
-
-{
-  "ingredients": "鸡蛋、番茄、青椒"
-}
-```
-
-线上 API 地址：
-
-```http
-GET http://8.166.138.245/api/recipes/search?keyword=鸡蛋
-POST http://8.166.138.245/api/recipes/generate
-```
-
-## 打包
+后端：
 
 ```powershell
-mvn "-Dmaven.repo.local=D:\AI-Search-food\.m2" package
+mvn "-Dmaven.repo.local=D:\AI-Search-food\.m2" -f backend/pom.xml spring-boot:run
 ```
 
-构建产物：
+前端：
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+默认访问：
 
 ```text
-target/ai-search-food-0.0.1-SNAPSHOT.jar
+http://localhost:5173
 ```
 
-## 线上部署位置
+## 初始账号
 
-服务器上的主要文件：
+模拟手机号登录：
 
 ```text
-/opt/ai-search-food/app.jar
-/opt/java/jre17
-/etc/systemd/system/ai-search-food.service
-/etc/nginx/conf.d/ai-search-food.conf
-/etc/ai-search-food/ai-search-food.env
+验证码：123456
 ```
 
-本地部署配置模板在 `.deploy/` 目录中。
+管理员登录：
+
+```text
+账号：admin
+密码：Admin@123456
+```
+
+正式部署后应在 MySQL 中修改初始管理员密码。
+
+## 验证命令
+
+后端测试：
+
+```powershell
+mvn "-Dmaven.repo.local=D:\AI-Search-food\.m2" -f backend/pom.xml test
+```
+
+前端构建：
+
+```powershell
+cd frontend
+npm run build
+```

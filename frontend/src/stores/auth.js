@@ -29,6 +29,16 @@ export const useAuthStore = defineStore('auth', {
       localStorage.setItem(ROLE_KEY, role)
       localStorage.setItem(DISPLAY_NAME_KEY, displayName)
     },
+    setPrincipal(principal) {
+      const role = principal?.role || ''
+      const displayName = principal?.username || this.displayName || ''
+
+      this.role = role
+      this.displayName = displayName
+
+      localStorage.setItem(ROLE_KEY, role)
+      localStorage.setItem(DISPLAY_NAME_KEY, displayName)
+    },
     logout() {
       this.token = ''
       this.role = ''
