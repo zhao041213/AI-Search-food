@@ -73,6 +73,30 @@ class AuthControllerTest {
     }
 
     @Test
+    void userCodeRejectsShortPhoneAsInvalidRequest() throws Exception {
+        mockMvc.perform(post("/api/auth/user/code")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"phone":"12345"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.message").value("Invalid request parameters"));
+    }
+
+    @Test
+    void userCodeRejectsNonDigitPhoneAsInvalidRequest() throws Exception {
+        mockMvc.perform(post("/api/auth/user/code")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"phone":"1390000abcd"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.message").value("Invalid request parameters"));
+    }
+
+    @Test
     void userCanLoginWithMockCode() throws Exception {
         mockMvc.perform(post("/api/auth/user/login")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -111,11 +135,59 @@ class AuthControllerTest {
     }
 
     @Test
+    void userLoginRejectsShortPhoneAsInvalidRequest() throws Exception {
+        mockMvc.perform(post("/api/auth/user/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"phone":"12345","code":"123456"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.message").value("Invalid request parameters"));
+    }
+
+    @Test
+    void userLoginRejectsNonDigitPhoneAsInvalidRequest() throws Exception {
+        mockMvc.perform(post("/api/auth/user/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"phone":"1390000abcd","code":"123456"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.message").value("Invalid request parameters"));
+    }
+
+    @Test
     void userLoginRejectsOverlongCodeAsInvalidRequest() throws Exception {
         mockMvc.perform(post("/api/auth/user/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"phone":"13900000006","code":"12345678901234567"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.message").value("Invalid request parameters"));
+    }
+
+    @Test
+    void userLoginRejectsShortCodeAsInvalidRequest() throws Exception {
+        mockMvc.perform(post("/api/auth/user/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"phone":"13900000006","code":"123"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.message").value("Invalid request parameters"));
+    }
+
+    @Test
+    void userLoginRejectsNonDigitCodeAsInvalidRequest() throws Exception {
+        mockMvc.perform(post("/api/auth/user/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"phone":"13900000006","code":"12ab56"}
                                 """))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(400))

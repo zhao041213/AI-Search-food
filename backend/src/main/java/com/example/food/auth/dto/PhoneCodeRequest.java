@@ -7,7 +7,7 @@ import jakarta.validation.constraints.Size;
 public record PhoneCodeRequest(
         @NotBlank
         @Size(max = 32)
-        @Pattern(regexp = "^\\+?\\d+$")
+        @Pattern(regexp = "^\\+?\\d{6,32}$")
         String phone
 ) {
 }
