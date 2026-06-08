@@ -23,6 +23,7 @@ import java.util.Set;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -105,6 +106,35 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    void methodNotAllowedPreservesStatus() throws Exception {
+        mockMvc.perform(put("/handler-test/body")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"tomato\"}"))
+                .andExpect(status().isMethodNotAllowed())
+                .andExpect(jsonPath("$.code").value(405))
+                .andExpect(jsonPath("$.message").value("Method Not Allowed"));
+    }
+
+    @Test
+    void unsupportedMediaTypePreservesStatus() throws Exception {
+        mockMvc.perform(post("/handler-test/json-only")
+                        .contentType(MediaType.APPLICATION_XML)
+                        .content("<name>tomato</name>"))
+                .andExpect(status().isUnsupportedMediaType())
+                .andExpect(jsonPath("$.code").value(415))
+                .andExpect(jsonPath("$.message").value("Unsupported Media Type"));
+    }
+
+    @Test
+    void notAcceptablePreservesStatus() throws Exception {
+        mockMvc.perform(get("/handler-test/xml-only-response")
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isNotAcceptable())
+                .andExpect(jsonPath("$.code").value(406))
+                .andExpect(jsonPath("$.message").value("Not Acceptable"));
+    }
+
+    @Test
     void constraintViolationReturnsInvalidRequestEnvelope() throws Exception {
         mockMvc.perform(get("/handler-test/constraint"))
                 .andExpect(status().isBadRequest())
@@ -135,6 +165,16 @@ class GlobalExceptionHandlerTestController {
 
     @PostMapping("/body")
     ApiResponse<Void> body(@RequestBody GlobalExceptionHandlerTest.TestRequest request) {
+        return ApiResponse.ok(null);
+    }
+
+    @PostMapping(value = "/json-only", consumes = MediaType.APPLICATION_JSON_VALUE)
+    ApiResponse<Void> jsonOnly(@RequestBody GlobalExceptionHandlerTest.TestRequest request) {
+        return ApiResponse.ok(null);
+    }
+
+    @GetMapping(value = "/xml-only-response", produces = MediaType.APPLICATION_XML_VALUE)
+    ApiResponse<Void> xmlOnlyResponse() {
         return ApiResponse.ok(null);
     }
 

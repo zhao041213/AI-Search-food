@@ -8,6 +8,10 @@ import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.BindException;
+import org.springframework.web.ErrorResponse;
+import org.springframework.web.HttpMediaTypeNotAcceptableException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -50,12 +54,40 @@ public class GlobalExceptionHandler {
         return statusEnvelope(exception.getStatusCode(), null);
     }
 
+    @ExceptionHandler({
+            HttpRequestMethodNotSupportedException.class,
+            HttpMediaTypeNotSupportedException.class,
+            HttpMediaTypeNotAcceptableException.class
+    })
+    public ResponseEntity<ApiResponse<Void>> handleSpringMvcStatusException(Exception exception) {
+        return errorResponseEnvelope((ErrorResponse) exception);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleException(Exception exception) {
+        if (exception instanceof ErrorResponse errorResponse) {
+            return errorResponseEnvelope(errorResponse);
+        }
         log.error("Unexpected exception", exception);
         return ResponseEntity
                 .status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(ApiResponse.error(500, "Internal server error"));
+    }
+
+    private ResponseEntity<ApiResponse<Void>> errorResponseEnvelope(ErrorResponse errorResponse) {
+        return statusEnvelope(errorResponse.getStatusCode(), errorResponseMessage(errorResponse));
+    }
+
+    private String errorResponseMessage(ErrorResponse errorResponse) {
+        String title = errorResponse.getBody().getTitle();
+        if (title != null && !title.isBlank()) {
+            return title;
+        }
+        String detail = errorResponse.getBody().getDetail();
+        if (detail != null && !detail.isBlank()) {
+            return detail;
+        }
+        return null;
     }
 
     private ResponseEntity<ApiResponse<Void>> statusEnvelope(HttpStatusCode statusCode, String reason) {
