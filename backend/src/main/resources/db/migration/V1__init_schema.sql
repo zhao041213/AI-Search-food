@@ -27,7 +27,7 @@ CREATE TABLE user_preferences (
     preference_type VARCHAR(64) NOT NULL,
     preference_value VARCHAR(255) NOT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_user_preferences_user FOREIGN KEY (user_id) REFERENCES users(id)
+    CONSTRAINT fk_user_preferences_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 CREATE TABLE user_pantry_items (
@@ -40,7 +40,7 @@ CREATE TABLE user_pantry_items (
     expire_date DATE,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    CONSTRAINT fk_user_pantry_items_user FOREIGN KEY (user_id) REFERENCES users(id)
+    CONSTRAINT fk_user_pantry_items_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 CREATE TABLE search_logs (
@@ -52,7 +52,7 @@ CREATE TABLE search_logs (
     recognized_ingredients TEXT,
     ai_model VARCHAR(128),
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_search_logs_user FOREIGN KEY (user_id) REFERENCES users(id)
+    CONSTRAINT fk_search_logs_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
 );
 
 CREATE TABLE recipe_records (
@@ -71,9 +71,9 @@ CREATE TABLE recipe_records (
     ai_model VARCHAR(128),
     raw_response MEDIUMTEXT,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_recipe_records_user FOREIGN KEY (user_id) REFERENCES users(id),
-    CONSTRAINT fk_recipe_records_search_log FOREIGN KEY (search_log_id) REFERENCES search_logs(id),
-    CONSTRAINT fk_recipe_records_parent FOREIGN KEY (parent_recipe_id) REFERENCES recipe_records(id)
+    CONSTRAINT fk_recipe_records_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+    CONSTRAINT fk_recipe_records_search_log FOREIGN KEY (search_log_id) REFERENCES search_logs(id) ON DELETE SET NULL,
+    CONSTRAINT fk_recipe_records_parent FOREIGN KEY (parent_recipe_id) REFERENCES recipe_records(id) ON DELETE SET NULL
 );
 
 CREATE TABLE recipe_ingredients (
@@ -84,7 +84,7 @@ CREATE TABLE recipe_ingredients (
     category VARCHAR(64),
     already_owned TINYINT NOT NULL DEFAULT 0,
     substitute_names VARCHAR(512),
-    CONSTRAINT fk_recipe_ingredients_recipe FOREIGN KEY (recipe_id) REFERENCES recipe_records(id)
+    CONSTRAINT fk_recipe_ingredients_recipe FOREIGN KEY (recipe_id) REFERENCES recipe_records(id) ON DELETE CASCADE
 );
 
 CREATE TABLE recipe_steps (
@@ -95,7 +95,8 @@ CREATE TABLE recipe_steps (
     instruction TEXT NOT NULL,
     estimated_minutes INT,
     tip TEXT,
-    CONSTRAINT fk_recipe_steps_recipe FOREIGN KEY (recipe_id) REFERENCES recipe_records(id)
+    CONSTRAINT uq_recipe_steps_recipe_step UNIQUE (recipe_id, step_no),
+    CONSTRAINT fk_recipe_steps_recipe FOREIGN KEY (recipe_id) REFERENCES recipe_records(id) ON DELETE CASCADE
 );
 
 CREATE TABLE shopping_items (
@@ -109,7 +110,7 @@ CREATE TABLE shopping_items (
     substitute_names VARCHAR(512),
     taobao_url VARCHAR(1000),
     jd_url VARCHAR(1000),
-    CONSTRAINT fk_shopping_items_recipe FOREIGN KEY (recipe_id) REFERENCES recipe_records(id)
+    CONSTRAINT fk_shopping_items_recipe FOREIGN KEY (recipe_id) REFERENCES recipe_records(id) ON DELETE CASCADE
 );
 
 CREATE TABLE recipe_favorites (
@@ -118,8 +119,8 @@ CREATE TABLE recipe_favorites (
     recipe_id BIGINT NOT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT uq_recipe_favorites_user_recipe UNIQUE (user_id, recipe_id),
-    CONSTRAINT fk_recipe_favorites_user FOREIGN KEY (user_id) REFERENCES users(id),
-    CONSTRAINT fk_recipe_favorites_recipe FOREIGN KEY (recipe_id) REFERENCES recipe_records(id)
+    CONSTRAINT fk_recipe_favorites_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_recipe_favorites_recipe FOREIGN KEY (recipe_id) REFERENCES recipe_records(id) ON DELETE CASCADE
 );
 
 CREATE TABLE uploaded_files (
@@ -132,7 +133,7 @@ CREATE TABLE uploaded_files (
     storage_path VARCHAR(1000) NOT NULL,
     purpose VARCHAR(64) NOT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_uploaded_files_user FOREIGN KEY (user_id) REFERENCES users(id)
+    CONSTRAINT fk_uploaded_files_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
 );
 
 CREATE TABLE finished_dish_reviews (
@@ -143,9 +144,9 @@ CREATE TABLE finished_dish_reviews (
     review_result TEXT NOT NULL,
     ai_model VARCHAR(128),
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_finished_dish_reviews_user FOREIGN KEY (user_id) REFERENCES users(id),
-    CONSTRAINT fk_finished_dish_reviews_recipe FOREIGN KEY (recipe_id) REFERENCES recipe_records(id),
-    CONSTRAINT fk_finished_dish_reviews_file FOREIGN KEY (uploaded_file_id) REFERENCES uploaded_files(id)
+    CONSTRAINT fk_finished_dish_reviews_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+    CONSTRAINT fk_finished_dish_reviews_recipe FOREIGN KEY (recipe_id) REFERENCES recipe_records(id) ON DELETE SET NULL,
+    CONSTRAINT fk_finished_dish_reviews_file FOREIGN KEY (uploaded_file_id) REFERENCES uploaded_files(id) ON DELETE CASCADE
 );
 
 CREATE TABLE prompt_templates (
@@ -166,7 +167,9 @@ CREATE TABLE ai_model_configs (
     primary_model TINYINT NOT NULL DEFAULT 0,
     enabled TINYINT NOT NULL DEFAULT 1,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT uq_ai_model_configs_provider_model_purpose UNIQUE (provider, model_name, purpose),
+    CONSTRAINT uq_ai_model_configs_purpose_primary_enabled UNIQUE (purpose, primary_model, enabled)
 );
 
 CREATE INDEX idx_search_logs_created_at ON search_logs(created_at);
@@ -174,3 +177,11 @@ CREATE INDEX idx_search_logs_user_id ON search_logs(user_id);
 CREATE INDEX idx_recipe_records_created_at ON recipe_records(created_at);
 CREATE INDEX idx_recipe_records_user_id ON recipe_records(user_id);
 CREATE INDEX idx_user_pantry_items_user_id ON user_pantry_items(user_id);
+CREATE INDEX idx_recipe_ingredients_recipe_id ON recipe_ingredients(recipe_id);
+CREATE INDEX idx_recipe_steps_recipe_id ON recipe_steps(recipe_id);
+CREATE INDEX idx_shopping_items_recipe_id ON shopping_items(recipe_id);
+CREATE INDEX idx_recipe_favorites_recipe_id ON recipe_favorites(recipe_id);
+CREATE INDEX idx_uploaded_files_user_id ON uploaded_files(user_id);
+CREATE INDEX idx_finished_dish_reviews_user_id ON finished_dish_reviews(user_id);
+CREATE INDEX idx_finished_dish_reviews_recipe_id ON finished_dish_reviews(recipe_id);
+CREATE INDEX idx_finished_dish_reviews_uploaded_file_id ON finished_dish_reviews(uploaded_file_id);

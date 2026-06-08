@@ -4,7 +4,7 @@ VALUES (
     '$2a$10$t/6IxhrR085QmHJSGuWlcedUq3wMSQ4AAXD7QWuZnSx3yhal/t.bC',
     'Administrator',
     'ADMIN',
-    1
+    0
 );
 
 INSERT INTO ai_model_configs (provider, model_name, purpose, primary_model, enabled)
