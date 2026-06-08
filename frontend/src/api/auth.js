@@ -11,3 +11,7 @@ export function loginUser(phone, code) {
 export function loginAdmin(username, password) {
   return http.post('/auth/admin/login', { username, password })
 }
+
+export function getMe() {
+  return http.get('/auth/me')
+}
