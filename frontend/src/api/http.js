@@ -16,3 +16,17 @@ http.interceptors.request.use((config) => {
 
   return config
 })
+
+http.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const status = error?.response?.status
+
+    if (status === 401 || status === 403) {
+      const auth = useAuthStore()
+      auth.logout()
+    }
+
+    return Promise.reject(error)
+  }
+)

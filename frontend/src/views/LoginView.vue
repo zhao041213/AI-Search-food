@@ -8,7 +8,7 @@
 
       <el-tabs v-model="mode" stretch>
         <el-tab-pane label="Phone" name="user">
-          <el-form label-position="top" @submit.prevent>
+          <el-form label-position="top" @submit.prevent="submitUserLogin">
             <el-form-item label="Phone number">
               <el-input
                 v-model.trim="phone"
@@ -27,11 +27,11 @@
             </el-form-item>
 
             <div class="form-actions">
-              <el-button :loading="requestingCode" @click="requestCode">
+              <el-button native-type="button" :loading="requestingCode" @click="requestCode">
                 <KeyRound :size="16" aria-hidden="true" />
                 <span>Get code</span>
               </el-button>
-              <el-button type="primary" :loading="loggingIn" @click="submitUserLogin">
+              <el-button type="primary" native-type="submit" :loading="loggingIn">
                 <LogIn :size="16" aria-hidden="true" />
                 <span>Login</span>
               </el-button>
@@ -40,7 +40,7 @@
         </el-tab-pane>
 
         <el-tab-pane label="Admin" name="admin">
-          <el-form label-position="top" @submit.prevent>
+          <el-form label-position="top" @submit.prevent="submitAdminLogin">
             <el-form-item label="Username">
               <el-input v-model.trim="username" autocomplete="username" placeholder="Username" />
             </el-form-item>
@@ -55,7 +55,7 @@
             </el-form-item>
 
             <div class="form-actions single">
-              <el-button type="primary" :loading="loggingIn" @click="submitAdminLogin">
+              <el-button type="primary" native-type="submit" :loading="loggingIn">
                 <ShieldCheck :size="16" aria-hidden="true" />
                 <span>Admin login</span>
               </el-button>

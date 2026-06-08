@@ -29,7 +29,7 @@ const router = createRouter({
 router.beforeEach((to) => {
   const auth = useAuthStore()
 
-  if (to.meta.requiresAdmin && !auth.isAdmin) {
+  if (to.meta.requiresAdmin && (!auth.isLoggedIn || !auth.isAdmin)) {
     return {
       name: 'login',
       query: { redirect: to.fullPath }
