@@ -1,9 +1,12 @@
 target/
 .m2/
+node_modules/
+dist/
 .env
 *.log
 .worktrees
 .worktrees/
 .codex-ssh/
 .idea/
+.vscode/
 .deploy/*.tar.gz

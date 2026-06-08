@@ -1,7 +1,0 @@
-server:
-  port: 8080
-
-deepseek:
-  api-url: https://api.deepseek.com/chat/completions
-  api-key: ${DEEPSEEK_API_KEY:}
-  model: ${DEEPSEEK_MODEL:deepseek-v4-flash}
