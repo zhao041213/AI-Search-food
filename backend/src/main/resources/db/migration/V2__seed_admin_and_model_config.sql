@@ -1,7 +1,7 @@
 INSERT INTO admins (username, password_hash, nickname, role, enabled)
 VALUES (
     'admin',
-    '$2a$10$t/6IxhrR085QmHJSGuWlcedUq3wMSQ4AAXD7QWuZnSx3yhal/t.bC',
+    '$2a$10$2lvuuqfw/LzUavFxPZQMfeii910kX1Yz7JXSH5yIOqNkSdgtoNt4K',
     'Administrator',
     'ADMIN',
     0

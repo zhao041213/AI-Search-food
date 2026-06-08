@@ -166,10 +166,13 @@ CREATE TABLE ai_model_configs (
     purpose VARCHAR(64) NOT NULL,
     primary_model TINYINT NOT NULL DEFAULT 0,
     enabled TINYINT NOT NULL DEFAULT 1,
+    primary_active_purpose VARCHAR(64) GENERATED ALWAYS AS (
+        CASE WHEN primary_model = 1 AND enabled = 1 THEN purpose ELSE NULL END
+    ),
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     CONSTRAINT uq_ai_model_configs_provider_model_purpose UNIQUE (provider, model_name, purpose),
-    CONSTRAINT uq_ai_model_configs_purpose_primary_enabled UNIQUE (purpose, primary_model, enabled)
+    CONSTRAINT uq_ai_model_configs_primary_active_purpose UNIQUE (primary_active_purpose)
 );
 
 CREATE INDEX idx_search_logs_created_at ON search_logs(created_at);
