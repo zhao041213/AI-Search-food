@@ -2,54 +2,55 @@
   <main class="login-page">
     <section class="login-panel" aria-labelledby="login-title">
       <div class="panel-header">
-        <p class="eyebrow">Account access</p>
-        <h1 id="login-title">Sign in</h1>
+        <p class="eyebrow">身份认证</p>
+        <h1 id="login-title">登录系统</h1>
+        <span>手机号模拟登录与管理员入口</span>
       </div>
 
       <el-tabs v-model="mode" stretch>
-        <el-tab-pane label="Phone" name="user">
+        <el-tab-pane label="手机号登录" name="user">
           <el-form label-position="top" @submit.prevent="submitUserLogin">
-            <el-form-item label="Phone number">
+            <el-form-item label="手机号">
               <el-input
                 v-model.trim="phone"
                 autocomplete="tel"
                 inputmode="tel"
-                placeholder="Phone number"
+                placeholder="请输入手机号"
               />
             </el-form-item>
-            <el-form-item label="Verification code">
+            <el-form-item label="验证码">
               <el-input
                 v-model.trim="code"
                 autocomplete="one-time-code"
                 inputmode="numeric"
-                placeholder="Verification code"
+                placeholder="请输入验证码"
               />
             </el-form-item>
 
             <div class="form-actions">
               <el-button native-type="button" :loading="requestingCode" @click="requestCode">
                 <KeyRound :size="16" aria-hidden="true" />
-                <span>Get code</span>
+                <span>获取验证码</span>
               </el-button>
               <el-button type="primary" native-type="submit" :loading="loggingIn">
                 <LogIn :size="16" aria-hidden="true" />
-                <span>Login</span>
+                <span>登录</span>
               </el-button>
             </div>
           </el-form>
         </el-tab-pane>
 
-        <el-tab-pane label="Admin" name="admin">
+        <el-tab-pane label="管理员登录" name="admin">
           <el-form label-position="top" @submit.prevent="submitAdminLogin">
-            <el-form-item label="Username">
-              <el-input v-model.trim="username" autocomplete="username" placeholder="Username" />
+            <el-form-item label="管理员账号">
+              <el-input v-model.trim="username" autocomplete="username" placeholder="请输入管理员账号" />
             </el-form-item>
-            <el-form-item label="Password">
+            <el-form-item label="密码">
               <el-input
                 v-model="password"
                 type="password"
                 autocomplete="current-password"
-                placeholder="Password"
+                placeholder="请输入密码"
                 show-password
               />
             </el-form-item>
@@ -57,7 +58,7 @@
             <div class="form-actions single">
               <el-button type="primary" native-type="submit" :loading="loggingIn">
                 <ShieldCheck :size="16" aria-hidden="true" />
-                <span>Admin login</span>
+                <span>管理员登录</span>
               </el-button>
             </div>
           </el-form>
@@ -87,8 +88,25 @@ const password = ref('')
 const requestingCode = ref(false)
 const loggingIn = ref(false)
 
+const messageMap = {
+  'Invalid admin credentials': '管理员账号或密码错误',
+  'Invalid request parameters': '请求参数不合法',
+  'Invalid verification code': '验证码错误',
+  'User account disabled': '账号已被禁用',
+  'Phone is required': '手机号不能为空',
+  Unauthorized: '登录状态无效，请重新登录',
+  Forbidden: '没有权限访问该功能',
+  'Bad credentials': '登录状态无效',
+  'Network Error': '网络连接失败，请检查后端服务'
+}
+
 function getErrorMessage(error, fallback) {
-  return error?.response?.data?.message || error?.message || fallback
+  const message = error?.response?.data?.message || error?.message
+  if (message?.toLowerCase().includes('timeout')) {
+    return '请求超时，请稍后重试'
+  }
+
+  return messageMap[message] || message || fallback
 }
 
 function getRedirectPath(defaultPath) {
@@ -97,7 +115,7 @@ function getRedirectPath(defaultPath) {
 
 async function requestCode() {
   if (!phone.value) {
-    ElMessage.warning('Enter a phone number first')
+    ElMessage.warning('请先输入手机号')
     return
   }
 
@@ -106,9 +124,9 @@ async function requestCode() {
   try {
     const response = await requestUserCode(phone.value)
     code.value = response.data.data.code
-    ElMessage.success('Verification code received')
+    ElMessage.success('验证码已获取')
   } catch (error) {
-    ElMessage.error(getErrorMessage(error, 'Could not request verification code'))
+    ElMessage.error(getErrorMessage(error, '验证码获取失败'))
   } finally {
     requestingCode.value = false
   }
@@ -116,7 +134,7 @@ async function requestCode() {
 
 async function submitUserLogin() {
   if (!phone.value || !code.value) {
-    ElMessage.warning('Enter phone number and verification code')
+    ElMessage.warning('请输入手机号和验证码')
     return
   }
 
@@ -128,7 +146,7 @@ async function submitUserLogin() {
     const targetPath = getRedirectPath('/')
     router.push(targetPath.startsWith('/admin') ? '/' : targetPath)
   } catch (error) {
-    ElMessage.error(getErrorMessage(error, 'User login failed'))
+    ElMessage.error(getErrorMessage(error, '手机号登录失败'))
   } finally {
     loggingIn.value = false
   }
@@ -136,7 +154,7 @@ async function submitUserLogin() {
 
 async function submitAdminLogin() {
   if (!username.value || !password.value) {
-    ElMessage.warning('Enter username and password')
+    ElMessage.warning('请输入管理员账号和密码')
     return
   }
 
@@ -147,7 +165,7 @@ async function submitAdminLogin() {
     auth.setAuth(response.data.data)
     router.push(getRedirectPath('/admin'))
   } catch (error) {
-    ElMessage.error(getErrorMessage(error, 'Admin login failed'))
+    ElMessage.error(getErrorMessage(error, '管理员登录失败'))
   } finally {
     loggingIn.value = false
   }
@@ -157,39 +175,69 @@ async function submitAdminLogin() {
 <style scoped>
 .login-page {
   display: grid;
-  min-height: calc(100vh - 72px);
+  min-height: calc(100vh - 58px);
   place-items: center;
-  padding: 40px 16px;
-  color: #0f172a;
+  padding: 18px 14px;
+  color: var(--app-text);
 }
 
 .login-panel {
   width: min(460px, 100%);
-  padding: 28px;
-  border: 1px solid #bae6fd;
+  padding: 24px;
+  border: 1px solid var(--app-line);
   border-radius: 8px;
-  background: #ffffff;
-  box-shadow: 0 18px 45px rgba(8, 145, 178, 0.12);
+  background:
+    linear-gradient(90deg, var(--app-grid-line-strong) 1px, transparent 1px),
+    linear-gradient(var(--app-grid-line-soft) 1px, transparent 1px),
+    var(--app-surface);
+  background-size: 32px 32px;
+  box-shadow:
+    var(--app-panel-shadow),
+    inset 0 1px 0 var(--app-grid-line-strong);
 }
 
 .panel-header {
-  margin-bottom: 18px;
+  display: grid;
+  gap: 4px;
+  margin-bottom: 16px;
 }
 
 .eyebrow {
-  margin: 0 0 8px;
-  color: #047857;
+  margin: 0;
+  color: var(--app-text-muted);
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
   font-size: 13px;
   font-weight: 800;
   letter-spacing: 0;
-  text-transform: uppercase;
 }
 
 h1 {
   margin: 0;
-  color: #164e63;
-  font-size: 28px;
+  color: var(--app-text);
+  font-size: 25px;
   line-height: 1.2;
+}
+
+.panel-header span {
+  color: var(--app-text-muted);
+  font-size: 14px;
+}
+
+.login-panel :deep(.el-tabs__item) {
+  color: var(--app-text-muted);
+  font-weight: 800;
+}
+
+.login-panel :deep(.el-tabs__item.is-active) {
+  color: var(--app-text);
+}
+
+.login-panel :deep(.el-tabs__active-bar) {
+  background: var(--app-accent);
+}
+
+.login-panel :deep(.el-tabs__nav-wrap::after) {
+  background: var(--app-line);
 }
 
 .form-actions {
@@ -204,7 +252,7 @@ h1 {
 }
 
 .form-actions :deep(.el-button) {
-  min-height: 44px;
+  min-height: 38px;
   margin-left: 0;
   font-weight: 700;
 }
@@ -217,7 +265,7 @@ h1 {
 
 @media (max-width: 720px) {
   .login-page {
-    min-height: calc(100vh - 123px);
+    min-height: calc(100vh - 111px);
   }
 }
 

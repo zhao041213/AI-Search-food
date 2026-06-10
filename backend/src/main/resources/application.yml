@@ -1,5 +1,5 @@
 server:
-  port: 8080
+  port: 7068
 
 spring:
   application:
@@ -26,3 +26,8 @@ app:
     expiration-minutes: ${JWT_EXPIRATION_MINUTES:1440}
   auth:
     mock-code: ${MOCK_LOGIN_CODE:123456}
+  ai:
+    qwen:
+      api-key: ${DASHSCOPE_API_KEY:}
+      model: ${DASHSCOPE_MODEL:qwen-plus}
+      endpoint: ${DASHSCOPE_ENDPOINT:https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions}

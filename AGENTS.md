@@ -20,6 +20,7 @@ Current stack:
 - Prefer small, reviewable changes over broad edits.
 - Read the surrounding code before editing.
 - Do not overwrite user changes. If user changes affect the task, work with them.
+- All frontend pages must use Chinese as the primary visible language. English copy should only remain for code identifiers, API values, or unavoidable third-party terms.
 
 ## Required Flow For Code Changes
 

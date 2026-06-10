@@ -27,9 +27,17 @@ MYSQL_USERNAME=root
 MYSQL_PASSWORD=root
 JWT_SECRET=change-this-secret-change-this-secret-32
 MOCK_LOGIN_CODE=123456
+DASHSCOPE_API_KEY=你的千问 API Key
+DASHSCOPE_MODEL=qwen-plus
 ```
 
-生产或演示部署时必须替换 `JWT_SECRET`。Flyway 会自动创建业务表和初始配置。
+生产或演示部署时必须替换 `JWT_SECRET`。`DASHSCOPE_API_KEY` 可作为兜底环境变量；管理员后台保存的 AI 接入配置会优先生效。Flyway 会自动创建业务表和初始配置。
+
+PowerShell 临时配置千问 Key：
+
+```powershell
+$env:DASHSCOPE_API_KEY="你的千问 API Key"
+```
 
 ## 本地启动
 
