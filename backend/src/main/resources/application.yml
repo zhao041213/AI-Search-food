@@ -30,4 +30,5 @@ app:
     qwen:
       api-key: ${DASHSCOPE_API_KEY:}
       model: ${DASHSCOPE_MODEL:qwen-plus}
+      vision-model: ${DASHSCOPE_VISION_MODEL:qwen-vl-plus}
       endpoint: ${DASHSCOPE_ENDPOINT:https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions}

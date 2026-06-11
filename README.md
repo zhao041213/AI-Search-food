@@ -29,9 +29,15 @@ JWT_SECRET=change-this-secret-change-this-secret-32
 MOCK_LOGIN_CODE=123456
 DASHSCOPE_API_KEY=你的千问 API Key
 DASHSCOPE_MODEL=qwen-plus
+DASHSCOPE_VISION_MODEL=qwen-vl-plus
 ```
 
-生产或演示部署时必须替换 `JWT_SECRET`。`DASHSCOPE_API_KEY` 可作为兜底环境变量；管理员后台保存的 AI 接入配置会优先生效。Flyway 会自动创建业务表和初始配置。
+生产或演示部署时必须替换 `JWT_SECRET`。`DASHSCOPE_API_KEY` 可作为兜底环境变量；管理员后台保存的 AI 接入配置会优先生效。图片食材识别默认使用 `DASHSCOPE_VISION_MODEL`，并复用千问兼容模式接口。Flyway 会自动创建业务表和初始配置。
+
+当前 AI 接口：
+
+- `POST /api/ai/recipes/generate`：根据文字食材生成菜谱。
+- `POST /api/ai/ingredients/recognize`：上传 JPG、PNG 或 WebP 图片识别食材，最大 5MB。
 
 PowerShell 临时配置千问 Key：
 

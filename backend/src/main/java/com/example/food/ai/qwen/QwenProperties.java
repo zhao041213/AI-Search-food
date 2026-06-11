@@ -9,6 +9,7 @@ public class QwenProperties {
 
     private String apiKey = "";
     private String model = "qwen-plus";
+    private String visionModel = "qwen-vl-plus";
     private String endpoint = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
 
     public QwenProperties() {
@@ -34,6 +35,14 @@ public class QwenProperties {
 
     public void setModel(String model) {
         this.model = model;
+    }
+
+    public String visionModel() {
+        return visionModel;
+    }
+
+    public void setVisionModel(String visionModel) {
+        this.visionModel = visionModel;
     }
 
     public String endpoint() {

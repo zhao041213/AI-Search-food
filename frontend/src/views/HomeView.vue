@@ -75,6 +75,50 @@
               </div>
             </div>
 
+            <div v-if="showImageUpload" class="image-upload-panel" aria-label="上传图片识别食材">
+              <input
+                ref="imageInput"
+                class="visually-hidden"
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                @change="handleImageSelected"
+              />
+
+              <button class="upload-dropzone" type="button" @click="openImagePicker">
+                <img v-if="selectedImagePreview" :src="selectedImagePreview" alt="已选择的食材图片预览" />
+                <span v-else class="upload-empty">
+                  <ImagePlus :size="20" aria-hidden="true" />
+                  <strong>上传食材图片</strong>
+                  <em>支持 JPG、PNG、WebP，最大 5MB</em>
+                </span>
+              </button>
+
+              <div class="image-actions">
+                <el-button plain @click="openImagePicker">
+                  <ImagePlus :size="16" aria-hidden="true" />
+                  <span>{{ selectedImageFile ? '更换图片' : '选择图片' }}</span>
+                </el-button>
+                <el-button
+                  type="primary"
+                  :disabled="!selectedImageFile"
+                  :loading="recognizing"
+                  @click="recognizeUploadedImage"
+                >
+                  <ScanSearch :size="16" aria-hidden="true" />
+                  <span>识别食材</span>
+                </el-button>
+              </div>
+
+              <div v-if="recognizedIngredients.length" class="recognized-result">
+                <span v-for="ingredient in recognizedIngredients" :key="ingredient">
+                  {{ ingredient }}
+                </span>
+              </div>
+              <p v-if="recognitionDescription" class="recognition-summary">
+                {{ recognitionDescription }}
+              </p>
+            </div>
+
             <div class="search-actions">
               <el-button type="primary" size="large" :loading="generating" @click="runSearch">
                 <Sparkles :size="18" aria-hidden="true" />
@@ -224,7 +268,7 @@
 </template>
 
 <script setup>
-import { computed, markRaw, ref } from 'vue'
+import { computed, markRaw, onBeforeUnmount, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   Camera,
@@ -237,20 +281,26 @@ import {
   Sparkles,
   Video
 } from 'lucide-vue-next'
-import { generateRecipe } from '../api/recipes'
+import { generateRecipe, recognizeIngredients } from '../api/recipes'
 
 const ingredients = ref('')
 const mealType = ref('any')
 const goal = ref('balanced')
 const searchMode = ref('text')
+const imageInput = ref(null)
+const selectedImageFile = ref(null)
+const selectedImagePreview = ref('')
+const recognizedIngredients = ref([])
+const recognitionDescription = ref('')
 const lastSearch = ref(null)
 const recipe = ref(null)
 const generating = ref(false)
+const recognizing = ref(false)
 const currentRecipePage = ref(0)
 
 const modeCards = [
   { value: 'text', label: '文字输入', description: '手动输入现有食材', icon: markRaw(ScanSearch) },
-  { value: 'image', label: '图片识别', description: '上传或拍照识别食材', icon: markRaw(ImagePlus) },
+  { value: 'image', label: '图片识别', description: '上传图片识别食材', icon: markRaw(ImagePlus) },
   { value: 'multi', label: '多模态', description: '文本与图像联合分析', icon: markRaw(Camera) }
 ]
 
@@ -275,6 +325,7 @@ const modeLabels = {
 }
 
 const hasSearch = computed(() => Boolean(lastSearch.value))
+const showImageUpload = computed(() => searchMode.value !== 'text')
 const cleanIngredients = computed(() => lastSearch.value?.ingredients || '暂无')
 const mealTypeLabel = computed(() => mealLabels[lastSearch.value?.mealType || mealType.value] || mealLabels.any)
 const goalLabel = computed(() => goalLabels[lastSearch.value?.goal || goal.value] || goalLabels.balanced)
@@ -309,6 +360,10 @@ const activeRecipePageIndex = computed(() => {
   return Math.min(currentRecipePage.value, recipePages.value.length - 1)
 })
 const activeRecipePage = computed(() => recipePages.value[activeRecipePageIndex.value])
+
+onBeforeUnmount(() => {
+  revokeImagePreview()
+})
 
 async function runSearch() {
   const normalizedIngredients = ingredients.value
@@ -350,9 +405,96 @@ function resetSearch() {
   mealType.value = 'any'
   goal.value = 'balanced'
   searchMode.value = 'text'
+  clearSelectedImage()
   lastSearch.value = null
   recipe.value = null
   currentRecipePage.value = 0
+}
+
+function openImagePicker() {
+  imageInput.value?.click()
+}
+
+function handleImageSelected(event) {
+  const file = event.target.files?.[0]
+  if (!file) {
+    return
+  }
+
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+    ElMessage.warning('仅支持 JPG、PNG、WebP 图片')
+    event.target.value = ''
+    return
+  }
+
+  if (file.size > 5 * 1024 * 1024) {
+    ElMessage.warning('图片大小不能超过 5MB')
+    event.target.value = ''
+    return
+  }
+
+  selectedImageFile.value = file
+  recognizedIngredients.value = []
+  recognitionDescription.value = ''
+  revokeImagePreview()
+  selectedImagePreview.value = URL.createObjectURL(file)
+}
+
+async function recognizeUploadedImage() {
+  if (!selectedImageFile.value) {
+    ElMessage.warning('请先选择食材图片')
+    return
+  }
+
+  recognizing.value = true
+  try {
+    const response = await recognizeIngredients(selectedImageFile.value)
+    const result = response.data.data
+    recognizedIngredients.value = result?.ingredients || []
+    recognitionDescription.value = result?.description || ''
+    if (!recognizedIngredients.value.length) {
+      ElMessage.warning('未识别到明确食材，请更换图片后重试')
+      return
+    }
+    ingredients.value = mergeIngredients(ingredients.value, recognizedIngredients.value)
+    ElMessage.success('食材识别已完成')
+  } catch (error) {
+    ElMessage.error(getErrorMessage(error))
+  } finally {
+    recognizing.value = false
+  }
+}
+
+function mergeIngredients(currentText, newIngredients) {
+  const currentIngredients = currentText
+    .split(/[，,、\n]/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+  const merged = [...currentIngredients]
+  newIngredients.forEach((ingredient) => {
+    const normalized = ingredient.trim()
+    if (normalized && !merged.includes(normalized)) {
+      merged.push(normalized)
+    }
+  })
+  return merged.join('、')
+}
+
+function clearSelectedImage() {
+  selectedImageFile.value = null
+  recognizedIngredients.value = []
+  recognitionDescription.value = ''
+  revokeImagePreview()
+  if (imageInput.value) {
+    imageInput.value.value = ''
+  }
+}
+
+function revokeImagePreview() {
+  if (selectedImagePreview.value) {
+    URL.revokeObjectURL(selectedImagePreview.value)
+    selectedImagePreview.value = ''
+  }
 }
 
 function previousRecipePage() {
@@ -376,6 +518,12 @@ function getErrorMessage(error) {
     '千问服务调用失败，请稍后重试': '千问服务调用失败，请稍后重试',
     '千问服务未返回菜谱内容': '千问服务未返回菜谱内容',
     '千问返回内容不是有效菜谱 JSON': '千问返回内容格式异常',
+    '千问视觉服务调用失败，请稍后重试': '千问视觉服务调用失败，请稍后重试',
+    '千问视觉服务未返回识别内容': '千问视觉服务未返回识别内容',
+    '千问视觉返回内容不是有效食材 JSON': '千问视觉返回内容格式异常',
+    '请上传食材图片': '请先上传食材图片',
+    '图片大小不能超过 5MB': '图片大小不能超过 5MB',
+    '仅支持 JPG、PNG、WebP 图片': '仅支持 JPG、PNG、WebP 图片',
     'Invalid request parameters': '请求参数不合法',
     'Network Error': '网络连接失败，请检查后端服务'
   }
@@ -603,6 +751,111 @@ h3 {
   color: var(--app-text-faint);
   font-size: 11px;
   line-height: 1.35;
+}
+
+.image-upload-panel {
+  display: grid;
+  gap: 8px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.upload-dropzone {
+  display: grid;
+  place-items: center;
+  min-height: 90px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px dashed var(--app-line-strong);
+  border-radius: 8px;
+  color: var(--app-text-muted);
+  background: var(--app-surface);
+  cursor: pointer;
+  transition:
+    border-color 180ms ease,
+    background-color 180ms ease;
+}
+
+.upload-dropzone:hover,
+.upload-dropzone:focus-visible {
+  border-color: var(--app-accent);
+  background: var(--app-surface-soft);
+  outline: none;
+}
+
+.upload-dropzone img {
+  width: 100%;
+  height: 96px;
+  object-fit: cover;
+}
+
+.upload-empty {
+  display: grid;
+  place-items: center;
+  gap: 4px;
+  padding: 10px;
+  text-align: center;
+}
+
+.upload-empty strong {
+  color: var(--app-text);
+  font-size: 13px;
+}
+
+.upload-empty em {
+  color: var(--app-text-faint);
+  font-size: 11px;
+  font-style: normal;
+}
+
+.image-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.image-actions :deep(.el-button) {
+  min-height: 36px;
+  margin-left: 0;
+}
+
+.image-actions :deep(.el-button span) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.recognized-result {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.recognized-result span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--app-line-strong);
+  border-radius: 999px;
+  color: var(--app-text);
+  background: var(--app-surface-strong);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.recognition-summary {
+  margin: 0;
+  color: var(--app-text-muted);
+  font-size: 11px;
+  line-height: 1.5;
 }
 
 .search-actions {

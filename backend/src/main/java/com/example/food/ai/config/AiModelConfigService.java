@@ -13,6 +13,7 @@ import java.time.LocalDateTime;
 public class AiModelConfigService {
 
     private static final String TEXT_RECIPE_PURPOSE = "text_recipe";
+    private static final String VISION_PURPOSE = "vision";
     private static final String DEFAULT_PROVIDER = "qwen";
 
     private final AiModelConfigMapper aiModelConfigMapper;
@@ -37,6 +38,26 @@ public class AiModelConfigService {
                 valueOrDefault(config.getModelName(), qwenProperties.model()),
                 valueOrDefault(config.getEndpointUrl(), qwenProperties.endpoint()),
                 valueOrDefault(config.getApiKey(), qwenProperties.apiKey())
+        );
+    }
+
+    public AiModelRuntimeConfig visionRuntimeConfig() {
+        AiModelConfig config = primaryConfig(VISION_PURPOSE);
+        AiModelRuntimeConfig textRuntimeConfig = textRecipeRuntimeConfig();
+        String fallbackApiKey = qwenFallbackApiKey(textRuntimeConfig);
+        if (config == null || !Boolean.TRUE.equals(config.getEnabled())) {
+            return new AiModelRuntimeConfig(
+                    DEFAULT_PROVIDER,
+                    qwenProperties.visionModel(),
+                    qwenProperties.endpoint(),
+                    fallbackApiKey
+            );
+        }
+        return new AiModelRuntimeConfig(
+                valueOrDefault(config.getProvider(), DEFAULT_PROVIDER),
+                valueOrDefault(config.getModelName(), qwenProperties.visionModel()),
+                valueOrDefault(config.getEndpointUrl(), qwenProperties.endpoint()),
+                valueOrDefault(config.getApiKey(), fallbackApiKey)
         );
     }
 
@@ -78,8 +99,12 @@ public class AiModelConfigService {
     }
 
     private AiModelConfig primaryTextRecipeConfig() {
+        return primaryConfig(TEXT_RECIPE_PURPOSE);
+    }
+
+    private AiModelConfig primaryConfig(String purpose) {
         return aiModelConfigMapper.selectOne(new QueryWrapper<AiModelConfig>()
-                .eq("purpose", TEXT_RECIPE_PURPOSE)
+                .eq("purpose", purpose)
                 .eq("primary_model", 1)
                 .last("LIMIT 1"));
     }
@@ -124,6 +149,13 @@ public class AiModelConfigService {
                 qwenProperties.endpoint(),
                 qwenProperties.apiKey()
         );
+    }
+
+    private String qwenFallbackApiKey(AiModelRuntimeConfig textRuntimeConfig) {
+        if (DEFAULT_PROVIDER.equalsIgnoreCase(textRuntimeConfig.provider())) {
+            return valueOrDefault(textRuntimeConfig.apiKey(), qwenProperties.apiKey());
+        }
+        return qwenProperties.apiKey();
     }
 
     private String apiKeyPreview(String apiKey) {
