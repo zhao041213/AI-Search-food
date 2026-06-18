@@ -31,6 +31,22 @@ DASHSCOPE_VISION_MODEL=qwen-vl-plus
 
 默认启动使用内置 H2 临时数据库，方便前端和 AI 功能开发时不依赖 MySQL。生产或演示部署时必须替换 `JWT_SECRET`。`DASHSCOPE_API_KEY` 可作为兜底环境变量；管理员后台保存的 AI 接入配置会优先生效。图片食材识别默认使用 `DASHSCOPE_VISION_MODEL`，并复用千问兼容模式接口。Flyway 会自动创建业务表和初始配置。
 
+如果希望本地每次启动都自动带千问 Key，可以复制示例文件：
+
+```powershell
+Copy-Item backend/src/main/resources/application-local.example.yml backend/src/main/resources/application-local.yml
+```
+
+然后在 `application-local.yml` 中填写自己的 Key，并在 IDEA 启动配置中设置：
+
+```env
+SPRING_PROFILES_ACTIVE=local
+```
+
+IDEA 路径：`Run/Debug Configurations` -> `FoodApplication` -> `Environment variables`。
+
+`application-local.yml` 已被 Git 忽略，不会提交到 GitHub。管理员后台保存的 AI 接入配置仍然优先生效。
+
 需要接入 MySQL 时启用 `mysql` profile，并配置：
 
 ```powershell

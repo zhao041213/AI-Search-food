@@ -1,0 +1,4 @@
+app:
+  ai:
+    qwen:
+      api-key: your-dashscope-api-key

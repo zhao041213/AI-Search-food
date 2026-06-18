@@ -1,0 +1,4 @@
+app:
+  ai:
+    qwen:
+      api-key: local-profile-test-key
