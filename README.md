@@ -19,12 +19,9 @@ docs/      需求设计与阶段计划
 
 ## 后端配置
 
-默认读取本地 MySQL：
+默认本地启动配置：
 
 ```env
-MYSQL_URL=jdbc:mysql://localhost:3306/ai_smart_recipe?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
-MYSQL_USERNAME=root
-MYSQL_PASSWORD=root
 JWT_SECRET=change-this-secret-change-this-secret-32
 MOCK_LOGIN_CODE=123456
 DASHSCOPE_API_KEY=你的千问 API Key
@@ -32,7 +29,16 @@ DASHSCOPE_MODEL=qwen-plus
 DASHSCOPE_VISION_MODEL=qwen-vl-plus
 ```
 
-生产或演示部署时必须替换 `JWT_SECRET`。`DASHSCOPE_API_KEY` 可作为兜底环境变量；管理员后台保存的 AI 接入配置会优先生效。图片食材识别默认使用 `DASHSCOPE_VISION_MODEL`，并复用千问兼容模式接口。Flyway 会自动创建业务表和初始配置。
+默认启动使用内置 H2 临时数据库，方便前端和 AI 功能开发时不依赖 MySQL。生产或演示部署时必须替换 `JWT_SECRET`。`DASHSCOPE_API_KEY` 可作为兜底环境变量；管理员后台保存的 AI 接入配置会优先生效。图片食材识别默认使用 `DASHSCOPE_VISION_MODEL`，并复用千问兼容模式接口。Flyway 会自动创建业务表和初始配置。
+
+需要接入 MySQL 时启用 `mysql` profile，并配置：
+
+```powershell
+SPRING_PROFILES_ACTIVE=mysql
+MYSQL_URL=jdbc:mysql://localhost:3306/ai_smart_recipe?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+MYSQL_USERNAME=root
+MYSQL_PASSWORD=你的 MySQL 密码
+```
 
 当前 AI 接口：
 
