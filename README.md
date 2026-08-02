@@ -37,7 +37,7 @@ DASHSCOPE_VISION_MODEL=qwen-vl-plus
 Copy-Item backend/src/main/resources/application-local.example.yml backend/src/main/resources/application-local.yml
 ```
 
-然后在 `application-local.yml` 中填写自己的 Key，并在 IDEA 启动配置中设置：
+然后在 `application-local.yml` 中填写自己的 MySQL 连接信息和千问 Key，并在 IDEA 启动配置中设置：
 
 ```env
 SPRING_PROFILES_ACTIVE=local
@@ -45,7 +45,7 @@ SPRING_PROFILES_ACTIVE=local
 
 IDEA 路径：`Run/Debug Configurations` -> `FoodApplication` -> `Environment variables`。
 
-`application-local.yml` 已被 Git 忽略，不会提交到 GitHub。管理员后台保存的 AI 接入配置仍然优先生效。
+`application-local.yml` 已被 Git 忽略，不会提交到 GitHub。管理员后台保存的 AI 接入配置仍然优先生效。后续迁移到服务器数据库时，只需要把 `application-local.yml` 里的 `spring.datasource.url` 从 `localhost` 改成服务器地址。
 
 需要接入 MySQL 时启用 `mysql` profile，并配置：
 
