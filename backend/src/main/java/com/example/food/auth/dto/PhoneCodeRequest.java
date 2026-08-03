@@ -2,12 +2,10 @@ package com.example.food.auth.dto;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
-import jakarta.validation.constraints.Size;
 
 public record PhoneCodeRequest(
         @NotBlank
-        @Size(max = 32)
-        @Pattern(regexp = "^\\+?\\d{6,32}$")
+        @Pattern(regexp = "^1[3-9]\\d{9}$")
         String phone
 ) {
 }

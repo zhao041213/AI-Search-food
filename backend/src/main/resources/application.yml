@@ -24,8 +24,17 @@ app:
   jwt:
     secret: ${JWT_SECRET:change-this-secret-change-this-secret-32}
     expiration-minutes: ${JWT_EXPIRATION_MINUTES:1440}
-  auth:
-    mock-code: ${MOCK_LOGIN_CODE:123456}
+  sms:
+    provider: ${SMS_PROVIDER:mock}
+    code-expiry: ${SMS_CODE_EXPIRY:5m}
+    resend-interval: ${SMS_RESEND_INTERVAL:60s}
+    max-attempts: ${SMS_MAX_ATTEMPTS:5}
+    aliyun:
+      access-key-id: ${ALIBABA_CLOUD_ACCESS_KEY_ID:}
+      access-key-secret: ${ALIBABA_CLOUD_ACCESS_KEY_SECRET:}
+      sign-name: ${ALIYUN_SMS_SIGN_NAME:}
+      template-code: ${ALIYUN_SMS_TEMPLATE_CODE:}
+      endpoint: ${ALIYUN_SMS_ENDPOINT:dysmsapi.aliyuncs.com}
   ai:
     qwen:
       api-key: ${DASHSCOPE_API_KEY:}

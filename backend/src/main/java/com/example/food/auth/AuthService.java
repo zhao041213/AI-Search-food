@@ -6,12 +6,16 @@ import com.example.food.admin.AdminMapper;
 import com.example.food.auth.dto.AdminLoginRequest;
 import com.example.food.auth.dto.AuthResponse;
 import com.example.food.auth.dto.PhoneLoginRequest;
+import com.example.food.auth.dto.PhoneRegistrationRequest;
+import com.example.food.auth.verification.SmsSendResult;
+import com.example.food.auth.verification.VerificationCodeException;
+import com.example.food.auth.verification.VerificationCodePurpose;
+import com.example.food.auth.verification.VerificationCodeService;
 import com.example.food.security.AppRole;
 import com.example.food.security.AuthPrincipal;
 import com.example.food.security.JwtService;
 import com.example.food.user.User;
 import com.example.food.user.UserMapper;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -30,43 +34,75 @@ public class AuthService {
     private final AdminMapper adminMapper;
     private final JwtService jwtService;
     private final PasswordEncoder passwordEncoder;
-    private final String mockCode;
+    private final VerificationCodeService verificationCodeService;
 
     public AuthService(
             UserMapper userMapper,
             AdminMapper adminMapper,
             JwtService jwtService,
             PasswordEncoder passwordEncoder,
-            @Value("${app.auth.mock-code}") String mockCode
+            VerificationCodeService verificationCodeService
     ) {
         this.userMapper = userMapper;
         this.adminMapper = adminMapper;
         this.jwtService = jwtService;
         this.passwordEncoder = passwordEncoder;
-        this.mockCode = mockCode;
+        this.verificationCodeService = verificationCodeService;
     }
 
-    public String issueMockCode(String phone) {
-        if (!StringUtils.hasText(phone)) {
-            throw new IllegalArgumentException("Phone is required");
+    public SmsSendResult issueRegistrationCode(String phone) {
+        if (selectUserByPhone(phone) != null) {
+            throw new IllegalArgumentException("Phone already registered");
         }
-        return mockCode;
+        return verificationCodeService.issue(phone, VerificationCodePurpose.REGISTER);
     }
 
-    @Transactional(isolation = Isolation.READ_COMMITTED)
-    public AuthResponse loginUser(PhoneLoginRequest request) {
-        if (!mockCode.equals(request.code())) {
-            throw new IllegalArgumentException("Invalid verification code");
+    public SmsSendResult issueLoginCode(String phone) {
+        requireEnabledUser(phone);
+        return verificationCodeService.issue(phone, VerificationCodePurpose.LOGIN);
+    }
+
+    @Transactional(
+            isolation = Isolation.READ_COMMITTED,
+            noRollbackFor = VerificationCodeException.class
+    )
+    public AuthResponse registerUser(PhoneRegistrationRequest request) {
+        if (selectUserByPhone(request.phone()) != null) {
+            throw new IllegalArgumentException("Phone already registered");
         }
+
+        verificationCodeService.verify(
+                request.phone(),
+                VerificationCodePurpose.REGISTER,
+                request.code()
+        );
 
         LocalDateTime now = LocalDateTime.now();
-        User user = selectUserByPhone(request.phone());
-        if (user == null) {
-            user = createUser(request.phone(), now);
-        } else {
-            updateEnabledUserLoginTime(user, now);
+        User user = new User();
+        user.setPhone(request.phone());
+        user.setNickname(request.nickname().trim());
+        user.setRole(AppRole.USER.name());
+        user.setEnabled(true);
+        user.setCreatedAt(now);
+        user.setUpdatedAt(now);
+        user.setLastLoginAt(now);
+        try {
+            userMapper.insert(user);
+        } catch (DuplicateKeyException exception) {
+            throw new IllegalArgumentException("Phone already registered");
         }
+        return userResponse(user);
+    }
 
+    @Transactional(
+            isolation = Isolation.READ_COMMITTED,
+            noRollbackFor = VerificationCodeException.class
+    )
+    public AuthResponse loginUser(PhoneLoginRequest request) {
+        User user = requireEnabledUser(request.phone());
+        verificationCodeService.verify(request.phone(), VerificationCodePurpose.LOGIN, request.code());
+        LocalDateTime now = LocalDateTime.now();
+        updateEnabledUserLoginTime(user, now);
         return userResponse(user);
     }
 
@@ -82,28 +118,19 @@ public class AuthService {
         return adminResponse(admin);
     }
 
-    private User createUser(String phone, LocalDateTime now) {
-        User user = new User();
-        user.setPhone(phone);
-        user.setNickname(phone);
-        user.setRole(AppRole.USER.name());
-        user.setEnabled(true);
-        user.setLastLoginAt(now);
-        try {
-            userMapper.insert(user);
-        } catch (DuplicateKeyException exception) {
-            User existingUser = selectUserByPhone(phone);
-            if (existingUser == null) {
-                throw exception;
-            }
-            updateEnabledUserLoginTime(existingUser, now);
-            return existingUser;
-        }
-        return user;
-    }
-
     private User selectUserByPhone(String phone) {
         return userMapper.selectOne(new QueryWrapper<User>().eq("phone", phone));
+    }
+
+    private User requireEnabledUser(String phone) {
+        User user = selectUserByPhone(phone);
+        if (user == null) {
+            throw new IllegalArgumentException("User not registered");
+        }
+        if (!Boolean.TRUE.equals(user.getEnabled())) {
+            throw new IllegalArgumentException("User account disabled");
+        }
+        return user;
     }
 
     private void updateEnabledUserLoginTime(User user, LocalDateTime now) {

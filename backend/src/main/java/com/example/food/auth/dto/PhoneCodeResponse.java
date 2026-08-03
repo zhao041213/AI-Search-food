@@ -1,6 +1,7 @@
 package com.example.food.auth.dto;
 
 public record PhoneCodeResponse(
-        String code
+        String code,
+        long retryAfterSeconds
 ) {
 }

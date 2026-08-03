@@ -11,8 +11,10 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import org.springframework.http.MediaType;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -51,5 +53,23 @@ class AuthSecurityTest {
                         .header("Authorization", "Bearer bad-token"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value(401));
+    }
+
+    @Test
+    void userAuthenticationEndpointsArePublic() throws Exception {
+        String[] endpoints = {
+                "/api/auth/user/register/code",
+                "/api/auth/user/register",
+                "/api/auth/user/code",
+                "/api/auth/user/login"
+        };
+
+        for (String endpoint : endpoints) {
+            mockMvc.perform(post(endpoint)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{}"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value(400));
+        }
     }
 }

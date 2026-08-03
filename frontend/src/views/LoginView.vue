@@ -4,7 +4,7 @@
       <div class="panel-header">
         <p class="eyebrow">身份认证</p>
         <h1 id="login-title">登录系统</h1>
-        <span>手机号模拟登录与管理员入口</span>
+        <span>手机号登录、注册与管理员入口</span>
       </div>
 
       <el-tabs v-model="mode" stretch>
@@ -40,6 +40,54 @@
           </el-form>
         </el-tab-pane>
 
+        <el-tab-pane label="用户注册" name="register">
+          <el-form label-position="top" @submit.prevent="submitRegistration">
+            <el-form-item label="手机号">
+              <el-input
+                v-model.trim="registrationPhone"
+                autocomplete="tel"
+                inputmode="tel"
+                maxlength="11"
+                placeholder="请输入手机号"
+              />
+            </el-form-item>
+            <el-form-item label="验证码">
+              <el-input
+                v-model.trim="registrationCode"
+                autocomplete="one-time-code"
+                inputmode="numeric"
+                maxlength="6"
+                placeholder="请输入验证码"
+              />
+            </el-form-item>
+            <el-form-item label="昵称">
+              <el-input
+                v-model.trim="registrationNickname"
+                autocomplete="nickname"
+                maxlength="64"
+                placeholder="请输入昵称"
+              />
+            </el-form-item>
+
+            <div class="form-actions">
+              <el-button
+                class="code-button"
+                native-type="button"
+                :disabled="registrationCodeCountdown > 0"
+                :loading="requestingRegistrationCode"
+                @click="requestRegisterCode"
+              >
+                <KeyRound :size="16" aria-hidden="true" />
+                <span>{{ registrationCodeButtonText }}</span>
+              </el-button>
+              <el-button type="primary" native-type="submit" :loading="registering">
+                <UserPlus :size="16" aria-hidden="true" />
+                <span>注册并登录</span>
+              </el-button>
+            </div>
+          </el-form>
+        </el-tab-pane>
+
         <el-tab-pane label="管理员登录" name="admin">
           <el-form label-position="top" @submit.prevent="submitAdminLogin">
             <el-form-item label="管理员账号">
@@ -69,11 +117,17 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { KeyRound, LogIn, ShieldCheck } from 'lucide-vue-next'
-import { loginAdmin, loginUser, requestUserCode } from '../api/auth'
+import { KeyRound, LogIn, ShieldCheck, UserPlus } from 'lucide-vue-next'
+import {
+  loginAdmin,
+  loginUser,
+  registerUser,
+  requestRegistrationCode,
+  requestUserCode
+} from '../api/auth'
 import { useAuthStore } from '../stores/auth'
 
 const route = useRoute()
@@ -83,15 +137,35 @@ const auth = useAuthStore()
 const mode = ref(getRedirectPath('/').startsWith('/admin') ? 'admin' : 'user')
 const phone = ref('')
 const code = ref('')
+const registrationPhone = ref('')
+const registrationCode = ref('')
+const registrationNickname = ref('')
+const registrationCodeCountdown = ref(0)
 const username = ref('')
 const password = ref('')
 const requestingCode = ref(false)
+const requestingRegistrationCode = ref(false)
+const registering = ref(false)
 const loggingIn = ref(false)
+let registrationCountdownTimer
+
+const registrationCodeButtonText = computed(() =>
+  registrationCodeCountdown.value > 0
+    ? `${registrationCodeCountdown.value} 秒后重试`
+    : '获取验证码'
+)
 
 const messageMap = {
   'Invalid admin credentials': '管理员账号或密码错误',
   'Invalid request parameters': '请求参数不合法',
   'Invalid verification code': '验证码错误',
+  'Verification code invalid': '验证码错误',
+  'Verification code expired': '验证码已过期，请重新获取',
+  'Verification code already used': '验证码已使用，请重新获取',
+  'Too many verification attempts': '验证码错误次数过多，请重新获取',
+  'Code requested too frequently': '验证码发送过于频繁，请稍后再试',
+  'Phone already registered': '该手机号已经注册',
+  'User not registered': '该手机号尚未注册，请先注册',
   'User account disabled': '账号已被禁用',
   'Phone is required': '手机号不能为空',
   Unauthorized: '登录状态无效，请重新登录',
@@ -123,12 +197,70 @@ async function requestCode() {
 
   try {
     const response = await requestUserCode(phone.value)
-    code.value = response.data.data.code
-    ElMessage.success('验证码已获取')
+    const returnedCode = response.data.data?.code
+    if (returnedCode) {
+      code.value = returnedCode
+    }
+    ElMessage.success(returnedCode ? '验证码已获取' : '验证码已发送')
   } catch (error) {
     ElMessage.error(getErrorMessage(error, '验证码获取失败'))
   } finally {
     requestingCode.value = false
+  }
+}
+
+async function requestRegisterCode() {
+  if (!/^1[3-9]\d{9}$/.test(registrationPhone.value)) {
+    ElMessage.warning('请输入正确的手机号')
+    return
+  }
+
+  requestingRegistrationCode.value = true
+
+  try {
+    const response = await requestRegistrationCode(registrationPhone.value)
+    const returnedCode = response.data.data?.code
+    if (returnedCode) {
+      registrationCode.value = returnedCode
+    }
+    ElMessage.success(returnedCode ? '验证码已获取' : '验证码已发送')
+    startRegistrationCountdown(response.data.data?.retryAfterSeconds)
+  } catch (error) {
+    ElMessage.error(getErrorMessage(error, '验证码获取失败'))
+  } finally {
+    requestingRegistrationCode.value = false
+  }
+}
+
+async function submitRegistration() {
+  if (!/^1[3-9]\d{9}$/.test(registrationPhone.value)) {
+    ElMessage.warning('请输入正确的手机号')
+    return
+  }
+  if (!/^\d{6}$/.test(registrationCode.value)) {
+    ElMessage.warning('请输入 6 位验证码')
+    return
+  }
+  if (!registrationNickname.value) {
+    ElMessage.warning('请输入昵称')
+    return
+  }
+
+  registering.value = true
+
+  try {
+    const response = await registerUser(
+      registrationPhone.value,
+      registrationCode.value,
+      registrationNickname.value
+    )
+    auth.setAuth(response.data.data)
+    const targetPath = getRedirectPath('/')
+    router.push(targetPath.startsWith('/admin') ? '/' : targetPath)
+  } catch (error) {
+    ElMessage.error(getErrorMessage(error, '注册失败'))
+  } finally {
+    registering.value = false
   }
 }
 
@@ -170,6 +302,29 @@ async function submitAdminLogin() {
     loggingIn.value = false
   }
 }
+
+function startRegistrationCountdown(retryAfterSeconds) {
+  clearInterval(registrationCountdownTimer)
+  const parsedSeconds = Number(retryAfterSeconds)
+  registrationCodeCountdown.value = Number.isFinite(parsedSeconds)
+    ? Math.max(0, Math.ceil(parsedSeconds))
+    : 60
+  if (registrationCodeCountdown.value === 0) {
+    registrationCountdownTimer = undefined
+    return
+  }
+  registrationCountdownTimer = window.setInterval(() => {
+    registrationCodeCountdown.value -= 1
+    if (registrationCodeCountdown.value <= 0) {
+      clearInterval(registrationCountdownTimer)
+      registrationCountdownTimer = undefined
+    }
+  }, 1000)
+}
+
+onBeforeUnmount(() => {
+  clearInterval(registrationCountdownTimer)
+})
 </script>
 
 <style scoped>
@@ -255,6 +410,10 @@ h1 {
   min-height: 38px;
   margin-left: 0;
   font-weight: 700;
+}
+
+.form-actions :deep(.code-button) {
+  min-width: 132px;
 }
 
 .form-actions :deep(.el-button span) {

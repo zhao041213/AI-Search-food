@@ -12,5 +12,8 @@ app:
   jwt:
     secret: test-secret-test-secret-test-secret-32
     expiration-minutes: 1440
-  auth:
-    mock-code: "123456"
+  sms:
+    provider: mock
+    code-expiry: 5m
+    resend-interval: 60s
+    max-attempts: 5

@@ -1,0 +1,3 @@
+app:
+  sms:
+    provider: ${SMS_PROVIDER:aliyun}

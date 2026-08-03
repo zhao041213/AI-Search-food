@@ -4,6 +4,14 @@ export function requestUserCode(phone) {
   return http.post('/auth/user/code', { phone })
 }
 
+export function requestRegistrationCode(phone) {
+  return http.post('/auth/user/register/code', { phone })
+}
+
+export function registerUser(phone, code, nickname) {
+  return http.post('/auth/user/register', { phone, code, nickname })
+}
+
 export function loginUser(phone, code) {
   return http.post('/auth/user/login', { phone, code })
 }
