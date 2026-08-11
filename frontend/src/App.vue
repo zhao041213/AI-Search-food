@@ -8,17 +8,6 @@
         <span>AI 智能菜谱</span>
       </RouterLink>
 
-      <nav class="nav-links" aria-label="主导航">
-        <RouterLink class="nav-link" to="/">
-          <Home :size="17" aria-hidden="true" />
-          <span>菜谱搜索</span>
-        </RouterLink>
-        <RouterLink class="nav-link" to="/admin">
-          <ShieldCheck :size="17" aria-hidden="true" />
-          <span>管理后台</span>
-        </RouterLink>
-      </nav>
-
       <div class="account">
         <el-popover
           placement="bottom-end"
@@ -77,17 +66,49 @@
       </div>
     </el-header>
 
-    <el-main class="app-main">
-      <RouterView />
-    </el-main>
+    <el-container class="app-body">
+      <aside class="app-sidebar" aria-label="工作区导航">
+        <div class="sidebar-caption">工作区</div>
+        <RouterLink class="sidebar-link" to="/">
+          <Home :size="17" aria-hidden="true" />
+          <span>智能工作台</span>
+        </RouterLink>
+        <RouterLink class="sidebar-link" to="/recipes/saved">
+          <Bookmark :size="17" aria-hidden="true" />
+          <span>我的菜谱</span>
+        </RouterLink>
+
+        <div class="sidebar-caption sidebar-caption-spaced">功能扩展</div>
+        <RouterLink class="sidebar-link" :to="hotIngredientNavigation.to">
+          <Flame :size="17" aria-hidden="true" />
+          <span>{{ hotIngredientNavigation.label }}</span>
+        </RouterLink>
+        <button class="sidebar-placeholder" type="button" disabled title="功能暂未开放">
+          <Circle :size="17" aria-hidden="true" />
+        </button>
+        <button class="sidebar-placeholder" type="button" disabled title="功能暂未开放">
+          <Circle :size="17" aria-hidden="true" />
+        </button>
+
+        <RouterLink v-if="auth.isAdmin" class="sidebar-link sidebar-admin-link" to="/admin">
+          <ShieldCheck :size="17" aria-hidden="true" />
+          <span>管理后台</span>
+        </RouterLink>
+      </aside>
+
+      <el-main class="app-main">
+        <RouterView />
+      </el-main>
+    </el-container>
   </el-container>
 </template>
 
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { Home, LogIn, LogOut, Palette, ShieldCheck, Utensils } from 'lucide-vue-next'
+import { Bookmark, Circle, Flame, Home, LogIn, LogOut, Palette, ShieldCheck, Utensils } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from './stores/auth'
+import { getHotIngredientNavigation } from './utils/hotIngredientNavigation'
 
 const RECIPE_THEME_KEY = 'ai-recipe-theme'
 const themeOptions = [
@@ -245,6 +266,7 @@ const themeOptions = [
 
 const auth = useAuthStore()
 const router = useRouter()
+const hotIngredientNavigation = computed(() => getHotIngredientNavigation(auth.isAdmin))
 const activeTheme = ref(getInitialTheme())
 const roleDisplay = computed(() => ({ ADMIN: '管理员', USER: '普通用户' })[auth.role] || auth.role)
 const activeThemeConfig = computed(
@@ -671,9 +693,108 @@ function applyTheme(theme) {
 
 .app-main {
   padding: 0;
+  min-width: 0;
+}
+
+.app-body {
+  min-height: calc(100vh - 58px);
+}
+
+.app-sidebar {
+  display: flex;
+  width: 190px;
+  flex: 0 0 190px;
+  flex-direction: column;
+  gap: 6px;
+  padding: 24px 14px;
+  border-right: 1px solid var(--app-line);
+  background: var(--app-surface);
+}
+
+.sidebar-caption {
+  padding: 0 10px 7px;
+  color: var(--app-text-faint);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.sidebar-caption-spaced {
+  margin-top: 22px;
+}
+
+.sidebar-link,
+.sidebar-placeholder {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 0 11px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--app-text-muted);
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  text-align: left;
+  transition:
+    border-color 180ms ease,
+    background-color 180ms ease,
+    color 180ms ease;
+}
+
+.sidebar-link:hover,
+.sidebar-link.router-link-active {
+  border-color: var(--app-line);
+  color: var(--app-text);
+  background: var(--app-surface-soft);
+}
+
+.sidebar-placeholder {
+  justify-content: flex-start;
+  border-style: dashed;
+  color: var(--app-line-strong);
+  cursor: not-allowed;
+}
+
+.sidebar-admin-link {
+  margin-top: auto;
 }
 
 @media (max-width: 720px) {
+  .app-body {
+    flex-direction: column;
+    min-height: calc(100vh - 126px);
+  }
+
+  .app-sidebar {
+    width: 100%;
+    flex: 0 0 auto;
+    flex-direction: row;
+    align-items: center;
+    overflow-x: auto;
+    padding: 8px 12px;
+    border-right: 0;
+    border-bottom: 1px solid var(--app-line);
+  }
+
+  .sidebar-caption,
+  .sidebar-caption-spaced {
+    display: none;
+  }
+
+  .sidebar-link,
+  .sidebar-placeholder {
+    min-width: max-content;
+    min-height: 36px;
+  }
+
+  .sidebar-admin-link {
+    margin-top: 0;
+  }
+
   .app-header {
     flex-wrap: wrap;
     height: auto;
@@ -682,10 +803,6 @@ function applyTheme(theme) {
 
   .brand {
     width: 100%;
-  }
-
-  .nav-links {
-    flex: 1;
   }
 
   .account {

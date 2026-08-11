@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { useAuthStore } from '../stores/auth'
+import { getAnonymousId } from '../utils/anonymousId'
 
 export const http = axios.create({
   baseURL: '/api',
@@ -13,6 +14,9 @@ http.interceptors.request.use((config) => {
     config.headers = config.headers || {}
     config.headers.Authorization = `Bearer ${auth.token}`
   }
+
+  config.headers = config.headers || {}
+  config.headers['X-Anonymous-Id'] = getAnonymousId()
 
   return config
 })

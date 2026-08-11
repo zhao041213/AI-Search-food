@@ -1,6 +1,9 @@
 package com.example.food.security;
 
 import com.example.food.common.ApiResponse;
+import com.example.food.stats.HotIngredientStatsController;
+import com.example.food.stats.HotIngredientStatsService;
+import com.example.food.stats.dto.HotIngredientStatsResponse;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -18,7 +21,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(controllers = SecurityConfigTest.TestController.class)
+@WebMvcTest(controllers = {SecurityConfigTest.TestController.class, HotIngredientStatsController.class})
 @Import(SecurityConfig.class)
 class SecurityConfigTest {
 
@@ -27,6 +30,9 @@ class SecurityConfigTest {
 
     @MockBean
     private JwtService jwtService;
+
+    @MockBean
+    private HotIngredientStatsService hotIngredientStatsService;
 
     @Test
     void unauthenticatedProtectedEndpointReturnsJsonUnauthorized() throws Exception {
@@ -58,6 +64,16 @@ class SecurityConfigTest {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value(401))
                 .andExpect(jsonPath("$.message").value("Unauthorized"));
+    }
+
+    @Test
+    void hotIngredientRankingIsPublic() throws Exception {
+        when(hotIngredientStatsService.get("all", 10))
+                .thenReturn(new HotIngredientStatsResponse("all", 0, 0, null, java.util.List.of()));
+
+        mockMvc.perform(get("/api/stats/hot-ingredients"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.period").value("all"));
     }
 
     @RestController

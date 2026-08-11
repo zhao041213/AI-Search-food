@@ -11,3 +11,15 @@ export function recognizeIngredients(file) {
     timeout: 60000
   })
 }
+
+export function saveRecipe(payload) {
+  return http.post('/recipes/saved', payload)
+}
+
+export function listSavedRecipes(params = {}) {
+  return http.get('/recipes/saved', { params })
+}
+
+export function getSavedRecipe(id) {
+  return http.get(`/recipes/saved/${id}`)
+}

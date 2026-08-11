@@ -66,6 +66,7 @@
                   :class="{ active: searchMode === mode.value }"
                   type="button"
                   :aria-pressed="searchMode === mode.value"
+                  :disabled="mode.disabled"
                   @click="searchMode = mode.value"
                 >
                   <component :is="mode.icon" :size="18" aria-hidden="true" />
@@ -138,7 +139,21 @@
               <p class="eyebrow">菜谱输出窗口</p>
               <h2>{{ resultTitle }}</h2>
             </div>
-            <span class="status-pill">{{ generating ? '生成中' : searchModeLabel }}</span>
+            <div class="result-header-actions">
+              <el-button
+                v-if="recipe"
+                class="save-recipe-button"
+                :type="savedRecipeId ? 'success' : 'primary'"
+                plain
+                :loading="savingRecipe"
+                :disabled="Boolean(savedRecipeId)"
+                @click="saveCurrentRecipe"
+              >
+                <Bookmark :size="16" aria-hidden="true" />
+                <span>{{ savedRecipeId ? '已保存' : '保存到我的菜谱' }}</span>
+              </el-button>
+              <span class="status-pill">{{ generating ? '生成中' : searchModeLabel }}</span>
+            </div>
           </div>
 
           <div v-if="!hasSearch" class="empty-stage">
@@ -268,10 +283,11 @@
 </template>
 
 <script setup>
-import { computed, markRaw, onBeforeUnmount, ref } from 'vue'
+import { computed, markRaw, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   Camera,
+  Bookmark,
   ChefHat,
   ChevronLeft,
   ChevronRight,
@@ -281,7 +297,9 @@ import {
   Sparkles,
   Video
 } from 'lucide-vue-next'
-import { generateRecipe, recognizeIngredients } from '../api/recipes'
+import { useRoute, useRouter } from 'vue-router'
+import { generateRecipe, recognizeIngredients, saveRecipe } from '../api/recipes'
+import { useAuthStore } from '../stores/auth'
 
 const ingredients = ref('')
 const mealType = ref('any')
@@ -296,12 +314,19 @@ const lastSearch = ref(null)
 const recipe = ref(null)
 const generating = ref(false)
 const recognizing = ref(false)
+const savingRecipe = ref(false)
+const savedRecipeId = ref(null)
 const currentRecipePage = ref(0)
+const router = useRouter()
+const route = useRoute()
+const auth = useAuthStore()
+
+const PENDING_RECIPE_KEY = 'ai_smart_recipe_pending_save'
 
 const modeCards = [
   { value: 'text', label: '文字输入', description: '手动输入现有食材', icon: markRaw(ScanSearch) },
   { value: 'image', label: '图片识别', description: '上传图片识别食材', icon: markRaw(ImagePlus) },
-  { value: 'multi', label: '多模态', description: '文本与图像联合分析', icon: markRaw(Camera) }
+  { value: 'camera', label: '拍照识别', description: '功能暂未实现', icon: markRaw(Camera), disabled: true }
 ]
 
 const mealLabels = {
@@ -321,11 +346,11 @@ const goalLabels = {
 const modeLabels = {
   text: '文字输入',
   image: '图片识别',
-  multi: '多模态'
+  camera: '拍照识别'
 }
 
 const hasSearch = computed(() => Boolean(lastSearch.value))
-const showImageUpload = computed(() => searchMode.value !== 'text')
+const showImageUpload = computed(() => searchMode.value === 'image')
 const cleanIngredients = computed(() => lastSearch.value?.ingredients || '暂无')
 const mealTypeLabel = computed(() => mealLabels[lastSearch.value?.mealType || mealType.value] || mealLabels.any)
 const goalLabel = computed(() => goalLabels[lastSearch.value?.goal || goal.value] || goalLabels.balanced)
@@ -365,6 +390,24 @@ onBeforeUnmount(() => {
   revokeImagePreview()
 })
 
+onMounted(() => {
+  if (!applyRouteIngredient()) {
+    restorePendingRecipe()
+  }
+})
+
+function applyRouteIngredient() {
+  const routeIngredient = Array.isArray(route.query.ingredients)
+    ? route.query.ingredients[0]
+    : route.query.ingredients
+  if (!routeIngredient?.trim()) {
+    return false
+  }
+  ingredients.value = routeIngredient.trim()
+  searchMode.value = 'text'
+  return true
+}
+
 async function runSearch() {
   const normalizedIngredients = ingredients.value
     .split(/[，,、\n]/)
@@ -385,6 +428,7 @@ async function runSearch() {
   }
   lastSearch.value = request
   recipe.value = null
+  savedRecipeId.value = null
   currentRecipePage.value = 0
   generating.value = true
 
@@ -408,7 +452,76 @@ function resetSearch() {
   clearSelectedImage()
   lastSearch.value = null
   recipe.value = null
+  savedRecipeId.value = null
   currentRecipePage.value = 0
+  window.sessionStorage.removeItem(PENDING_RECIPE_KEY)
+}
+
+async function saveCurrentRecipe() {
+  if (!recipe.value || savingRecipe.value || savedRecipeId.value) {
+    return
+  }
+
+  if (!auth.isUser) {
+    window.sessionStorage.setItem(PENDING_RECIPE_KEY, JSON.stringify({
+      recipe: recipe.value,
+      lastSearch: lastSearch.value
+    }))
+    ElMessage.warning('请先登录，再保存到我的菜谱')
+    router.push({ name: 'login', query: { redirect: '/' } })
+    return
+  }
+
+  if (!recipe.value.searchLogId) {
+    ElMessage.error('当前菜谱缺少搜索记录，无法保存')
+    return
+  }
+
+  savingRecipe.value = true
+  try {
+    const response = await saveRecipe({
+      searchLogId: recipe.value.searchLogId,
+      title: recipe.value.title,
+      summary: recipe.value.summary,
+      effects: recipe.value.effects,
+      ingredients: recipe.value.ingredients,
+      steps: recipe.value.steps,
+      tips: recipe.value.tips,
+      videoKeywords: recipe.value.videoKeywords,
+      provider: recipe.value.provider,
+      model: recipe.value.model
+    })
+    savedRecipeId.value = response.data.data?.id || null
+    window.sessionStorage.removeItem(PENDING_RECIPE_KEY)
+    ElMessage.success('菜谱已保存到我的菜谱')
+  } catch (error) {
+    ElMessage.error(getErrorMessage(error))
+  } finally {
+    savingRecipe.value = false
+  }
+}
+
+function restorePendingRecipe() {
+  const pending = window.sessionStorage.getItem(PENDING_RECIPE_KEY)
+  if (!pending) {
+    return
+  }
+
+  try {
+    const draft = JSON.parse(pending)
+    if (draft?.recipe && draft?.lastSearch) {
+      recipe.value = draft.recipe
+      lastSearch.value = draft.lastSearch
+      ingredients.value = draft.lastSearch.ingredients || ''
+      mealType.value = draft.lastSearch.mealType || 'any'
+      goal.value = draft.lastSearch.goal || 'balanced'
+      searchMode.value = draft.lastSearch.searchMode || 'text'
+      currentRecipePage.value = 0
+      ElMessage.info('已恢复未保存的菜谱，请点击保存')
+    }
+  } catch {
+    window.sessionStorage.removeItem(PENDING_RECIPE_KEY)
+  }
 }
 
 function openImagePicker() {
@@ -739,6 +852,22 @@ h3 {
   transform: translateY(-1px);
 }
 
+.mode-card:disabled {
+  border-style: dashed;
+  color: var(--app-text-faint);
+  background: var(--app-surface-strong);
+  cursor: not-allowed;
+  opacity: 0.75;
+}
+
+.mode-card:disabled:hover,
+.mode-card:disabled:focus-visible {
+  border-color: var(--app-line);
+  color: var(--app-text-faint);
+  background: var(--app-surface-strong);
+  transform: none;
+}
+
 .mode-card strong {
   overflow: hidden;
   color: inherit;
@@ -888,6 +1017,18 @@ h3 {
   align-items: start;
   justify-content: space-between;
   gap: 12px;
+}
+
+.result-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.save-recipe-button {
+  white-space: nowrap;
 }
 
 .empty-stage {

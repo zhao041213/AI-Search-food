@@ -3,19 +3,33 @@ package com.example.food.ai.recipe;
 import com.example.food.ai.qwen.QwenRecipeClient;
 import com.example.food.ai.recipe.dto.RecipeGenerateRequest;
 import com.example.food.ai.recipe.dto.RecipeGenerateResponse;
+import com.example.food.recipe.SearchLogService;
+import com.example.food.security.AuthPrincipal;
 import org.springframework.stereotype.Service;
 
 @Service
 public class RecipeRecommendationService {
 
     private final QwenRecipeClient qwenRecipeClient;
+    private final SearchLogService searchLogService;
 
-    public RecipeRecommendationService(QwenRecipeClient qwenRecipeClient) {
+    public RecipeRecommendationService(QwenRecipeClient qwenRecipeClient, SearchLogService searchLogService) {
         this.qwenRecipeClient = qwenRecipeClient;
+        this.searchLogService = searchLogService;
     }
 
     public RecipeGenerateResponse generate(RecipeGenerateRequest request) {
-        return qwenRecipeClient.generateRecipe(buildPrompt(request));
+        return generate(request, null, null);
+    }
+
+    public RecipeGenerateResponse generate(
+            RecipeGenerateRequest request,
+            AuthPrincipal principal,
+            String anonymousId
+    ) {
+        RecipeGenerateResponse response = qwenRecipeClient.generateRecipe(buildPrompt(request));
+        Long searchLogId = searchLogService.record(request, response, principal, anonymousId);
+        return response.withSearchLogId(searchLogId);
     }
 
     private String buildPrompt(RecipeGenerateRequest request) {

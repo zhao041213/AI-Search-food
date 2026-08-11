@@ -15,6 +15,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -47,10 +49,16 @@ class RecipeControllerTest {
                 "qwen",
                 "qwen-plus"
         );
-        when(recipeRecommendationService.generate(any(RecipeGenerateRequest.class))).thenReturn(response);
+        response = response.withSearchLogId(42L);
+        when(recipeRecommendationService.generate(
+                any(RecipeGenerateRequest.class),
+                isNull(),
+                anyString()
+        )).thenReturn(response);
 
         mockMvc.perform(post("/api/ai/recipes/generate")
                         .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Anonymous-Id", "anonymous-12345678")
                         .content("""
                                 {
                                   "ingredients": "番茄、鸡蛋",
@@ -65,7 +73,8 @@ class RecipeControllerTest {
                 .andExpect(jsonPath("$.data.effects[0]").value("补充蛋白质"))
                 .andExpect(jsonPath("$.data.ingredients[0].name").value("番茄"))
                 .andExpect(jsonPath("$.data.steps[0].title").value("备菜"))
-                .andExpect(jsonPath("$.data.provider").value("qwen"));
+                .andExpect(jsonPath("$.data.provider").value("qwen"))
+                .andExpect(jsonPath("$.data.searchLogId").value(42));
     }
 
     @Test

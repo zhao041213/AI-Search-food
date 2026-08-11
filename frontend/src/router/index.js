@@ -4,6 +4,8 @@ import { useAuthStore } from '../stores/auth'
 import HomeView from '../views/HomeView.vue'
 import LoginView from '../views/LoginView.vue'
 import AdminDashboardView from '../views/AdminDashboardView.vue'
+import SavedRecipesView from '../views/SavedRecipesView.vue'
+import HotIngredientsView from '../views/HotIngredientsView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -23,6 +25,17 @@ const router = createRouter({
       name: 'admin',
       component: AdminDashboardView,
       meta: { requiresAdmin: true }
+    },
+    {
+      path: '/recipes/saved',
+      name: 'saved-recipes',
+      component: SavedRecipesView,
+      meta: { requiresUser: true }
+    },
+    {
+      path: '/stats/hot-ingredients',
+      name: 'hot-ingredients',
+      component: HotIngredientsView
     }
   ]
 })
@@ -37,7 +50,7 @@ function loginRedirect(to) {
 router.beforeEach(async (to) => {
   const auth = useAuthStore()
 
-  if (!to.meta.requiresAdmin) {
+  if (!to.meta.requiresAdmin && !to.meta.requiresUser) {
     return true
   }
 
@@ -52,7 +65,11 @@ router.beforeEach(async (to) => {
     return loginRedirect(to)
   }
 
-  if (!auth.isAdmin) {
+  if (to.meta.requiresAdmin && !auth.isAdmin) {
+    return loginRedirect(to)
+  }
+
+  if (to.meta.requiresUser && !auth.isUser) {
     return loginRedirect(to)
   }
 

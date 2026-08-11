@@ -6,13 +6,19 @@
           <p class="eyebrow">系统控制台</p>
           <h1 id="admin-title">管理后台</h1>
         </div>
-        <el-button type="primary" plain @click="logout">
-          <LogOut :size="16" aria-hidden="true" />
-          <span>退出登录</span>
-        </el-button>
+        <div class="admin-header-actions">
+          <el-radio-group v-model="activePanel" size="small" aria-label="后台功能">
+            <el-radio-button value="settings">系统设置</el-radio-button>
+            <el-radio-button value="hot-ingredients">热门分析</el-radio-button>
+          </el-radio-group>
+          <el-button type="primary" plain @click="logout">
+            <LogOut :size="16" aria-hidden="true" />
+            <span>退出登录</span>
+          </el-button>
+        </div>
       </header>
 
-      <div class="admin-grid">
+      <div v-if="activePanel === 'settings'" class="admin-grid">
         <section class="summary-grid" aria-label="系统概览">
           <article class="summary-card">
             <span class="card-label">当前账号</span>
@@ -107,6 +113,7 @@
           </el-table>
         </section>
       </div>
+      <AdminHotIngredientsPanel v-else />
     </section>
   </main>
 </template>
@@ -114,18 +121,27 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { LogOut, PanelTopOpen, PlugZap, Save } from 'lucide-vue-next'
 import { getTextRecipeAiConfig, saveTextRecipeAiConfig } from '../api/adminAiConfig'
+import AdminHotIngredientsPanel from '../components/AdminHotIngredientsPanel.vue'
 import { useAuthStore } from '../stores/auth'
+import { buildAdminPanelQuery, resolveAdminPanel } from '../utils/hotIngredientNavigation'
 
 const auth = useAuthStore()
+const route = useRoute()
 const router = useRouter()
 const roleLabel = computed(() => ({ ADMIN: '管理员', USER: '普通用户' })[auth.role] || auth.role)
 const configLoading = ref(false)
 const savingConfig = ref(false)
 const apiKeyConfigured = ref(false)
 const apiKeyPreview = ref('')
+const activePanel = computed({
+  get: () => resolveAdminPanel(route.query.panel),
+  set: (panel) => {
+    router.replace({ name: 'admin', query: buildAdminPanelQuery(route.query, panel) })
+  }
+})
 const aiConfig = ref({
   provider: 'qwen',
   modelName: 'qwen-plus',
@@ -237,6 +253,12 @@ function logout() {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+}
+
+.admin-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .eyebrow {
@@ -410,6 +432,12 @@ h2 {
   }
 
   .admin-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .admin-header-actions {
+    width: 100%;
     align-items: flex-start;
     flex-direction: column;
   }
