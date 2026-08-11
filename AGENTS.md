@@ -29,11 +29,15 @@ Before changing code:
 - Inspect the relevant files and tests.
 - State a short plan when the change is not trivial.
 - Keep the scope tied to the requested feature, fix, or documentation update.
+- Proceed autonomously with routine engineering work after the task is clear. Do not interrupt the user for step-by-step approval of file inspection, focused backend changes, tests, builds, local service control, or other necessary development operations.
+- Before changing frontend layout, visual design, interaction flow, or user-visible frontend functionality, describe the proposed change concisely and wait for the user's explicit approval.
+- Platform-required permission prompts may still be necessary and do not replace the frontend approval rule.
 
 After changing code:
 
 - Review the diff before reporting completion.
-- Run relevant verification when practical.
+- Automatically run all relevant verification, including unit tests, integration tests, frontend tests, builds, lint checks, schema checks, and focused browser checks when applicable. Do not ask the user whether these verification steps should be run.
+- If verification requires execution outside the sandbox, request the required platform permission directly without first asking in a conversational message. Platform permission dialogs may still appear and cannot be bypassed by repository instructions.
 - For this Maven project, prefer:
 
 ```powershell
@@ -42,6 +46,15 @@ mvn "-Dmaven.repo.local=D:\AI-Search-food\.m2" test
 
 - If verification cannot be run, explain the exact reason.
 - Ask the user whether to commit the branch and push it to GitHub.
+- After each feature is implemented and reviewed, list the remaining unimplemented features for the user to choose from.
+- Mark the recommended next feature and wait for the user's selection before starting another feature.
+
+## Automated Test Process Cleanup
+
+- Track every temporary process started by the agent for automated verification, including frontend development servers, backend services, databases, mock services, browser helpers, and their child processes.
+- After verification finishes, stop all temporary processes started by the agent and verify that their ports have been released, so the user can start the project manually.
+- Never stop a process started by the user unless the user explicitly requests it.
+- Do not leave a verification server running after reporting completion unless the user explicitly asks for it to remain available.
 
 ## Review Requirement
 
