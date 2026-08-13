@@ -73,7 +73,7 @@
           <Home :size="17" aria-hidden="true" />
           <span>智能工作台</span>
         </RouterLink>
-        <RouterLink class="sidebar-link" to="/recipes/saved">
+        <RouterLink v-if="shouldShowSavedRecipesNavigation(auth.role)" class="sidebar-link" to="/recipes/saved">
           <Bookmark :size="17" aria-hidden="true" />
           <span>我的菜谱</span>
         </RouterLink>
@@ -108,7 +108,7 @@ import { computed, ref, watch } from 'vue'
 import { Bookmark, Circle, Flame, Home, LogIn, LogOut, Palette, ShieldCheck, Utensils } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from './stores/auth'
-import { getHotIngredientNavigation } from './utils/hotIngredientNavigation'
+import { getHotIngredientNavigation, shouldShowSavedRecipesNavigation } from './utils/hotIngredientNavigation'
 
 const RECIPE_THEME_KEY = 'ai-recipe-theme'
 const themeOptions = [

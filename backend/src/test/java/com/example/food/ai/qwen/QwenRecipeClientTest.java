@@ -39,12 +39,14 @@ class QwenRecipeClientTest {
                 .andExpect(header("Authorization", "Bearer test-api-key"))
                 .andExpect(jsonPath("$.model").value("qwen-plus"))
                 .andExpect(jsonPath("$.messages[0].role").value("system"))
+                .andExpect(jsonPath("$.messages[0].content")
+                        .value(org.hamcrest.Matchers.containsString("只输出可解析的 JSON")))
                 .andRespond(withSuccess("""
                         {
                           "choices": [
                             {
                               "message": {
-                                "content": "{\\"title\\":\\"番茄炒蛋\\",\\"summary\\":\\"家常快手菜\\",\\"effects\\":[\\"补充蛋白质\\"],\\"ingredients\\":[{\\"name\\":\\"番茄\\",\\"amount\\":\\"2个\\"}],\\"steps\\":[{\\"order\\":1,\\"title\\":\\"备菜\\",\\"description\\":\\"番茄切块。\\",\\"durationMinutes\\":5}],\\"tips\\":[\\"先炒鸡蛋\\"],\\"videoKeywords\\":[\\"番茄炒蛋 做法\\"]}"
+                                "content": "{\\"title\\":\\"番茄炒蛋\\",\\"summary\\":\\"家常快手菜\\",\\"effects\\":[\\"补充蛋白质\\"],\\"ingredients\\":[{\\"name\\":\\"番茄\\",\\"amount\\":\\"2个\\"},{\\"name\\":\\"鸡蛋\\",\\"amount\\":\\"2个\\"}],\\"missingIngredients\\":[{\\"name\\":\\"鸡蛋\\",\\"amount\\":\\"2个\\",\\"substitutes\\":[\\"嫩豆腐\\"],\\"reason\\":\\"用户已有食材中没有鸡蛋\\"}],\\"steps\\":[{\\"order\\":1,\\"title\\":\\"备菜\\",\\"description\\":\\"番茄切块。\\",\\"durationMinutes\\":5}],\\"tips\\":[\\"先炒鸡蛋\\"],\\"videoKeywords\\":[\\"番茄炒蛋 做法\\"],\\"explanation\\":{\\"pairingLogic\\":\\"酸甜与鲜香搭配\\",\\"nutrition\\":\\"包含蛋白质和维生素\\",\\"cookingPrinciple\\":\\"分开炒制有利于保持口感\\"}}"
                               }
                             }
                           ]
@@ -55,7 +57,14 @@ class QwenRecipeClientTest {
 
         assertThat(response.title()).isEqualTo("番茄炒蛋");
         assertThat(response.effects()).containsExactly("补充蛋白质");
-        assertThat(response.ingredients()).extracting(RecipeGenerateResponse.Ingredient::name).containsExactly("番茄");
+        assertThat(response.ingredients()).extracting(RecipeGenerateResponse.Ingredient::name)
+                .containsExactly("番茄", "鸡蛋");
+        assertThat(response.missingIngredients()).hasSize(1);
+        assertThat(response.missingIngredients().get(0).name()).isEqualTo("鸡蛋");
+        assertThat(response.missingIngredients().get(0).substitutes()).containsExactly("嫩豆腐");
+        assertThat(response.explanation().pairingLogic()).isEqualTo("酸甜与鲜香搭配");
+        assertThat(response.explanation().nutrition()).isEqualTo("包含蛋白质和维生素");
+        assertThat(response.explanation().cookingPrinciple()).isEqualTo("分开炒制有利于保持口感");
         assertThat(response.steps()).extracting(RecipeGenerateResponse.Step::title).containsExactly("备菜");
         assertThat(response.provider()).isEqualTo("qwen");
         assertThat(response.model()).isEqualTo("qwen-plus");
@@ -100,6 +109,11 @@ class QwenRecipeClientTest {
 
         assertThat(response.title()).isEqualTo("青椒肉丝");
         assertThat(response.model()).isEqualTo("qwen-max");
+        assertThat(response.missingIngredients()).isEmpty();
+        assertThat(response.explanation()).isNotNull();
+        assertThat(response.explanation().pairingLogic()).isEmpty();
+        assertThat(response.explanation().nutrition()).isEmpty();
+        assertThat(response.explanation().cookingPrinciple()).isEmpty();
         server.verify();
     }
 }

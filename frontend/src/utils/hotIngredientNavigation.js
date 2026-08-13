@@ -1,6 +1,10 @@
 const HOT_INGREDIENT_PANEL = 'hot-ingredients'
 const SETTINGS_PANEL = 'settings'
 
+export function shouldShowSavedRecipesNavigation(role) {
+  return role === 'USER'
+}
+
 export function getHotIngredientNavigation(isAdmin) {
   if (isAdmin) {
     return {

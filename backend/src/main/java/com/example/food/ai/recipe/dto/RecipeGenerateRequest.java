@@ -9,6 +9,16 @@ public record RecipeGenerateRequest(
         String ingredients,
         String mealType,
         String goal,
-        String searchMode
+        String searchMode,
+        String regenerationPreference,
+        String previousTitle
 ) {
+    public RecipeGenerateRequest(
+            String ingredients,
+            String mealType,
+            String goal,
+            String searchMode
+    ) {
+        this(ingredients, mealType, goal, searchMode, null, null);
+    }
 }

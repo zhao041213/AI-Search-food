@@ -98,6 +98,11 @@ class RecipePersistenceIntegrationTest {
         assertThat(detail.recipe().title()).isEqualTo("番茄炒鸡蛋");
         assertThat(detail.recipe().ingredients()).hasSize(2);
         assertThat(detail.recipe().steps()).hasSize(2);
+        assertThat(detail.recipe().missingIngredients()).singleElement().satisfies(item -> {
+            assertThat(item.name()).isEqualTo("鸡蛋");
+            assertThat(item.substitutes()).containsExactly("嫩豆腐");
+        });
+        assertThat(detail.recipe().explanation().pairingLogic()).isEqualTo("番茄的酸甜与鸡蛋的鲜香互补");
         assertThat(detail.searchIngredients()).isEqualTo("番茄、鸡蛋");
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM recipe_ingredients WHERE recipe_id = ?",
@@ -123,9 +128,11 @@ class RecipePersistenceIntegrationTest {
                 recipe.summary(),
                 recipe.effects(),
                 recipe.ingredients(),
+                recipe.missingIngredients(),
                 recipe.steps(),
                 recipe.tips(),
                 recipe.videoKeywords(),
+                recipe.explanation(),
                 recipe.provider(),
                 recipe.model()
         );
@@ -140,12 +147,23 @@ class RecipePersistenceIntegrationTest {
                         new RecipeGenerateResponse.Ingredient("番茄", "2个"),
                         new RecipeGenerateResponse.Ingredient("鸡蛋", "3个")
                 ),
+                List.of(new RecipeGenerateResponse.MissingIngredient(
+                        "鸡蛋",
+                        "3个",
+                        List.of("嫩豆腐"),
+                        "用户未提供鸡蛋"
+                )),
                 List.of(
                         new RecipeGenerateResponse.Step(1, "准备食材", "番茄切块并打散鸡蛋", 5),
                         new RecipeGenerateResponse.Step(2, "翻炒", "依次炒熟鸡蛋和番茄", 8)
                 ),
                 List.of("番茄出汁后再调味"),
                 List.of("番茄炒鸡蛋教程"),
+                new RecipeGenerateResponse.Explanation(
+                        "番茄的酸甜与鸡蛋的鲜香互补",
+                        "包含蛋白质与维生素",
+                        "分开炒制能保持嫩度"
+                ),
                 "qwen",
                 "qwen-plus",
                 searchLogId

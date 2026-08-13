@@ -4,7 +4,7 @@
       <header class="workspace-heading">
         <div>
           <p class="eyebrow">AI 菜谱指挥舱</p>
-          <h1 id="home-title">AI Ingredient Intelligence Workbench</h1>
+          <h1 id="home-title">AI 食材智能工作台</h1>
         </div>
         <div class="signal-strip" aria-label="当前推荐信号">
           <span>{{ searchModeLabel }}</span>
@@ -140,13 +140,41 @@
               <h2>{{ resultTitle }}</h2>
             </div>
             <div class="result-header-actions">
+              <el-dropdown
+                v-if="recipe"
+                trigger="click"
+                :disabled="generating || savingRecipe"
+                @command="regenerateCurrentRecipe"
+              >
+                <el-button
+                  class="regenerate-recipe-button"
+                  plain
+                  :loading="regenerating"
+                  :disabled="generating || savingRecipe"
+                >
+                  <RefreshCw :size="16" aria-hidden="true" />
+                  <span>重新生成</span>
+                  <ChevronDown :size="15" aria-hidden="true" />
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item
+                      v-for="option in regenerationOptions"
+                      :key="option.value"
+                      :command="option.value"
+                    >
+                      {{ option.label }}
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
               <el-button
                 v-if="recipe"
                 class="save-recipe-button"
                 :type="savedRecipeId ? 'success' : 'primary'"
                 plain
                 :loading="savingRecipe"
-                :disabled="Boolean(savedRecipeId)"
+                :disabled="Boolean(savedRecipeId) || generating"
                 @click="saveCurrentRecipe"
               >
                 <Bookmark :size="16" aria-hidden="true" />
@@ -241,6 +269,82 @@
                     <el-table-column prop="amount" label="用量" min-width="120" />
                   </el-table>
 
+                  <el-table
+                    v-else-if="activeRecipePage.key === 'analysis'"
+                    :data="ingredientAnalysisRows"
+                    size="large"
+                  >
+                    <el-table-column prop="name" label="食材" min-width="100" />
+                    <el-table-column prop="amount" label="用量" min-width="88" />
+                    <el-table-column label="状态" min-width="82">
+                      <template #default="scope">
+                        <span class="ingredient-state" :class="scope.row.alreadyOwned ? 'owned' : 'missing'">
+                          {{ scope.row.alreadyOwned ? '已有' : '缺失' }}
+                        </span>
+                      </template>
+                    </el-table-column>
+                    <el-table-column label="替代建议" min-width="160">
+                      <template #default="scope">
+                        {{ scope.row.substitutesText || '暂无替代建议' }}
+                      </template>
+                    </el-table-column>
+                    <el-table-column label="说明" min-width="180">
+                      <template #default="scope">
+                        {{ scope.row.reason || (scope.row.alreadyOwned ? '可直接使用现有食材' : '建议按清单补充') }}
+                      </template>
+                    </el-table-column>
+                  </el-table>
+
+                  <el-table
+                    v-else-if="activeRecipePage.key === 'shopping'"
+                    :data="shoppingList"
+                    size="large"
+                  >
+                    <el-table-column prop="name" label="全部食材" min-width="105" />
+                    <el-table-column prop="amount" label="用量" min-width="90" />
+                    <el-table-column label="状态" min-width="82">
+                      <template #default="scope">
+                        <span class="ingredient-state" :class="scope.row.alreadyOwned ? 'owned' : 'missing'">
+                          {{ scope.row.alreadyOwned ? '已有' : '待购' }}
+                        </span>
+                      </template>
+                    </el-table-column>
+                    <el-table-column label="购买链接" min-width="150">
+                      <template #default="scope">
+                        <div class="purchase-links">
+                          <a
+                            :href="scope.row.purchaseLinks.dingdong"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            @click="preparePlatformSearch(scope.row.name)"
+                          >
+                            叮咚买菜
+                            <ExternalLink :size="13" aria-hidden="true" />
+                          </a>
+                          <a
+                            :href="scope.row.purchaseLinks.hema"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            @click="preparePlatformSearch(scope.row.name)"
+                          >
+                            盒马鲜生
+                            <ExternalLink :size="13" aria-hidden="true" />
+                          </a>
+                        </div>
+                      </template>
+                    </el-table-column>
+                  </el-table>
+
+                  <div v-else-if="activeRecipePage.key === 'explanation'" class="explanation-grid">
+                    <article v-for="item in explanationItems" :key="item.key" class="explanation-item">
+                      <component :is="item.icon" :size="18" aria-hidden="true" />
+                      <div>
+                        <h4>{{ item.label }}</h4>
+                        <p>{{ item.content }}</p>
+                      </div>
+                    </article>
+                  </div>
+
                   <ol v-else-if="activeRecipePage.key === 'steps'" class="step-list">
                     <li v-for="step in recipe.steps" :key="step.order || step.title">
                       <strong>{{ step.title }}</strong>
@@ -254,10 +358,17 @@
                   </ul>
 
                   <div v-else-if="activeRecipePage.key === 'videos'" class="video-keywords">
-                    <span v-for="keyword in recipe.videoKeywords" :key="keyword">
+                    <a
+                      v-for="keyword in videoKeywords"
+                      :key="keyword"
+                      :href="buildBilibiliSearchLink(keyword)"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
                       <Video :size="15" aria-hidden="true" />
                       {{ keyword }}
-                    </span>
+                      <ExternalLink :size="13" aria-hidden="true" />
+                    </a>
                   </div>
                 </section>
 
@@ -289,9 +400,15 @@ import {
   Camera,
   Bookmark,
   ChefHat,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ExternalLink,
+  Flame,
+  HeartPulse,
   ImagePlus,
+  Network,
+  RefreshCw,
   RotateCcw,
   ScanSearch,
   Sparkles,
@@ -300,6 +417,14 @@ import {
 import { useRoute, useRouter } from 'vue-router'
 import { generateRecipe, recognizeIngredients, saveRecipe } from '../api/recipes'
 import { useAuthStore } from '../stores/auth'
+import {
+  buildPurchaseLinks,
+  buildBilibiliSearchLink,
+  buildShoppingList,
+  copyIngredientName,
+  filterVideoKeywords,
+  parseIngredientNames
+} from '../utils/recipeEnhancements'
 
 const ingredients = ref('')
 const mealType = ref('any')
@@ -313,6 +438,7 @@ const recognitionDescription = ref('')
 const lastSearch = ref(null)
 const recipe = ref(null)
 const generating = ref(false)
+const regenerating = ref(false)
 const recognizing = ref(false)
 const savingRecipe = ref(false)
 const savedRecipeId = ref(null)
@@ -322,6 +448,13 @@ const route = useRoute()
 const auth = useAuthStore()
 
 const PENDING_RECIPE_KEY = 'ai_smart_recipe_pending_save'
+
+const regenerationOptions = [
+  { value: 'simple', label: '更简单' },
+  { value: 'light', label: '低油低卡' },
+  { value: 'quick', label: '缩短时间' },
+  { value: 'taste', label: '调整口味' }
+]
 
 const modeCards = [
   { value: 'text', label: '文字输入', description: '手动输入现有食材', icon: markRaw(ScanSearch) },
@@ -366,6 +499,28 @@ const recommendationRows = computed(() => [
   { name: '用餐时间', value: mealTypeLabel.value },
   { name: '输入方式', value: modeLabels[lastSearch.value?.searchMode] || modeLabels.text }
 ])
+const shoppingList = computed(() => buildRecipeShoppingList(
+  recipe.value,
+  lastSearch.value?.ingredients || ingredients.value
+))
+const ingredientAnalysisRows = computed(() => shoppingList.value.map((item) => {
+  const missing = findMissingIngredient(recipe.value?.missingIngredients, item.name)
+  return {
+    ...item,
+    alreadyOwned: missing ? false : item.alreadyOwned,
+    substitutesText: formatSubstitutes(missing?.substitutes),
+    reason: missing?.reason || ''
+  }
+}))
+const explanationItems = computed(() => {
+  const explanation = recipe.value?.explanation || {}
+  return [
+    { key: 'pairingLogic', label: '搭配逻辑', content: explanation.pairingLogic, icon: markRaw(Network) },
+    { key: 'nutrition', label: '营养说明', content: explanation.nutrition, icon: markRaw(HeartPulse) },
+    { key: 'cookingPrinciple', label: '烹饪原理', content: explanation.cookingPrinciple, icon: markRaw(Flame) }
+  ].filter((item) => item.content)
+})
+const videoKeywords = computed(() => filterVideoKeywords(recipe.value?.videoKeywords))
 const recipePages = computed(() => {
   if (!recipe.value) {
     return []
@@ -373,9 +528,12 @@ const recipePages = computed(() => {
 
   return [
     recipe.value.ingredients?.length ? { key: 'ingredients', label: '所需食材' } : null,
+    ingredientAnalysisRows.value.length ? { key: 'analysis', label: '食材分析' } : null,
+    shoppingList.value.length ? { key: 'shopping', label: '采购清单' } : null,
+    explanationItems.value.length ? { key: 'explanation', label: 'AI 解释' } : null,
     recipe.value.steps?.length ? { key: 'steps', label: '烹饪步骤' } : null,
     recipe.value.tips?.length ? { key: 'tips', label: '烹饪建议' } : null,
-    recipe.value.videoKeywords?.length ? { key: 'videos', label: '视频关键词' } : null
+    videoKeywords.value.length ? { key: 'videos', label: '视频关键词' } : null
   ].filter(Boolean)
 })
 const activeRecipePageIndex = computed(() => {
@@ -409,11 +567,7 @@ function applyRouteIngredient() {
 }
 
 async function runSearch() {
-  const normalizedIngredients = ingredients.value
-    .split(/[，,、\n]/)
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .join(', ')
+  const normalizedIngredients = parseIngredientNames(ingredients.value).join(', ')
 
   if (!normalizedIngredients) {
     ElMessage.warning('请至少输入一种食材')
@@ -488,6 +642,8 @@ async function saveCurrentRecipe() {
       steps: recipe.value.steps,
       tips: recipe.value.tips,
       videoKeywords: recipe.value.videoKeywords,
+      missingIngredients: recipe.value.missingIngredients,
+      explanation: recipe.value.explanation,
       provider: recipe.value.provider,
       model: recipe.value.model
     })
@@ -498,6 +654,45 @@ async function saveCurrentRecipe() {
     ElMessage.error(getErrorMessage(error))
   } finally {
     savingRecipe.value = false
+  }
+}
+
+async function regenerateCurrentRecipe(preference) {
+  if (!recipe.value || !lastSearch.value || generating.value) {
+    return
+  }
+
+  const currentRecipe = recipe.value
+  const currentSavedRecipeId = savedRecipeId.value
+  const request = {
+    ingredients: lastSearch.value.ingredients,
+    mealType: lastSearch.value.mealType,
+    goal: lastSearch.value.goal,
+    searchMode: lastSearch.value.searchMode,
+    regenerationPreference: preference,
+    previousTitle: currentRecipe.title
+  }
+
+  generating.value = true
+  regenerating.value = true
+  try {
+    const response = await generateRecipe(request)
+    const generatedRecipe = response.data.data
+    if (!generatedRecipe) {
+      throw new Error('模型未返回新菜谱')
+    }
+    recipe.value = generatedRecipe
+    savedRecipeId.value = null
+    currentRecipePage.value = 0
+    window.sessionStorage.removeItem(PENDING_RECIPE_KEY)
+    ElMessage.success('新版本菜谱已生成')
+  } catch (error) {
+    recipe.value = currentRecipe
+    savedRecipeId.value = currentSavedRecipeId
+    ElMessage.error(getErrorMessage(error))
+  } finally {
+    regenerating.value = false
+    generating.value = false
   }
 }
 
@@ -591,6 +786,53 @@ function mergeIngredients(currentText, newIngredients) {
     }
   })
   return merged.join('、')
+}
+
+function buildRecipeShoppingList(recipeData, ownedIngredients) {
+  if (!recipeData) {
+    return []
+  }
+
+  return buildShoppingList(recipeData.ingredients, parseIngredientNames(ownedIngredients)).map((item) => ({
+    ...item,
+    alreadyOwned: findMissingIngredient(recipeData.missingIngredients, item.name)
+      ? false
+      : item.alreadyOwned,
+    purchaseLinks: item.purchaseLinks || buildPurchaseLinks(item.name)
+  }))
+}
+
+function findMissingIngredient(missingIngredients, ingredientName) {
+  const target = parseIngredientNames([ingredientName])[0]?.toLocaleLowerCase()
+  if (!target) {
+    return null
+  }
+
+  return (Array.isArray(missingIngredients) ? missingIngredients : []).find((item) => {
+    const sourceName = typeof item === 'string' ? item : item?.name
+    const normalized = parseIngredientNames([sourceName])[0]?.toLocaleLowerCase()
+    return normalized === target
+  }) || null
+}
+
+function formatSubstitutes(substitutes) {
+  if (!Array.isArray(substitutes)) {
+    return typeof substitutes === 'string' ? substitutes : ''
+  }
+  return substitutes
+    .map((item) => typeof item === 'string' ? item : item?.name)
+    .filter(Boolean)
+    .join('、')
+}
+
+async function preparePlatformSearch(ingredientName) {
+  try {
+    if (await copyIngredientName(ingredientName, navigator.clipboard)) {
+      ElMessage.info(`已复制“${ingredientName}”，请在平台中粘贴搜索`)
+    }
+  } catch {
+    ElMessage.info(`请在平台中搜索“${ingredientName}”`)
+  }
 }
 
 function clearSelectedImage() {
@@ -711,7 +953,8 @@ h3 {
 .signal-strip span,
 .status-pill,
 .system-tag,
-.video-keywords span {
+.video-keywords span,
+.video-keywords a {
   display: inline-flex;
   align-items: center;
   min-height: 26px;
@@ -1027,8 +1270,16 @@ h3 {
   flex-wrap: wrap;
 }
 
-.save-recipe-button {
+.save-recipe-button,
+.regenerate-recipe-button {
   white-space: nowrap;
+}
+
+.regenerate-recipe-button :deep(span),
+.save-recipe-button :deep(span) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .empty-stage {
@@ -1169,14 +1420,16 @@ h3 {
 }
 
 .page-tabs {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  display: flex;
   gap: 6px;
   min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
 }
 
 .page-tab {
-  min-width: 0;
+  flex: 0 0 auto;
+  min-width: 82px;
   min-height: 34px;
   padding: 0 8px;
   border: 1px solid var(--app-line);
@@ -1261,9 +1514,85 @@ h3 {
   gap: 8px;
 }
 
-.video-keywords span {
+.video-keywords span,
+.video-keywords a {
   gap: 6px;
   border-radius: 6px;
+  color: var(--app-text);
+  text-decoration: none;
+}
+
+.ingredient-state {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 7px;
+  border: 1px solid var(--app-line-strong);
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.ingredient-state.owned {
+  color: var(--el-color-success);
+  background: var(--app-surface-soft);
+}
+
+.ingredient-state.missing {
+  color: var(--el-color-warning);
+  background: var(--app-surface-soft);
+}
+
+.purchase-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.purchase-links a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 26px;
+  padding: 0 7px;
+  border: 1px solid var(--app-line-strong);
+  border-radius: 4px;
+  color: var(--app-text);
+  background: var(--app-surface-soft);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.explanation-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.explanation-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid var(--app-line);
+  border-radius: 6px;
+  background: var(--app-surface-soft);
+}
+
+.explanation-item h4,
+.explanation-item p {
+  margin: 0;
+}
+
+.explanation-item h4 {
+  color: var(--app-text);
+  font-size: 13px;
+}
+
+.explanation-item p {
+  margin-top: 4px;
+  color: var(--app-text-soft);
+  font-size: 13px;
+  line-height: 1.55;
 }
 
 @media (max-width: 980px) {

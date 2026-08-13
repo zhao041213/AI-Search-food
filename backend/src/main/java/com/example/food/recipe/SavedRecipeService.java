@@ -101,7 +101,10 @@ public class SavedRecipeService {
         List<RecipeStep> steps = recipeStepMapper.selectList(new QueryWrapper<RecipeStep>()
                 .eq("recipe_id", recipeId)
                 .orderByAsc("step_no"));
-        RecipeGenerateResponse recipe = recipeFromRecord(record, ingredients, steps);
+        RecipeGenerateResponse recipe = recipeFromStoredResponse(record);
+        if (recipe == null) {
+            recipe = recipeFromRecord(record, ingredients, steps);
+        }
         return detailResponse(record, searchLog, recipe);
     }
 
@@ -164,13 +167,27 @@ public class SavedRecipeService {
                 request.summary(),
                 request.effects(),
                 request.ingredients(),
+                request.missingIngredients(),
                 request.steps(),
                 request.tips(),
                 request.videoKeywords(),
+                request.explanation(),
                 request.provider(),
                 request.model(),
                 request.searchLogId()
         );
+    }
+
+    private RecipeGenerateResponse recipeFromStoredResponse(RecipeRecord record) {
+        if (!StringUtils.hasText(record.getRawResponse())) {
+            return null;
+        }
+        try {
+            RecipeGenerateResponse stored = objectMapper.readValue(record.getRawResponse(), RecipeGenerateResponse.class);
+            return stored.withSearchLogId(record.getSearchLogId());
+        } catch (JsonProcessingException exception) {
+            return null;
+        }
     }
 
     private RecipeGenerateResponse recipeFromRecord(

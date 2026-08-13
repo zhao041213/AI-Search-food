@@ -97,7 +97,7 @@ public class QwenRecipeClient {
                 "messages", List.of(
                         Map.of(
                                 "role", "system",
-                                "content", "你是一个专业中文营养师和家庭烹饪助手，输出必须是可解析 JSON。"
+                                "content", "你是专业的中文营养与家庭烹饪助手。只输出可解析的 JSON，不要输出 Markdown、代码块或额外说明。"
                         ),
                         Map.of(
                                 "role", "user",
@@ -123,9 +123,11 @@ public class QwenRecipeClient {
                 payload.summary(),
                 payload.effects(),
                 payload.ingredients(),
+                payload.missingIngredients(),
                 payload.steps(),
                 payload.tips(),
                 payload.videoKeywords(),
+                payload.explanation(),
                 runtimeConfig.provider(),
                 runtimeConfig.modelName()
         );
@@ -177,9 +179,11 @@ public class QwenRecipeClient {
             String summary,
             List<String> effects,
             List<RecipeGenerateResponse.Ingredient> ingredients,
+            List<RecipeGenerateResponse.MissingIngredient> missingIngredients,
             List<RecipeGenerateResponse.Step> steps,
             List<String> tips,
-            List<String> videoKeywords
+            List<String> videoKeywords,
+            RecipeGenerateResponse.Explanation explanation
     ) {
     }
 }

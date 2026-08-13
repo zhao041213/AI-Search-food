@@ -2,7 +2,7 @@
   <main class="saved-page">
     <header class="saved-heading">
       <div>
-        <p class="eyebrow">PERSONAL RECIPE LIBRARY</p>
+        <p class="eyebrow">个人菜谱库</p>
         <h1>我的菜谱</h1>
         <p>查看你主动保存的 AI 菜谱，重新打开时不会再次调用模型。</p>
       </div>
@@ -16,7 +16,7 @@
       <section class="history-panel" aria-label="已保存菜谱列表">
         <div class="panel-heading">
           <div>
-            <span class="panel-kicker">SAVED RECIPES</span>
+            <span class="panel-kicker">已保存菜谱</span>
             <h2>已保存</h2>
           </div>
           <span class="count-badge">{{ recipes.length }}</span>
@@ -49,7 +49,7 @@
         <template v-else>
           <header class="detail-heading">
             <div>
-              <p class="eyebrow">SAVED RECIPE</p>
+              <p class="eyebrow">已保存菜谱</p>
               <h2>{{ selected.recipe?.title || '菜谱详情' }}</h2>
               <p class="saved-time">保存于 {{ formatDate(selected.savedAt) }}</p>
             </div>
@@ -86,6 +86,74 @@
                   <el-table-column prop="amount" label="用量" min-width="120" />
                 </el-table>
 
+                <el-table v-else-if="activePage === 'analysis'" :data="ingredientAnalysisRows" size="large">
+                  <el-table-column prop="name" label="食材" min-width="105" />
+                  <el-table-column prop="amount" label="用量" min-width="90" />
+                  <el-table-column label="状态" min-width="82">
+                    <template #default="scope">
+                      <span class="ingredient-state" :class="scope.row.alreadyOwned ? 'owned' : 'missing'">
+                        {{ scope.row.alreadyOwned ? '已有' : '缺失' }}
+                      </span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="替代建议" min-width="160">
+                    <template #default="scope">
+                      {{ scope.row.substitutesText || '暂无替代建议' }}
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="说明" min-width="180">
+                    <template #default="scope">
+                      {{ scope.row.reason || (scope.row.alreadyOwned ? '可直接使用现有食材' : '建议按清单补充') }}
+                    </template>
+                  </el-table-column>
+                </el-table>
+
+                <el-table v-else-if="activePage === 'shopping'" :data="shoppingList" size="large">
+                  <el-table-column prop="name" label="全部食材" min-width="110" />
+                  <el-table-column prop="amount" label="用量" min-width="90" />
+                  <el-table-column label="状态" min-width="82">
+                    <template #default="scope">
+                      <span class="ingredient-state" :class="scope.row.alreadyOwned ? 'owned' : 'missing'">
+                        {{ scope.row.alreadyOwned ? '已有' : '待购' }}
+                      </span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="购买链接" min-width="160">
+                    <template #default="scope">
+                      <div class="purchase-links">
+                        <a
+                          :href="scope.row.purchaseLinks.dingdong"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          @click="preparePlatformSearch(scope.row.name)"
+                        >
+                          叮咚买菜
+                          <ExternalLink :size="13" aria-hidden="true" />
+                        </a>
+                        <a
+                          :href="scope.row.purchaseLinks.hema"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          @click="preparePlatformSearch(scope.row.name)"
+                        >
+                          盒马鲜生
+                          <ExternalLink :size="13" aria-hidden="true" />
+                        </a>
+                      </div>
+                    </template>
+                  </el-table-column>
+                </el-table>
+
+                <div v-else-if="activePage === 'explanation'" class="explanation-grid">
+                  <article v-for="item in explanationItems" :key="item.key" class="explanation-item">
+                    <component :is="item.icon" :size="18" aria-hidden="true" />
+                    <div>
+                      <h3>{{ item.label }}</h3>
+                      <p>{{ item.content }}</p>
+                    </div>
+                  </article>
+                </div>
+
                 <ol v-else-if="activePage === 'steps'" class="step-list">
                   <li v-for="step in selected.recipe.steps" :key="step.order || step.title">
                     <div class="step-title-row">
@@ -101,10 +169,17 @@
                 </ul>
 
                 <div v-else class="video-keywords">
-                  <span v-for="keyword in selected.recipe.videoKeywords" :key="keyword">
+                  <a
+                    v-for="keyword in videoKeywords"
+                    :key="keyword"
+                    :href="buildBilibiliSearchLink(keyword)"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
                     <Video :size="15" aria-hidden="true" />
                     {{ keyword }}
-                  </span>
+                    <ExternalLink :size="13" aria-hidden="true" />
+                  </a>
                 </div>
               </div>
             </div>
@@ -116,16 +191,47 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, markRaw, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { ArrowLeft, Video } from 'lucide-vue-next'
+import { ArrowLeft, ExternalLink, Flame, HeartPulse, Network, Video } from 'lucide-vue-next'
 import { getSavedRecipe, listSavedRecipes } from '../api/recipes'
+import {
+  buildPurchaseLinks,
+  buildBilibiliSearchLink,
+  buildShoppingList,
+  copyIngredientName,
+  filterVideoKeywords,
+  parseIngredientNames
+} from '../utils/recipeEnhancements'
 
 const recipes = ref([])
 const selected = ref(null)
 const loading = ref(false)
 const detailLoading = ref(false)
 const activePage = ref('ingredients')
+
+const shoppingList = computed(() => buildRecipeShoppingList(
+  selected.value?.recipe,
+  selected.value?.searchIngredients
+))
+const ingredientAnalysisRows = computed(() => shoppingList.value.map((item) => {
+  const missing = findMissingIngredient(selected.value?.recipe?.missingIngredients, item.name)
+  return {
+    ...item,
+    alreadyOwned: missing ? false : item.alreadyOwned,
+    substitutesText: formatSubstitutes(missing?.substitutes),
+    reason: missing?.reason || ''
+  }
+}))
+const explanationItems = computed(() => {
+  const explanation = selected.value?.recipe?.explanation || {}
+  return [
+    { key: 'pairingLogic', label: '搭配逻辑', content: explanation.pairingLogic, icon: markRaw(Network) },
+    { key: 'nutrition', label: '营养说明', content: explanation.nutrition, icon: markRaw(HeartPulse) },
+    { key: 'cookingPrinciple', label: '烹饪原理', content: explanation.cookingPrinciple, icon: markRaw(Flame) }
+  ].filter((item) => item.content)
+})
+const videoKeywords = computed(() => filterVideoKeywords(selected.value?.recipe?.videoKeywords))
 
 const recipePages = computed(() => {
   const recipe = selected.value?.recipe
@@ -135,9 +241,12 @@ const recipePages = computed(() => {
 
   return [
     recipe.ingredients?.length ? { key: 'ingredients', label: '所需食材' } : null,
+    ingredientAnalysisRows.value.length ? { key: 'analysis', label: '食材分析' } : null,
+    shoppingList.value.length ? { key: 'shopping', label: '采购清单' } : null,
+    explanationItems.value.length ? { key: 'explanation', label: 'AI 解释' } : null,
     recipe.steps?.length ? { key: 'steps', label: '烹饪步骤' } : null,
     recipe.tips?.length ? { key: 'tips', label: '烹饪建议' } : null,
-    recipe.videoKeywords?.length ? { key: 'videos', label: '视频关键词' } : null
+    videoKeywords.value.length ? { key: 'videos', label: '视频关键词' } : null
   ].filter(Boolean)
 })
 
@@ -171,6 +280,43 @@ async function openRecipe(id) {
   }
 }
 
+function buildRecipeShoppingList(recipe, ownedIngredients) {
+  if (!recipe) {
+    return []
+  }
+
+  return buildShoppingList(recipe.ingredients, parseIngredientNames(ownedIngredients)).map((item) => ({
+    ...item,
+    alreadyOwned: findMissingIngredient(recipe.missingIngredients, item.name)
+      ? false
+      : item.alreadyOwned,
+    purchaseLinks: item.purchaseLinks || buildPurchaseLinks(item.name)
+  }))
+}
+
+function findMissingIngredient(missingIngredients, ingredientName) {
+  const target = parseIngredientNames([ingredientName])[0]?.toLocaleLowerCase()
+  if (!target) {
+    return null
+  }
+
+  return (Array.isArray(missingIngredients) ? missingIngredients : []).find((item) => {
+    const sourceName = typeof item === 'string' ? item : item?.name
+    const normalized = parseIngredientNames([sourceName])[0]?.toLocaleLowerCase()
+    return normalized === target
+  }) || null
+}
+
+function formatSubstitutes(substitutes) {
+  if (!Array.isArray(substitutes)) {
+    return typeof substitutes === 'string' ? substitutes : ''
+  }
+  return substitutes
+    .map((item) => typeof item === 'string' ? item : item?.name)
+    .filter(Boolean)
+    .join('、')
+}
+
 function mealLabel(value) {
   return {
     any: '不限餐次',
@@ -178,6 +324,16 @@ function mealLabel(value) {
     lunch: '午餐',
     dinner: '晚餐'
   }[value] || '未指定餐次'
+}
+
+async function preparePlatformSearch(ingredientName) {
+  try {
+    if (await copyIngredientName(ingredientName, navigator.clipboard)) {
+      ElMessage.info(`已复制“${ingredientName}”，请在平台中粘贴搜索`)
+    }
+  } catch {
+    ElMessage.info(`请在平台中搜索“${ingredientName}”`)
+  }
 }
 
 function formatDate(value) {
@@ -382,13 +538,16 @@ function getErrorMessage(error) {
 }
 
 .system-tag,
-.video-keywords span {
+.video-keywords span,
+.video-keywords a {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   padding: 5px 8px;
   border: 1px solid var(--app-line-strong);
   border-radius: 4px;
+  color: var(--app-text);
+  text-decoration: none;
   color: var(--app-text-soft);
   background: var(--app-surface-soft);
   font-size: 12px;
@@ -450,6 +609,78 @@ function getErrorMessage(error) {
 
 .step-list p {
   margin: 3px 0 0;
+}
+
+.ingredient-state {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 7px;
+  border: 1px solid var(--app-line-strong);
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.ingredient-state.owned {
+  color: var(--el-color-success);
+  background: var(--app-surface-soft);
+}
+
+.ingredient-state.missing {
+  color: var(--el-color-warning);
+  background: var(--app-surface-soft);
+}
+
+.purchase-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.purchase-links a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 26px;
+  padding: 0 7px;
+  border: 1px solid var(--app-line-strong);
+  border-radius: 4px;
+  color: var(--app-text);
+  background: var(--app-surface-soft);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.explanation-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.explanation-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--app-line);
+  border-radius: 6px;
+  background: var(--app-surface-soft);
+}
+
+.explanation-item h3,
+.explanation-item p {
+  margin: 0;
+}
+
+.explanation-item h3 {
+  color: var(--app-text);
+  font-size: 14px;
+}
+
+.explanation-item p {
+  margin-top: 5px;
+  color: var(--app-text-soft);
+  line-height: 1.65;
 }
 
 @media (max-width: 900px) {

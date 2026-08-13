@@ -6,6 +6,7 @@ import com.example.food.ai.recipe.dto.RecipeGenerateResponse;
 import com.example.food.recipe.SearchLogService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -46,6 +47,83 @@ class RecipeRecommendationServiceTest {
 
         assertThat(result.searchLogId()).isEqualTo(88L);
         verify(searchLogService).record(request, generated, null, "anonymous-12345678");
+    }
+
+    @Test
+    void legacyRequestConstructorLeavesRegenerationFieldsEmpty() {
+        RecipeGenerateRequest request = new RecipeGenerateRequest("番茄", "dinner", "balanced", "text");
+
+        assertThat(request.regenerationPreference()).isNull();
+        assertThat(request.previousTitle()).isNull();
+    }
+
+    @Test
+    void regenerationPromptDescribesNewContractAndStillRecordsSearchLog() {
+        RecipeGenerateRequest request = new RecipeGenerateRequest(
+                "番茄",
+                "dinner",
+                "balanced",
+                "text",
+                "减少用油并缩短烹饪时间",
+                "番茄炒蛋"
+        );
+        RecipeGenerateResponse generated = recipeResponse();
+        when(qwenRecipeClient.generateRecipe(anyString())).thenReturn(generated);
+        when(searchLogService.record(request, generated, null, "anonymous-12345678")).thenReturn(99L);
+
+        RecipeGenerateResponse result = recipeRecommendationService.generate(
+                request,
+                null,
+                "anonymous-12345678"
+        );
+
+        ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(qwenRecipeClient).generateRecipe(promptCaptor.capture());
+        String prompt = promptCaptor.getValue();
+        assertThat(prompt)
+                .contains("用户已有食材：番茄")
+                .contains("上一版菜名：番茄炒蛋")
+                .contains("调整方向：减少用油并缩短烹饪时间")
+                .contains("\"missingIngredients\"")
+                .contains("\"explanation\"")
+                .contains("仅将用户没有提供、但菜谱需要的食材放入 missingIngredients")
+                .contains("只为 missingIngredients 中的缺失食材提供 substitutes")
+                .contains("不得作出疾病治疗、预防或疗效保证等医疗承诺");
+        assertThat(result.searchLogId()).isEqualTo(99L);
+        verify(searchLogService).record(request, generated, null, "anonymous-12345678");
+    }
+
+    @Test
+    void responseNormalizesNullableNewFields() {
+        RecipeGenerateResponse response = new RecipeGenerateResponse(
+                "番茄炒蛋",
+                "家常快手菜",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                "qwen",
+                "qwen-plus"
+        );
+
+        assertThat(response.effects()).isEmpty();
+        assertThat(response.ingredients()).isEmpty();
+        assertThat(response.missingIngredients()).isEmpty();
+        assertThat(response.steps()).isEmpty();
+        assertThat(response.tips()).isEmpty();
+        assertThat(response.videoKeywords()).isEmpty();
+        assertThat(response.explanation()).isNotNull();
+        assertThat(response.explanation().pairingLogic()).isEmpty();
+        assertThat(response.explanation().nutrition()).isEmpty();
+        assertThat(response.explanation().cookingPrinciple()).isEmpty();
+
+        RecipeGenerateResponse.MissingIngredient missingIngredient =
+                new RecipeGenerateResponse.MissingIngredient("鸡蛋", "2个", null, null);
+        assertThat(missingIngredient.substitutes()).isEmpty();
+        assertThat(missingIngredient.reason()).isEmpty();
     }
 
     @Test
