@@ -9,8 +9,18 @@ const ingredientImages = {
   豆腐: `${IMAGE_ROOT}/tofu.jpg`
 }
 
-export const fallbackIngredientImage = `${IMAGE_ROOT}/mixed.jpg`
+const aliases = {
+  西红柿: '番茄',
+  马铃薯: '土豆',
+  花椰菜: '西兰花',
+  菜花: '西兰花',
+  北豆腐: '豆腐',
+  老豆腐: '豆腐',
+  嫩豆腐: '豆腐'
+}
 
 export function getIngredientImage(name) {
-  return ingredientImages[name] || fallbackIngredientImage
+  const normalizedName = typeof name === 'string' ? name.trim() : ''
+  const canonicalName = aliases[normalizedName] || normalizedName
+  return ingredientImages[canonicalName] || null
 }

@@ -7,6 +7,7 @@ import com.example.food.security.AuthPrincipal;
 import com.example.food.stats.IngredientNormalizer;
 import com.example.food.stats.SearchLogIngredient;
 import com.example.food.stats.SearchLogIngredientMapper;
+import com.example.food.stats.image.IngredientImageService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
@@ -25,17 +26,20 @@ public class SearchLogService {
     private final SearchLogIngredientMapper searchLogIngredientMapper;
     private final IngredientNormalizer ingredientNormalizer;
     private final ObjectMapper objectMapper;
+    private final IngredientImageService ingredientImageService;
 
     public SearchLogService(
             SearchLogMapper searchLogMapper,
             SearchLogIngredientMapper searchLogIngredientMapper,
             IngredientNormalizer ingredientNormalizer,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            IngredientImageService ingredientImageService
     ) {
         this.searchLogMapper = searchLogMapper;
         this.searchLogIngredientMapper = searchLogIngredientMapper;
         this.ingredientNormalizer = ingredientNormalizer;
         this.objectMapper = objectMapper;
+        this.ingredientImageService = ingredientImageService;
     }
 
     @Transactional
@@ -64,6 +68,11 @@ public class SearchLogService {
         ingredients.forEach(ingredient -> searchLogIngredientMapper.insert(
                 toIngredient(searchLog.getId(), ingredient, createdAt)
         ));
+        if (ingredientImageService != null) {
+            ingredientImageService.ensureQueuedAfterSearch(ingredients.stream()
+                    .map(IngredientNormalizer.NormalizedIngredient::canonicalName)
+                    .toList());
+        }
         return searchLog.getId();
     }
 

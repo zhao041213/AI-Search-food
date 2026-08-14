@@ -7,6 +7,7 @@ import com.example.food.security.AuthPrincipal;
 import com.example.food.stats.IngredientNormalizer;
 import com.example.food.stats.SearchLogIngredient;
 import com.example.food.stats.SearchLogIngredientMapper;
+import com.example.food.stats.image.IngredientImageService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -30,6 +31,9 @@ class SearchLogServiceTest {
     @Mock
     private SearchLogIngredientMapper searchLogIngredientMapper;
 
+    @Mock
+    private IngredientImageService ingredientImageService;
+
     private SearchLogService searchLogService;
 
     @BeforeEach
@@ -38,7 +42,8 @@ class SearchLogServiceTest {
                 searchLogMapper,
                 searchLogIngredientMapper,
                 new IngredientNormalizer(),
-                new ObjectMapper()
+                new ObjectMapper(),
+                ingredientImageService
         );
         doAnswer(invocation -> {
             SearchLog searchLog = invocation.getArgument(0);
@@ -69,6 +74,8 @@ class SearchLogServiceTest {
         assertThat(saved.getMealType()).isEqualTo("dinner");
         assertThat(saved.getGoal()).isEqualTo("balanced");
         assertThat(saved.getAiModel()).isEqualTo("qwen:qwen-plus");
+        org.mockito.Mockito.verify(ingredientImageService)
+                .ensureQueuedAfterSearch(List.of("番茄", "鸡蛋"));
     }
 
     @Test

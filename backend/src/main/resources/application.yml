@@ -21,6 +21,8 @@ mybatis-plus:
       id-type: auto
 
 app:
+  ingredient-images:
+    enabled: ${INGREDIENT_IMAGES_ENABLED:true}
   jwt:
     secret: ${JWT_SECRET:change-this-secret-change-this-secret-32}
     expiration-minutes: ${JWT_EXPIRATION_MINUTES:1440}

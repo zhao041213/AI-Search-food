@@ -1,6 +1,9 @@
 package com.example.food.stats;
 
 import com.example.food.stats.dto.HotIngredientStatsResponse;
+import com.example.food.stats.image.IngredientImage;
+import com.example.food.stats.image.IngredientImageService;
+import com.example.food.stats.image.IngredientImageStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -25,13 +28,16 @@ class HotIngredientStatsServiceTest {
     @Mock
     private SearchLogIngredientMapper ingredientMapper;
 
+    @Mock
+    private IngredientImageService ingredientImageService;
+
     private HotIngredientStatsService service;
 
     @BeforeEach
     void setUp() {
         ZoneId zone = ZoneId.of("Asia/Shanghai");
         Clock clock = Clock.fixed(NOW.atZone(zone).toInstant(), zone);
-        service = new HotIngredientStatsService(ingredientMapper, clock);
+        service = new HotIngredientStatsService(ingredientMapper, clock, ingredientImageService);
     }
 
     @Test
@@ -73,6 +79,25 @@ class HotIngredientStatsServiceTest {
         service.get("7d", 5);
 
         verify(ingredientMapper).summarize(NOW.minusDays(7));
+    }
+
+    @Test
+    void exposesVerifiedImageUrlAndQueuesMissingImagesForRankedIngredients() {
+        IngredientImage image = new IngredientImage();
+        image.setCanonicalName("番茄");
+        image.setVerificationStatus(IngredientImageStatus.READY.name());
+        when(ingredientMapper.summarize(null)).thenReturn(new HotIngredientTotals(1, 1));
+        when(ingredientMapper.findHotIngredients(null, 5))
+                .thenReturn(List.of(new HotIngredientAggregateRow("番茄", 1, NOW)));
+        when(ingredientImageService.findMetadata("番茄")).thenReturn(image);
+
+        HotIngredientStatsResponse response = service.get("all", 5);
+
+        assertThat(response.items()).singleElement().satisfies(item -> {
+            assertThat(item.imageStatus()).isEqualTo("READY");
+            assertThat(item.imageUrl()).isEqualTo("/api/ingredients/images/%E7%95%AA%E8%8C%84");
+        });
+        verify(ingredientImageService).ensureQueued(List.of("番茄"));
     }
 
     @Test

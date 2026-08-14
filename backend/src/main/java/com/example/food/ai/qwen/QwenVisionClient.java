@@ -76,12 +76,40 @@ public class QwenVisionClient {
             ResponseEntity<QwenChatResponse> response = restTemplate.exchange(
                     runtimeConfig.endpoint(),
                     HttpMethod.POST,
-                    new HttpEntity<>(requestBody(contentType, imageBytes, runtimeConfig), headers(runtimeConfig)),
+                    new HttpEntity<>(requestBody(contentType, imageBytes, runtimeConfig, recognitionPrompt()), headers(runtimeConfig)),
                     QwenChatResponse.class
             );
             return parseRecognition(response.getBody(), runtimeConfig);
         } catch (RestClientException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "千问视觉服务调用失败，请稍后重试", exception);
+        }
+    }
+
+    public IngredientImageVerification verifyIngredientImage(
+            String contentType,
+            byte[] imageBytes,
+            String canonicalName
+    ) {
+        AiModelRuntimeConfig runtimeConfig = runtimeConfig();
+        if (runtimeConfig.apiKey() == null || runtimeConfig.apiKey().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "千问 API Key 未配置");
+        }
+
+        try {
+            ResponseEntity<QwenChatResponse> response = restTemplate.exchange(
+                    runtimeConfig.endpoint(),
+                    HttpMethod.POST,
+                    new HttpEntity<>(requestBody(
+                            contentType,
+                            imageBytes,
+                            runtimeConfig,
+                            verificationPrompt(canonicalName)
+                    ), headers(runtimeConfig)),
+                    QwenChatResponse.class
+            );
+            return parseVerification(firstContent(response.getBody()));
+        } catch (RestClientException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "千问视觉校验调用失败", exception);
         }
     }
 
@@ -92,7 +120,12 @@ public class QwenVisionClient {
         return new AiModelRuntimeConfig("qwen", properties.visionModel(), properties.endpoint(), properties.apiKey());
     }
 
-    private Map<String, Object> requestBody(String contentType, byte[] imageBytes, AiModelRuntimeConfig runtimeConfig) {
+    private Map<String, Object> requestBody(
+            String contentType,
+            byte[] imageBytes,
+            AiModelRuntimeConfig runtimeConfig,
+            String prompt
+    ) {
         return Map.of(
                 "model", runtimeConfig.modelName(),
                 "messages", List.of(
@@ -105,11 +138,7 @@ public class QwenVisionClient {
                                 "content", List.of(
                                         Map.of(
                                                 "type", "text",
-                                                "text", """
-                                                        请识别图片中清晰可见的可食用食材，只返回 JSON：
-                                                        {"ingredients":["食材1","食材2"],"description":"一句中文描述"}
-                                                        如果无法识别，ingredients 返回空数组。
-                                                        """
+                                                "text", prompt
                                         ),
                                         Map.of(
                                                 "type", "image_url",
@@ -120,6 +149,18 @@ public class QwenVisionClient {
                 ),
                 "temperature", 0.1
         );
+    }
+
+    private String recognitionPrompt() {
+        return "请识别图片中清晰可见的可食用食材，只返回 JSON："
+                + "{\"ingredients\":[\"食材1\",\"食材2\"],\"description\":\"一句中文描述\"}"
+                + "。如果无法识别，ingredients 返回空数组。";
+    }
+
+    private String verificationPrompt(String canonicalName) {
+        return "请判断图片中是否清晰展示了名为“" + canonicalName + "”的可食用食材。"
+                + "只返回 JSON：{\"matches\":true,\"confidence\":0.0,\"description\":\"一句中文说明\"}。"
+                + "matches 只有在主体确实是该食材时才为 true，confidence 为 0 到 1 的数字。";
     }
 
     private String dataUrl(String contentType, byte[] imageBytes) {
@@ -162,6 +203,22 @@ public class QwenVisionClient {
         }
     }
 
+    private IngredientImageVerification parseVerification(String content) {
+        try {
+            VerificationPayload payload = objectMapper.readValue(
+                    stripJsonFence(content),
+                    VerificationPayload.class
+            );
+            return new IngredientImageVerification(
+                    Boolean.TRUE.equals(payload.matches()),
+                    payload.confidence() == null ? 0d : payload.confidence(),
+                    payload.description()
+            );
+        } catch (IOException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "千问视觉校验返回内容不是有效 JSON", exception);
+        }
+    }
+
     private String stripJsonFence(String content) {
         String trimmed = content.trim();
         if (trimmed.startsWith("```")) {
@@ -185,5 +242,12 @@ public class QwenVisionClient {
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     private record IngredientPayload(List<String> ingredients, String description) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record VerificationPayload(Boolean matches, Double confidence, String description) {
+    }
+
+    public record IngredientImageVerification(boolean matches, double confidence, String description) {
     }
 }

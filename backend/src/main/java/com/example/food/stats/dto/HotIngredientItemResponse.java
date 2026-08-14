@@ -7,6 +7,18 @@ public record HotIngredientItemResponse(
         String name,
         long searchCount,
         double share,
-        LocalDateTime latestSearchAt
+        LocalDateTime latestSearchAt,
+        String imageUrl,
+        String imageStatus
 ) {
+
+    public HotIngredientItemResponse(
+            int rank,
+            String name,
+            long searchCount,
+            double share,
+            LocalDateTime latestSearchAt
+    ) {
+        this(rank, name, searchCount, share, latestSearchAt, null, "PENDING");
+    }
 }

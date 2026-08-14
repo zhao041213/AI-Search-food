@@ -47,6 +47,15 @@ class PersistenceSchemaTest {
     }
 
     @Test
+    void ingredientImageCacheTableIsCreatedByFlyway() {
+        assertThat(tableExists("ingredient_images")).isTrue();
+        assertThat(columnExists("ingredient_images", "canonical_name")).isTrue();
+        assertThat(columnExists("ingredient_images", "image_data")).isTrue();
+        assertThat(columnExists("ingredient_images", "verification_status")).isTrue();
+        assertThat(columnExists("ingredient_images", "source_url")).isTrue();
+    }
+
+    @Test
     void dietPreferenceIsDeletedWithItsUser() {
         jdbcTemplate.update("""
                 INSERT INTO users (phone, nickname)

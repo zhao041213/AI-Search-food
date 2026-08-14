@@ -4,6 +4,10 @@ import com.example.food.common.ApiResponse;
 import com.example.food.stats.HotIngredientStatsController;
 import com.example.food.stats.HotIngredientStatsService;
 import com.example.food.stats.dto.HotIngredientStatsResponse;
+import com.example.food.stats.IngredientNormalizer;
+import com.example.food.stats.image.IngredientImage;
+import com.example.food.stats.image.IngredientImageController;
+import com.example.food.stats.image.IngredientImageService;
 import com.example.food.user.preference.UserDietPreferenceController;
 import com.example.food.user.preference.UserDietPreferenceService;
 import com.example.food.user.preference.dto.DietPreferenceResponse;
@@ -21,13 +25,15 @@ import org.springframework.web.bind.annotation.RestController;
 
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(controllers = {
         SecurityConfigTest.TestController.class,
         HotIngredientStatsController.class,
-        UserDietPreferenceController.class
+        UserDietPreferenceController.class,
+        IngredientImageController.class
 })
 @Import(SecurityConfig.class)
 class SecurityConfigTest {
@@ -43,6 +49,12 @@ class SecurityConfigTest {
 
     @MockBean
     private UserDietPreferenceService userDietPreferenceService;
+
+    @MockBean
+    private IngredientImageService ingredientImageService;
+
+    @MockBean
+    private IngredientNormalizer ingredientNormalizer;
 
     @Test
     void unauthenticatedProtectedEndpointReturnsJsonUnauthorized() throws Exception {
@@ -84,6 +96,21 @@ class SecurityConfigTest {
         mockMvc.perform(get("/api/stats/hot-ingredients"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.period").value("all"));
+    }
+
+    @Test
+    void verifiedIngredientImageEndpointIsPublic() throws Exception {
+        IngredientImage image = new IngredientImage();
+        image.setContentType("image/jpeg");
+        image.setImageData(new byte[]{1, 2, 3});
+        when(ingredientNormalizer.normalizeDistinct("番茄"))
+                .thenReturn(java.util.List.of(new IngredientNormalizer.NormalizedIngredient("番茄", "番茄")));
+        when(ingredientImageService.findReady("番茄")).thenReturn(image);
+
+        mockMvc.perform(get("/api/ingredients/images/番茄"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType("image/jpeg"))
+                .andExpect(content().bytes(new byte[]{1, 2, 3}));
     }
 
     @Test

@@ -58,4 +58,39 @@ class QwenVisionClientTest {
         assertThat(response.model()).isEqualTo("qwen-vl-plus");
         server.verify();
     }
+
+    @Test
+    void verifyIngredientImageSendsTargetIngredientAndParsesVerification() {
+        RestTemplate restTemplate = new RestTemplateBuilder().build();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restTemplate).build();
+        QwenProperties properties = new QwenProperties(
+                "test-api-key",
+                "qwen-plus",
+                "https://dashscope.test/compatible-mode/v1/chat/completions"
+        );
+        QwenVisionClient client = new QwenVisionClient(restTemplate, new ObjectMapper(), properties);
+
+        server.expect(once(), requestTo(properties.endpoint()))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(jsonPath("$.messages[1].content[0].text", startsWith("请判断图片中是否清晰展示了名为“番茄”")))
+                .andRespond(withSuccess("""
+                        {
+                          "choices": [
+                            {
+                              "message": {
+                                "content": "{\\"matches\\":true,\\"confidence\\":0.93,\\"description\\":\\"图片主体为番茄\\"}"
+                              }
+                            }
+                          ]
+                        }
+                        """, MediaType.APPLICATION_JSON));
+
+        QwenVisionClient.IngredientImageVerification response =
+                client.verifyIngredientImage("image/jpeg", new byte[]{4, 5, 6}, "番茄");
+
+        assertThat(response.matches()).isTrue();
+        assertThat(response.confidence()).isEqualTo(0.93d);
+        assertThat(response.description()).isEqualTo("图片主体为番茄");
+        server.verify();
+    }
 }

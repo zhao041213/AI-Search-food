@@ -58,6 +58,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/recipes/saved/**").hasRole("USER")
                         .requestMatchers("/api/ai/**").permitAll()
                         .requestMatchers("/api/stats/hot-ingredients", "/api/stats/hot-recipes").permitAll()
+                        .requestMatchers("/api/ingredients/images/**").permitAll()
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(

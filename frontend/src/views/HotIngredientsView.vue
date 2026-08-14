@@ -51,11 +51,16 @@
         >
           <span class="rank-badge" :class="`rank-${item.rank}`">{{ item.rank }}</span>
           <img
-            :src="getIngredientImage(item.name)"
+            v-if="imageSource(item)"
+            :src="imageSource(item)"
             :alt="item.name"
             loading="eager"
-            @error="useFallbackImage"
+            @error="markImageLoadFailed(item.name)"
           />
+          <span v-else class="ingredient-image-placeholder" aria-hidden="true">
+            <ImageOff :size="24" />
+            <span>{{ imageStatusText(item.imageStatus) }}</span>
+          </span>
           <span class="card-shade" aria-hidden="true" />
           <span class="card-copy">
             <strong>{{ item.name }}</strong>
@@ -71,15 +76,16 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Flame, RefreshCw, Search } from 'lucide-vue-next'
+import { Flame, ImageOff, RefreshCw, Search } from 'lucide-vue-next'
 import { getHotIngredients } from '../api/stats'
-import { fallbackIngredientImage, getIngredientImage } from '../utils/ingredientImages'
+import { getIngredientImage } from '../utils/ingredientImages'
 
 const router = useRouter()
 const period = ref('all')
 const loading = ref(false)
 const errorMessage = ref('')
 const stats = ref(emptyStats())
+const failedImageNames = ref(new Set())
 
 const periodOptions = [
   { value: 'all', label: '全部' },
@@ -92,6 +98,7 @@ onMounted(loadRanking)
 async function loadRanking() {
   loading.value = true
   errorMessage.value = ''
+  failedImageNames.value = new Set()
   try {
     const response = await getHotIngredients(period.value, 10)
     stats.value = response.data.data || emptyStats()
@@ -106,11 +113,27 @@ function searchIngredient(name) {
   router.push({ name: 'home', query: { ingredients: name } })
 }
 
-function useFallbackImage(event) {
-  if (event.target.src.endsWith(fallbackIngredientImage)) {
-    return
+function imageSource(item) {
+  if (failedImageNames.value.has(item.name)) {
+    return null
   }
-  event.target.src = fallbackIngredientImage
+  return item.imageUrl || getIngredientImage(item.name)
+}
+
+function markImageLoadFailed(name) {
+  const failedNames = new Set(failedImageNames.value)
+  failedNames.add(name)
+  failedImageNames.value = failedNames
+}
+
+function imageStatusText(status) {
+  if (status === 'PENDING') {
+    return '图片校验中'
+  }
+  if (status === 'FAILED') {
+    return '暂无匹配图片'
+  }
+  return '暂无图片'
 }
 
 function emptyStats() {
@@ -237,6 +260,19 @@ function emptyStats() {
   min-height: 150px;
   object-fit: cover;
   transition: transform 280ms ease;
+}
+
+.ingredient-image-placeholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: 8px;
+  color: rgba(255, 255, 255, 0.7);
+  background: linear-gradient(145deg, rgba(30, 58, 95, 0.38), rgba(17, 24, 39, 0.94));
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
 }
 
 .ingredient-card:hover img {
