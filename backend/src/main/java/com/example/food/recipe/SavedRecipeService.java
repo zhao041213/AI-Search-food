@@ -75,12 +75,34 @@ public class SavedRecipeService {
     }
 
     public List<RecipeHistorySummaryResponse> list(Long userId, int limit, int offset) {
+        return list(userId, null, null, null, limit, offset);
+    }
+
+    public List<RecipeHistorySummaryResponse> list(
+            Long userId,
+            String keyword,
+            String mealType,
+            String goal,
+            int limit,
+            int offset
+    ) {
         validatePage(limit, offset);
-        List<RecipeRecord> records = recipeRecordMapper.selectList(new QueryWrapper<RecipeRecord>()
-                .eq("user_id", userId)
-                .orderByDesc("created_at")
-                .last("LIMIT " + limit + " OFFSET " + offset));
+        List<RecipeRecord> records = recipeRecordMapper.findSavedRecipes(
+                userId,
+                normalizeFilter(keyword),
+                normalizeFilter(mealType),
+                normalizeFilter(goal),
+                limit,
+                offset
+        );
         return records.stream().map(this::summaryResponse).toList();
+    }
+
+    @Transactional
+    public void delete(Long userId, Long recipeId) {
+        if (recipeRecordMapper.deleteOwnedRecipe(recipeId, userId) == 0) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "菜谱不存在");
+        }
     }
 
     public RecipeHistoryDetailResponse detail(Long userId, Long recipeId) {
@@ -244,6 +266,14 @@ public class SavedRecipeService {
         if (limit < 1 || limit > 50 || offset < 0) {
             throw new IllegalArgumentException("分页参数不合法");
         }
+    }
+
+    private String normalizeFilter(String value) {
+        if (!StringUtils.hasText(value)) {
+            return null;
+        }
+        String normalized = value.trim();
+        return "不限".equals(normalized) ? null : normalized;
     }
 
     private String toJson(Object value) {

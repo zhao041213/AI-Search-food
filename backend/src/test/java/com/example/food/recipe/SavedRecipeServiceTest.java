@@ -21,6 +21,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -172,6 +173,62 @@ class SavedRecipeServiceTest {
         assertThat(detail.recipe().explanation()).isNotNull();
     }
 
+    @Test
+    void listsSavedRecipesUsingNormalizedSearchFilters() {
+        RecipeRecord record = recipeRecord(99L, 7L, 10L, "番茄炒蛋");
+        when(recipeRecordMapper.findSavedRecipes(7L, "番茄", "dinner", "balanced", 20, 5))
+                .thenReturn(List.of(record));
+        when(searchLogMapper.selectById(10L)).thenReturn(searchLog(10L, 7L, null));
+
+        List<?> result = savedRecipeService.list(7L, "  番茄  ", " dinner ", " balanced ", 20, 5);
+
+        assertThat(result).hasSize(1);
+        verify(recipeRecordMapper).findSavedRecipes(7L, "番茄", "dinner", "balanced", 20, 5);
+    }
+
+    @Test
+    void ignoresBlankAndUnlimitedSearchFilters() {
+        when(recipeRecordMapper.findSavedRecipes(7L, null, null, null, 50, 0)).thenReturn(List.of());
+
+        savedRecipeService.list(7L, " ", "不限", " 不限 ", 50, 0);
+        savedRecipeService.list(7L, " 不限 ", null, null, 50, 0);
+
+        verify(recipeRecordMapper, org.mockito.Mockito.times(2))
+                .findSavedRecipes(7L, null, null, null, 50, 0);
+    }
+
+    @Test
+    void rejectsInvalidSavedRecipePagination() {
+        assertThatThrownBy(() -> savedRecipeService.list(7L, null, null, null, 0, 0))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> savedRecipeService.list(7L, null, null, null, 51, 0))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> savedRecipeService.list(7L, null, null, null, 50, -1))
+                .isInstanceOf(IllegalArgumentException.class);
+        verifyNoInteractions(recipeRecordMapper);
+    }
+
+    @Test
+    void deletesRecipeOnlyWhenOwnedByCurrentUser() {
+        when(recipeRecordMapper.deleteOwnedRecipe(99L, 7L)).thenReturn(1);
+
+        savedRecipeService.delete(7L, 99L);
+
+        verify(recipeRecordMapper).deleteOwnedRecipe(99L, 7L);
+        verifyNoInteractions(searchLogMapper, recipeIngredientMapper, recipeStepMapper);
+    }
+
+    @Test
+    void treatsMissingAndOtherUsersRecipeAsNotFoundWhenDeleting() {
+        when(recipeRecordMapper.deleteOwnedRecipe(99L, 7L)).thenReturn(0);
+
+        assertThatThrownBy(() -> savedRecipeService.delete(7L, 99L))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+                .satisfies(exception -> assertThat(
+                        ((org.springframework.web.server.ResponseStatusException) exception).getStatusCode().value()
+                ).isEqualTo(404));
+    }
+
     private SearchLog searchLog(Long id, Long userId, String anonymousId) {
         SearchLog searchLog = new SearchLog();
         searchLog.setId(id);
@@ -181,6 +238,16 @@ class SavedRecipeServiceTest {
         searchLog.setMealType("dinner");
         searchLog.setGoal("balanced");
         return searchLog;
+    }
+
+    private RecipeRecord recipeRecord(Long id, Long userId, Long searchLogId, String title) {
+        RecipeRecord record = new RecipeRecord();
+        record.setId(id);
+        record.setUserId(userId);
+        record.setSearchLogId(searchLogId);
+        record.setTitle(title);
+        record.setCreatedAt(LocalDateTime.now());
+        return record;
     }
 
     private SaveRecipeRequest request() {

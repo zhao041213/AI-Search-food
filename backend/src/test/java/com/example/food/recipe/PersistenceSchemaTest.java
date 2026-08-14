@@ -33,6 +33,46 @@ class PersistenceSchemaTest {
         assertThat(columnExists("search_log_ingredients", "created_at")).isTrue();
     }
 
+    @Test
+    void dietPreferenceTableAndSearchHistoryIndexAreCreatedByFlyway() {
+        assertThat(tableExists("user_diet_preferences")).isTrue();
+        assertThat(columnExists("user_diet_preferences", "user_id")).isTrue();
+        assertThat(columnExists("user_diet_preferences", "taste")).isTrue();
+        assertThat(columnExists("user_diet_preferences", "default_goal")).isTrue();
+        assertThat(columnExists("user_diet_preferences", "avoid_ingredients")).isTrue();
+        assertThat(columnExists("user_diet_preferences", "allergen_ingredients")).isTrue();
+        assertThat(columnExists("user_diet_preferences", "created_at")).isTrue();
+        assertThat(columnExists("user_diet_preferences", "updated_at")).isTrue();
+        assertThat(indexExists("idx_search_logs_user_created")).isTrue();
+    }
+
+    @Test
+    void dietPreferenceIsDeletedWithItsUser() {
+        jdbcTemplate.update("""
+                INSERT INTO users (phone, nickname)
+                VALUES (?, ?)
+                """, "13800138001", "diet-preference-test");
+        Long userId = jdbcTemplate.queryForObject(
+                "SELECT id FROM users WHERE phone = ?",
+                Long.class,
+                "13800138001"
+        );
+        jdbcTemplate.update("""
+                INSERT INTO user_diet_preferences (
+                    user_id, taste, default_goal, avoid_ingredients, allergen_ingredients
+                ) VALUES (?, ?, ?, ?, ?)
+                """, userId, "light", "balanced", "[]", "[]");
+
+        jdbcTemplate.update("DELETE FROM users WHERE id = ?", userId);
+
+        Integer count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM user_diet_preferences WHERE user_id = ?",
+                Integer.class,
+                userId
+        );
+        assertThat(count).isZero();
+    }
+
     private boolean tableExists(String tableName) {
         Integer count = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE LOWER(TABLE_NAME) = ?",
@@ -49,6 +89,15 @@ class PersistenceSchemaTest {
                 Integer.class,
                 tableName,
                 columnName
+        );
+        return count != null && count == 1;
+    }
+
+    private boolean indexExists(String indexName) {
+        Integer count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM INFORMATION_SCHEMA.INDEXES WHERE LOWER(INDEX_NAME) = ?",
+                Integer.class,
+                indexName
         );
         return count != null && count == 1;
     }

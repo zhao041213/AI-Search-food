@@ -12,6 +12,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
@@ -19,7 +20,10 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -51,7 +55,7 @@ class SavedRecipeControllerTest {
 
     @Test
     void userCanReadSavedRecipeList() throws Exception {
-        when(savedRecipeService.list(7L, 20, 0)).thenReturn(List.of(
+        when(savedRecipeService.list(7L, null, null, null, 50, 0)).thenReturn(List.of(
                 new RecipeHistorySummaryResponse(99L, "番茄炒蛋", "番茄、鸡蛋", "dinner", "balanced", null)
         ));
         String token = jwtService.generateToken(new AuthPrincipal(7L, "13800138000", AppRole.USER));
@@ -72,6 +76,25 @@ class SavedRecipeControllerTest {
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value(403));
+    }
+
+    @Test
+    void userCanSearchAndFilterSavedRecipeList() throws Exception {
+        when(savedRecipeService.list(7L, "番茄", "dinner", "balanced", 10, 5))
+                .thenReturn(List.of());
+        String token = jwtService.generateToken(new AuthPrincipal(7L, "13800138000", AppRole.USER));
+
+        mockMvc.perform(get("/api/recipes/saved")
+                        .header("Authorization", "Bearer " + token)
+                        .param("keyword", "番茄")
+                        .param("mealType", "dinner")
+                        .param("goal", "balanced")
+                        .param("limit", "10")
+                        .param("offset", "5"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+
+        verify(savedRecipeService).list(7L, "番茄", "dinner", "balanced", 10, 5);
     }
 
     @Test
@@ -98,5 +121,30 @@ class SavedRecipeControllerTest {
                         ))))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(400));
+    }
+
+    @Test
+    void userCanDeleteOwnedSavedRecipe() throws Exception {
+        String token = jwtService.generateToken(new AuthPrincipal(7L, "13800138000", AppRole.USER));
+
+        mockMvc.perform(delete("/api/recipes/saved/99")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data").doesNotExist());
+
+        verify(savedRecipeService).delete(7L, 99L);
+    }
+
+    @Test
+    void deletingMissingOrOtherUsersSavedRecipeReturnsNotFound() throws Exception {
+        doThrow(new org.springframework.web.server.ResponseStatusException(HttpStatus.NOT_FOUND, "菜谱不存在"))
+                .when(savedRecipeService).delete(7L, 99L);
+        String token = jwtService.generateToken(new AuthPrincipal(7L, "13800138000", AppRole.USER));
+
+        mockMvc.perform(delete("/api/recipes/saved/99")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(404));
     }
 }

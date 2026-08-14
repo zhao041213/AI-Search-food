@@ -80,7 +80,13 @@ class RecipeControllerTest {
                                   "goal": "balanced",
                                   "searchMode": "text",
                                   "regenerationPreference": "减少用油",
-                                  "previousTitle": "番茄炒蛋（上一版）"
+                                  "previousTitle": "番茄炒蛋（上一版）",
+                                  "dietPreference": {
+                                    "taste": "清淡",
+                                    "defaultGoal": "增肌",
+                                    "avoidIngredients": ["香菜", "葱"],
+                                    "allergenIngredients": ["花生", "牛奶"]
+                                  }
                                 }
                                 """))
                 .andExpect(status().isOk())
@@ -99,6 +105,10 @@ class RecipeControllerTest {
         verify(recipeRecommendationService).generate(requestCaptor.capture(), isNull(), anyString());
         assertThat(requestCaptor.getValue().regenerationPreference()).isEqualTo("减少用油");
         assertThat(requestCaptor.getValue().previousTitle()).isEqualTo("番茄炒蛋（上一版）");
+        assertThat(requestCaptor.getValue().dietPreference().taste()).isEqualTo("清淡");
+        assertThat(requestCaptor.getValue().dietPreference().defaultGoal()).isEqualTo("增肌");
+        assertThat(requestCaptor.getValue().dietPreference().avoidIngredients()).containsExactly("香菜", "葱");
+        assertThat(requestCaptor.getValue().dietPreference().allergenIngredients()).containsExactly("花生", "牛奶");
     }
 
     @Test

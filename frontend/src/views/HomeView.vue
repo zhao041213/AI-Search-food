@@ -25,15 +25,25 @@
 
           <el-form class="search-form" label-position="top" @submit.prevent="runSearch">
             <el-form-item label="食材清单">
-              <el-input
-                v-model="ingredients"
-                type="textarea"
-                :rows="3"
-                resize="none"
-                maxlength="240"
-                show-word-limit
-                placeholder="例如：番茄、鸡蛋、菠菜"
-              />
+              <RecentSearchPopover
+                :items="recentSearches"
+                :loading="recentSearchLoading"
+                :visible="auth.isUser && recentSearchVisible"
+                @select="applyRecentSearch"
+                @update:visible="recentSearchVisible = $event"
+              >
+                <el-input
+                  v-model="ingredients"
+                  type="textarea"
+                  :rows="3"
+                  resize="none"
+                  maxlength="240"
+                  show-word-limit
+                  placeholder="例如：番茄、鸡蛋、菠菜"
+                  @focus="openRecentSearches"
+                  @click="openRecentSearches"
+                />
+              </RecentSearchPopover>
             </el-form-item>
 
             <div class="filters">
@@ -46,12 +56,24 @@
                 </el-select>
               </el-form-item>
 
-              <el-form-item label="目标">
-                <el-select v-model="goal" placeholder="请选择烹饪目标">
+              <el-form-item>
+                <template #label>
+                  <div class="goal-label-row">
+                    <span>目标</span>
+                    <el-button v-if="auth.isUser" link type="primary" @click="preferenceDialogVisible = true">
+                      <SlidersHorizontal :size="14" aria-hidden="true" />
+                      <span>饮食偏好</span>
+                    </el-button>
+                  </div>
+                </template>
+                <el-select v-model="goal" placeholder="请选择烹饪目标" @change="goalManuallySelected = true">
                   <el-option label="营养均衡" value="balanced" />
                   <el-option label="高蛋白" value="protein" />
                   <el-option label="低热量" value="light" />
                   <el-option label="快速烹饪" value="quick" />
+                  <el-option label="减脂" value="fat_loss" />
+                  <el-option label="增肌" value="muscle_gain" />
+                  <el-option label="控糖" value="low_sugar" />
                 </el-select>
               </el-form-item>
             </div>
@@ -121,7 +143,12 @@
             </div>
 
             <div class="search-actions">
-              <el-button type="primary" size="large" :loading="generating" @click="runSearch">
+              <el-button
+                type="primary"
+                size="large"
+                :loading="generating || (auth.isUser && preferenceLoading)"
+                @click="runSearch"
+              >
                 <Sparkles :size="18" aria-hidden="true" />
                 <span>生成推荐</span>
               </el-button>
@@ -391,10 +418,18 @@
       </div>
     </section>
   </main>
+
+  <DietPreferenceDialog
+    v-if="auth.isUser"
+    v-model="preferenceDialogVisible"
+    :preference="dietPreference"
+    :saving="preferenceSaving"
+    @save="persistDietPreference"
+  />
 </template>
 
 <script setup>
-import { computed, markRaw, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, markRaw, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   Camera,
@@ -411,12 +446,24 @@ import {
   RefreshCw,
   RotateCcw,
   ScanSearch,
+  SlidersHorizontal,
   Sparkles,
   Video
 } from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
 import { generateRecipe, recognizeIngredients, saveRecipe } from '../api/recipes'
+import { getRecentSearches } from '../api/searchHistory'
+import { getDietPreference, saveDietPreference } from '../api/userPreferences'
+import DietPreferenceDialog from '../components/DietPreferenceDialog.vue'
+import RecentSearchPopover from '../components/RecentSearchPopover.vue'
 import { useAuthStore } from '../stores/auth'
+import {
+  buildRecipeDietPreference,
+  normalizeDietPreference,
+  requiresDietPreferenceLoad,
+  resolveGoalWithPreference,
+  toSearchForm
+} from '../utils/personalization'
 import {
   buildPurchaseLinks,
   buildBilibiliSearchLink,
@@ -429,6 +476,7 @@ import {
 const ingredients = ref('')
 const mealType = ref('any')
 const goal = ref('balanced')
+const goalManuallySelected = ref(false)
 const searchMode = ref('text')
 const imageInput = ref(null)
 const selectedImageFile = ref(null)
@@ -443,6 +491,15 @@ const recognizing = ref(false)
 const savingRecipe = ref(false)
 const savedRecipeId = ref(null)
 const currentRecipePage = ref(0)
+const dietPreference = ref(normalizeDietPreference())
+const preferenceDialogVisible = ref(false)
+const preferenceLoaded = ref(false)
+const preferenceLoading = ref(false)
+const preferenceSaving = ref(false)
+const recentSearches = ref([])
+const recentSearchLoading = ref(false)
+const recentSearchLoaded = ref(false)
+const recentSearchVisible = ref(false)
 const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
@@ -473,7 +530,10 @@ const goalLabels = {
   balanced: '营养均衡',
   protein: '高蛋白',
   light: '低热量',
-  quick: '快速烹饪'
+  quick: '快速烹饪',
+  fat_loss: '减脂',
+  muscle_gain: '增肌',
+  low_sugar: '控糖'
 }
 
 const modeLabels = {
@@ -552,6 +612,16 @@ onMounted(() => {
   if (!applyRouteIngredient()) {
     restorePendingRecipe()
   }
+  if (auth.isUser) {
+    loadDietPreference()
+  }
+})
+
+watch(() => [auth.token, auth.role], () => {
+  clearPersonalizationState()
+  if (auth.isUser) {
+    loadDietPreference()
+  }
 })
 
 function applyRouteIngredient() {
@@ -567,6 +637,14 @@ function applyRouteIngredient() {
 }
 
 async function runSearch() {
+  if (requiresDietPreferenceLoad(auth.isUser, preferenceLoaded.value)) {
+    const loaded = await loadDietPreference()
+    if (!loaded) {
+      ElMessage.warning('饮食偏好加载失败，请重试后再生成')
+      return
+    }
+  }
+
   const normalizedIngredients = parseIngredientNames(ingredients.value).join(', ')
 
   if (!normalizedIngredients) {
@@ -578,7 +656,8 @@ async function runSearch() {
     ingredients: normalizedIngredients,
     mealType: mealType.value,
     goal: goal.value,
-    searchMode: searchMode.value
+    searchMode: searchMode.value,
+    dietPreference: buildRecipeDietPreference(dietPreference.value)
   }
   lastSearch.value = request
   recipe.value = null
@@ -590,6 +669,7 @@ async function runSearch() {
     const response = await generateRecipe(request)
     recipe.value = response.data.data
     currentRecipePage.value = 0
+    recentSearchLoaded.value = false
     ElMessage.success('菜谱推荐已生成')
   } catch (error) {
     ElMessage.error(getErrorMessage(error))
@@ -601,7 +681,8 @@ async function runSearch() {
 function resetSearch() {
   ingredients.value = ''
   mealType.value = 'any'
-  goal.value = 'balanced'
+  goalManuallySelected.value = false
+  goal.value = auth.isUser ? dietPreference.value.defaultGoal : 'balanced'
   searchMode.value = 'text'
   clearSelectedImage()
   lastSearch.value = null
@@ -662,6 +743,14 @@ async function regenerateCurrentRecipe(preference) {
     return
   }
 
+  if (requiresDietPreferenceLoad(auth.isUser, preferenceLoaded.value)) {
+    const loaded = await loadDietPreference()
+    if (!loaded) {
+      ElMessage.warning('饮食偏好加载失败，请重试后再生成')
+      return
+    }
+  }
+
   const currentRecipe = recipe.value
   const currentSavedRecipeId = savedRecipeId.value
   const request = {
@@ -670,7 +759,8 @@ async function regenerateCurrentRecipe(preference) {
     goal: lastSearch.value.goal,
     searchMode: lastSearch.value.searchMode,
     regenerationPreference: preference,
-    previousTitle: currentRecipe.title
+    previousTitle: currentRecipe.title,
+    dietPreference: buildRecipeDietPreference(dietPreference.value)
   }
 
   generating.value = true
@@ -684,6 +774,7 @@ async function regenerateCurrentRecipe(preference) {
     recipe.value = generatedRecipe
     savedRecipeId.value = null
     currentRecipePage.value = 0
+    recentSearchLoaded.value = false
     window.sessionStorage.removeItem(PENDING_RECIPE_KEY)
     ElMessage.success('新版本菜谱已生成')
   } catch (error) {
@@ -710,12 +801,139 @@ function restorePendingRecipe() {
       ingredients.value = draft.lastSearch.ingredients || ''
       mealType.value = draft.lastSearch.mealType || 'any'
       goal.value = draft.lastSearch.goal || 'balanced'
+      goalManuallySelected.value = true
       searchMode.value = draft.lastSearch.searchMode || 'text'
       currentRecipePage.value = 0
       ElMessage.info('已恢复未保存的菜谱，请点击保存')
     }
   } catch {
     window.sessionStorage.removeItem(PENDING_RECIPE_KEY)
+  }
+}
+
+async function loadDietPreference() {
+  if (!auth.isUser) {
+    return true
+  }
+  if (preferenceLoading.value) {
+    return false
+  }
+
+  const token = auth.token
+  preferenceLoading.value = true
+  try {
+    const response = await getDietPreference()
+    if (!auth.isUser || auth.token !== token) {
+      return false
+    }
+    dietPreference.value = normalizeDietPreference(response.data.data)
+    goal.value = resolveGoalWithPreference(
+      goal.value,
+      dietPreference.value.defaultGoal,
+      goalManuallySelected.value
+    )
+    preferenceLoaded.value = true
+    return true
+  } catch {
+    if (auth.isUser && auth.token === token) {
+      ElMessage.warning('饮食偏好加载失败，请稍后重试')
+    }
+    return false
+  } finally {
+    if (auth.token === token) {
+      preferenceLoading.value = false
+    }
+  }
+}
+
+async function persistDietPreference(value) {
+  if (!auth.isUser || preferenceSaving.value) {
+    return
+  }
+
+  const token = auth.token
+  preferenceSaving.value = true
+  try {
+    const response = await saveDietPreference(normalizeDietPreference(value))
+    if (!auth.isUser || auth.token !== token) {
+      return
+    }
+    dietPreference.value = normalizeDietPreference(response.data.data)
+    preferenceLoaded.value = true
+    goal.value = resolveGoalWithPreference(
+      goal.value,
+      dietPreference.value.defaultGoal,
+      goalManuallySelected.value
+    )
+    preferenceDialogVisible.value = false
+    ElMessage.success('饮食偏好已保存')
+  } catch (error) {
+    if (auth.isUser && auth.token === token) {
+      ElMessage.error(getErrorMessage(error))
+    }
+  } finally {
+    if (auth.token === token) {
+      preferenceSaving.value = false
+    }
+  }
+}
+
+async function openRecentSearches() {
+  if (!auth.isUser) {
+    return
+  }
+
+  recentSearchVisible.value = true
+  if (recentSearchLoaded.value || recentSearchLoading.value) {
+    return
+  }
+
+  const token = auth.token
+  recentSearchLoading.value = true
+  try {
+    const response = await getRecentSearches()
+    if (!auth.isUser || auth.token !== token) {
+      return
+    }
+    recentSearches.value = (response.data.data || []).slice(0, 5)
+    recentSearchLoaded.value = true
+  } catch {
+    if (auth.isUser && auth.token === token) {
+      recentSearchVisible.value = false
+      ElMessage({
+        type: 'warning',
+        message: '最近搜索加载失败，可继续手动输入',
+        duration: 2200
+      })
+    }
+  } finally {
+    if (auth.token === token) {
+      recentSearchLoading.value = false
+    }
+  }
+}
+
+function applyRecentSearch(item) {
+  const form = toSearchForm(item)
+  ingredients.value = form.ingredients
+  mealType.value = form.mealType
+  goal.value = form.goal
+  goalManuallySelected.value = true
+  recentSearchVisible.value = false
+}
+
+function clearPersonalizationState() {
+  dietPreference.value = normalizeDietPreference()
+  preferenceDialogVisible.value = false
+  preferenceLoaded.value = false
+  preferenceLoading.value = false
+  preferenceSaving.value = false
+  recentSearches.value = []
+  recentSearchLoading.value = false
+  recentSearchLoaded.value = false
+  recentSearchVisible.value = false
+  if (!goalManuallySelected.value) {
+    goal.value = 'balanced'
   }
 }
 
@@ -1050,6 +1268,26 @@ h3 {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+}
+
+.goal-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+}
+
+.goal-label-row :deep(.el-button) {
+  height: auto;
+  min-height: 22px;
+  padding: 0;
+}
+
+.goal-label-row :deep(.el-button span) {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .mode-panel {

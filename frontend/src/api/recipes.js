@@ -16,10 +16,26 @@ export function saveRecipe(payload) {
   return http.post('/recipes/saved', payload)
 }
 
+export function getSavedRecipes({
+  keyword = '',
+  mealType = '',
+  goal = '',
+  limit = 50,
+  offset = 0
+} = {}) {
+  return http.get('/recipes/saved', {
+    params: { keyword, mealType, goal, limit, offset }
+  })
+}
+
 export function listSavedRecipes(params = {}) {
-  return http.get('/recipes/saved', { params })
+  return getSavedRecipes(params)
 }
 
 export function getSavedRecipe(id) {
   return http.get(`/recipes/saved/${id}`)
+}
+
+export function deleteSavedRecipe(id) {
+  return http.delete(`/recipes/saved/${id}`)
 }

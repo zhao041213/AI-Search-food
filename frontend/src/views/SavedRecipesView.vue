@@ -22,24 +22,74 @@
           <span class="count-badge">{{ recipes.length }}</span>
         </div>
 
+        <form class="recipe-filters" role="search" @submit.prevent="applyFilters">
+          <div class="filter-search-row">
+            <el-input
+              v-model="keywordDraft"
+              aria-label="按菜名搜索"
+              clearable
+              placeholder="搜索菜名"
+              @clear="applyFilters"
+            >
+              <template #prefix>
+                <Search :size="15" aria-hidden="true" />
+              </template>
+            </el-input>
+            <el-tooltip content="搜索菜谱" placement="top">
+              <button class="search-button" type="submit" aria-label="搜索菜谱">
+                <Search :size="16" aria-hidden="true" />
+              </button>
+            </el-tooltip>
+          </div>
+          <div class="filter-select-row">
+            <el-select v-model="mealType" aria-label="筛选餐次" placeholder="不限餐次" @change="applyFilters">
+              <el-option label="不限餐次" value="" />
+              <el-option label="早餐" value="breakfast" />
+              <el-option label="午餐" value="lunch" />
+              <el-option label="晚餐" value="dinner" />
+            </el-select>
+            <el-select v-model="goal" aria-label="筛选目标" placeholder="不限目标" @change="applyFilters">
+              <el-option label="不限目标" value="" />
+              <el-option label="营养均衡" value="balanced" />
+              <el-option label="高蛋白" value="protein" />
+              <el-option label="低热量" value="light" />
+              <el-option label="快速烹饪" value="quick" />
+              <el-option label="减脂" value="fat_loss" />
+              <el-option label="增肌" value="muscle_gain" />
+              <el-option label="控糖" value="low_sugar" />
+            </el-select>
+          </div>
+        </form>
+
         <el-skeleton v-if="loading" :rows="5" animated />
         <el-empty v-else-if="!recipes.length" description="还没有保存菜谱" />
         <div v-else class="history-items">
-          <button
+          <div
             v-for="item in recipes"
             :key="item.id"
-            class="history-item"
+            class="history-item-row"
             :class="{ active: selected?.id === item.id }"
-            type="button"
-            @click="openRecipe(item.id)"
           >
-            <span class="history-item-title">{{ item.title }}</span>
-            <span class="history-item-ingredients">{{ item.searchIngredients || '未记录食材' }}</span>
-            <span class="history-item-meta">
-              <span>{{ mealLabel(item.mealType) }}</span>
-              <span>{{ formatDate(item.savedAt) }}</span>
-            </span>
-          </button>
+            <button class="history-item" type="button" @click="openRecipe(item.id)">
+              <span class="history-item-title">{{ item.title }}</span>
+              <span class="history-item-ingredients">{{ item.searchIngredients || '未记录食材' }}</span>
+              <span class="history-item-meta">
+                <span>{{ mealLabel(item.mealType) }}</span>
+                <span>{{ formatDate(item.savedAt) }}</span>
+              </span>
+            </button>
+            <el-tooltip content="删除菜谱" placement="top">
+              <button
+                class="delete-button"
+                type="button"
+                :aria-label="`删除菜谱：${item.title}`"
+                :disabled="deletingId !== null"
+                @click="confirmDeleteRecipe(item)"
+              >
+                <Trash2 :size="16" aria-hidden="true" />
+              </button>
+            </el-tooltip>
+          </div>
         </div>
       </section>
 
@@ -192,9 +242,9 @@
 
 <script setup>
 import { computed, markRaw, onMounted, ref } from 'vue'
-import { ElMessage } from 'element-plus'
-import { ArrowLeft, ExternalLink, Flame, HeartPulse, Network, Video } from 'lucide-vue-next'
-import { getSavedRecipe, listSavedRecipes } from '../api/recipes'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { ArrowLeft, ExternalLink, Flame, HeartPulse, Network, Search, Trash2, Video } from 'lucide-vue-next'
+import { deleteSavedRecipe, getSavedRecipe, getSavedRecipes } from '../api/recipes'
 import {
   buildPurchaseLinks,
   buildBilibiliSearchLink,
@@ -208,7 +258,16 @@ const recipes = ref([])
 const selected = ref(null)
 const loading = ref(false)
 const detailLoading = ref(false)
+const deletingId = ref(null)
 const activePage = ref('ingredients')
+const keywordDraft = ref('')
+const keyword = ref('')
+const mealType = ref('')
+const goal = ref('')
+const limit = 50
+const offset = ref(0)
+let listRequestId = 0
+let detailRequestId = 0
 
 const shoppingList = computed(() => buildRecipeShoppingList(
   selected.value?.recipe,
@@ -252,31 +311,102 @@ const recipePages = computed(() => {
 
 onMounted(loadRecipes)
 
-async function loadRecipes() {
+async function loadRecipes(preferredId = null) {
+  const requestId = ++listRequestId
   loading.value = true
   try {
-    const response = await listSavedRecipes({ limit: 50, offset: 0 })
-    recipes.value = response.data.data || []
-    if (recipes.value.length) {
-      await openRecipe(recipes.value[0].id)
+    const response = await getSavedRecipes({
+      keyword: keyword.value,
+      mealType: mealType.value,
+      goal: goal.value,
+      limit,
+      offset: offset.value
+    })
+    if (requestId !== listRequestId) {
+      return
     }
+
+    const nextRecipes = response.data.data || []
+    recipes.value = nextRecipes
+    if (!nextRecipes.length) {
+      detailRequestId += 1
+      detailLoading.value = false
+      selected.value = null
+      return
+    }
+
+    const nextId = preferredId && nextRecipes.some((item) => item.id === preferredId)
+      ? preferredId
+      : nextRecipes[0].id
+    selected.value = null
+    await openRecipe(nextId)
   } catch (error) {
-    ElMessage.error(getErrorMessage(error))
+    if (requestId === listRequestId) {
+      ElMessage.error(getErrorMessage(error))
+    }
   } finally {
-    loading.value = false
+    if (requestId === listRequestId) {
+      loading.value = false
+    }
   }
 }
 
+function applyFilters() {
+  keyword.value = keywordDraft.value.trim()
+  offset.value = 0
+  loadRecipes()
+}
+
 async function openRecipe(id) {
+  const requestId = ++detailRequestId
   detailLoading.value = true
   try {
     const response = await getSavedRecipe(id)
+    if (requestId !== detailRequestId) {
+      return
+    }
     selected.value = response.data.data
     activePage.value = recipePages.value[0]?.key || 'ingredients'
   } catch (error) {
-    ElMessage.error(getErrorMessage(error))
+    if (requestId === detailRequestId) {
+      ElMessage.error(getErrorMessage(error))
+    }
   } finally {
-    detailLoading.value = false
+    if (requestId === detailRequestId) {
+      detailLoading.value = false
+    }
+  }
+}
+
+async function confirmDeleteRecipe(item) {
+  if (deletingId.value !== null) {
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      `删除“${item.title}”后无法恢复，确定继续吗？`,
+      '删除菜谱',
+      {
+        confirmButtonText: '删除',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+  } catch {
+    return
+  }
+
+  const selectedId = selected.value?.id
+  deletingId.value = item.id
+  try {
+    await deleteSavedRecipe(item.id)
+    ElMessage.success('菜谱已删除')
+    await loadRecipes(selectedId === item.id ? null : selectedId)
+  } catch (error) {
+    ElMessage.error(getDeleteErrorMessage(error))
+  } finally {
+    deletingId.value = null
   }
 }
 
@@ -359,6 +489,20 @@ function getErrorMessage(error) {
   }
   return error?.response?.data?.message || error?.message || '菜谱加载失败，请稍后重试'
 }
+
+function getDeleteErrorMessage(error) {
+  const status = error?.response?.status
+  if (status === 401) {
+    return '登录状态已失效，请重新登录后删除'
+  }
+  if (status === 403) {
+    return '当前账号没有删除权限'
+  }
+  if (status === 404) {
+    return '菜谱不存在或已被删除'
+  }
+  return '删除失败，请稍后重试'
+}
 </script>
 
 <style scoped>
@@ -434,6 +578,59 @@ function getErrorMessage(error) {
   padding: 16px;
 }
 
+.recipe-filters {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--app-line);
+}
+
+.filter-search-row,
+.filter-select-row {
+  display: grid;
+  gap: 7px;
+}
+
+.filter-search-row {
+  grid-template-columns: minmax(0, 1fr) 36px;
+}
+
+.filter-select-row {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.recipe-filters :deep(.el-select) {
+  width: 100%;
+}
+
+.search-button,
+.delete-button {
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--app-line-strong);
+  border-radius: 6px;
+  color: var(--app-text);
+  background: var(--app-surface);
+  cursor: pointer;
+  transition: border-color 180ms ease, color 180ms ease, background-color 180ms ease;
+}
+
+.search-button {
+  width: 36px;
+  height: 32px;
+}
+
+.search-button:hover,
+.search-button:focus-visible,
+.delete-button:hover,
+.delete-button:focus-visible {
+  border-color: var(--app-accent);
+  color: var(--app-accent);
+  background: var(--app-surface-soft);
+  outline: none;
+}
+
 .panel-heading,
 .detail-heading,
 .step-title-row {
@@ -459,27 +656,51 @@ function getErrorMessage(error) {
 .history-items {
   display: grid;
   gap: 8px;
-  margin-top: 16px;
+  margin-top: 14px;
+}
+
+.history-item-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  gap: 4px;
+  width: 100%;
+  border: 1px solid var(--app-line);
+  border-radius: 6px;
+  color: var(--app-text);
+  background: var(--app-surface);
+  transition: border-color 180ms ease, background-color 180ms ease;
+}
+
+.history-item-row:hover,
+.history-item-row.active {
+  border-color: var(--app-accent);
+  background: var(--app-surface-soft);
 }
 
 .history-item {
   display: grid;
   gap: 6px;
-  width: 100%;
-  padding: 12px;
-  border: 1px solid var(--app-line);
-  border-radius: 6px;
-  color: var(--app-text);
-  background: var(--app-surface);
+  min-width: 0;
+  padding: 11px 5px 11px 11px;
+  border: 0;
+  color: inherit;
+  background: transparent;
   text-align: left;
   cursor: pointer;
-  transition: border-color 180ms ease, background-color 180ms ease;
 }
 
-.history-item:hover,
-.history-item.active {
-  border-color: var(--app-accent);
-  background: var(--app-surface-soft);
+.delete-button {
+  align-self: center;
+  width: 30px;
+  height: 30px;
+  border-color: transparent;
+  color: var(--app-text-muted);
+  background: transparent;
+}
+
+.delete-button:disabled {
+  cursor: wait;
+  opacity: 0.45;
 }
 
 .history-item-title {

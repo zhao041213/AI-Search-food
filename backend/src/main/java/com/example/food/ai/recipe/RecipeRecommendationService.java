@@ -7,8 +7,15 @@ import com.example.food.recipe.SearchLogService;
 import com.example.food.security.AuthPrincipal;
 import org.springframework.stereotype.Service;
 
+import java.util.LinkedHashSet;
+import java.util.List;
+
 @Service
 public class RecipeRecommendationService {
+
+    private static final int MAX_PREFERENCE_TEXT_LENGTH = 80;
+    private static final int MAX_PREFERENCE_ITEM_COUNT = 20;
+    private static final int MAX_PREFERENCE_ITEM_LENGTH = 40;
 
     private final QwenRecipeClient qwenRecipeClient;
     private final SearchLogService searchLogService;
@@ -73,10 +80,29 @@ public class RecipeRecommendationService {
                 """.formatted(
                 safeText(request.ingredients()),
                 safeText(request.mealType()),
-                safeText(request.goal()),
+                safeText(resolveGoal(request)),
                 safeText(request.searchMode()),
-                regenerationContext(request)
+                requestContext(request)
         );
+    }
+
+    private String resolveGoal(RecipeGenerateRequest request) {
+        if (hasText(request.goal())) {
+            return request.goal();
+        }
+        if (request.dietPreference() == null) {
+            return null;
+        }
+        return normalizeText(request.dietPreference().defaultGoal(), MAX_PREFERENCE_TEXT_LENGTH);
+    }
+
+    private String requestContext(RecipeGenerateRequest request) {
+        String regenerationContext = regenerationContext(request);
+        String dietPreferenceContext = dietPreferenceContext(request.dietPreference());
+        if (!hasText(dietPreferenceContext)) {
+            return regenerationContext;
+        }
+        return regenerationContext + "\n" + dietPreferenceContext;
     }
 
     private String regenerationContext(RecipeGenerateRequest request) {
@@ -92,6 +118,60 @@ public class RecipeRecommendationService {
                 safeText(request.previousTitle()),
                 safeText(request.regenerationPreference())
         ).strip();
+    }
+
+    private String dietPreferenceContext(RecipeGenerateRequest.DietPreference dietPreference) {
+        if (dietPreference == null) {
+            return "";
+        }
+        String taste = normalizeText(dietPreference.taste(), MAX_PREFERENCE_TEXT_LENGTH);
+        String defaultGoal = normalizeText(dietPreference.defaultGoal(), MAX_PREFERENCE_TEXT_LENGTH);
+        List<String> avoidIngredients = normalizeIngredients(dietPreference.avoidIngredients());
+        List<String> allergenIngredients = normalizeIngredients(dietPreference.allergenIngredients());
+        if (!hasText(taste) && !hasText(defaultGoal)
+                && avoidIngredients.isEmpty() && allergenIngredients.isEmpty()) {
+            return "";
+        }
+        return """
+                用户饮食偏好与安全约束：
+                口味偏好：%s
+                忌口食材（不可使用）：%s
+                过敏食材（不可使用）：%s
+                忌口食材和过敏食材均不可使用，也不可作为替代食材推荐。
+                """.formatted(
+                safeText(taste),
+                safeIngredients(avoidIngredients),
+                safeIngredients(allergenIngredients)
+        ).strip();
+    }
+
+    private List<String> normalizeIngredients(List<String> ingredients) {
+        if (ingredients == null || ingredients.isEmpty()) {
+            return List.of();
+        }
+        LinkedHashSet<String> normalized = new LinkedHashSet<>();
+        for (String ingredient : ingredients) {
+            String item = normalizeText(ingredient, MAX_PREFERENCE_ITEM_LENGTH);
+            if (hasText(item)) {
+                normalized.add(item);
+            }
+            if (normalized.size() == MAX_PREFERENCE_ITEM_COUNT) {
+                break;
+            }
+        }
+        return List.copyOf(normalized);
+    }
+
+    private String normalizeText(String value, int maxLength) {
+        if (!hasText(value)) {
+            return null;
+        }
+        String normalized = value.trim();
+        return normalized.length() <= maxLength ? normalized : normalized.substring(0, maxLength);
+    }
+
+    private String safeIngredients(List<String> ingredients) {
+        return ingredients.isEmpty() ? "未指定" : String.join("、", ingredients);
     }
 
     private boolean hasText(String value) {

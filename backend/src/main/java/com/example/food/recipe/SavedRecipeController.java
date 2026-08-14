@@ -7,6 +7,7 @@ import com.example.food.recipe.dto.SaveRecipeRequest;
 import com.example.food.security.AuthPrincipal;
 import jakarta.validation.Valid;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -40,10 +41,13 @@ public class SavedRecipeController {
     @GetMapping
     public ApiResponse<List<RecipeHistorySummaryResponse>> list(
             @AuthenticationPrincipal AuthPrincipal principal,
-            @RequestParam(defaultValue = "20") int limit,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String mealType,
+            @RequestParam(required = false) String goal,
+            @RequestParam(defaultValue = "50") int limit,
             @RequestParam(defaultValue = "0") int offset
     ) {
-        return ApiResponse.ok(savedRecipeService.list(principal.id(), limit, offset));
+        return ApiResponse.ok(savedRecipeService.list(principal.id(), keyword, mealType, goal, limit, offset));
     }
 
     @GetMapping("/{id}")
@@ -52,5 +56,14 @@ public class SavedRecipeController {
             @PathVariable Long id
     ) {
         return ApiResponse.ok(savedRecipeService.detail(principal.id(), id));
+    }
+
+    @DeleteMapping("/{id}")
+    public ApiResponse<Void> delete(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @PathVariable Long id
+    ) {
+        savedRecipeService.delete(principal.id(), id);
+        return ApiResponse.ok(null);
     }
 }

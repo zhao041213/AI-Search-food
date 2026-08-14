@@ -19,6 +19,8 @@ import java.util.List;
 @Service
 public class SearchLogService {
 
+    private static final int MAX_PREFERENCE_GOAL_LENGTH = 80;
+
     private final SearchLogMapper searchLogMapper;
     private final SearchLogIngredientMapper searchLogIngredientMapper;
     private final IngredientNormalizer ingredientNormalizer;
@@ -56,7 +58,7 @@ public class SearchLogService {
                 .toList()));
         searchLog.setAiModel(modelLabel(response));
         searchLog.setMealType(normalize(request.mealType()));
-        searchLog.setGoal(normalize(request.goal()));
+        searchLog.setGoal(resolveGoal(request));
         searchLog.setCreatedAt(createdAt);
         searchLogMapper.insert(searchLog);
         ingredients.forEach(ingredient -> searchLogIngredientMapper.insert(
@@ -105,6 +107,18 @@ public class SearchLogService {
     private String defaultValue(String value, String defaultValue) {
         String normalized = normalize(value);
         return normalized == null ? defaultValue : normalized;
+    }
+
+    private String resolveGoal(RecipeGenerateRequest request) {
+        String goal = normalize(request.goal());
+        if (goal != null || request.dietPreference() == null) {
+            return goal;
+        }
+        String preferenceGoal = normalize(request.dietPreference().defaultGoal());
+        if (preferenceGoal == null || preferenceGoal.length() <= MAX_PREFERENCE_GOAL_LENGTH) {
+            return preferenceGoal;
+        }
+        return preferenceGoal.substring(0, MAX_PREFERENCE_GOAL_LENGTH);
     }
 
     private String normalizeAnonymousId(String value) {

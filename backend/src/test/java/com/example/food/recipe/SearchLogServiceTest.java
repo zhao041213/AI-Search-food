@@ -113,6 +113,31 @@ class SearchLogServiceTest {
                 .allSatisfy(item -> assertThat(item.getCreatedAt()).isNotNull());
     }
 
+    @Test
+    void recordsDietPreferenceGoalWhenRequestGoalIsBlank() {
+        String longGoal = "g".repeat(90);
+        RecipeGenerateRequest request = new RecipeGenerateRequest(
+                "番茄",
+                "dinner",
+                null,
+                "text",
+                null,
+                null,
+                new RecipeGenerateRequest.DietPreference(
+                        "light",
+                        longGoal,
+                        List.of(),
+                        List.of()
+                )
+        );
+
+        searchLogService.record(request, recipeResponse(), null, "anonymous-12345678");
+
+        ArgumentCaptor<SearchLog> captor = ArgumentCaptor.forClass(SearchLog.class);
+        org.mockito.Mockito.verify(searchLogMapper).insert(captor.capture());
+        assertThat(captor.getValue().getGoal()).isEqualTo("g".repeat(80));
+    }
+
     private RecipeGenerateResponse recipeResponse() {
         return new RecipeGenerateResponse(
                 "番茄炒蛋",

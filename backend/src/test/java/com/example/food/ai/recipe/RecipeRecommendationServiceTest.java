@@ -11,6 +11,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -55,6 +56,98 @@ class RecipeRecommendationServiceTest {
 
         assertThat(request.regenerationPreference()).isNull();
         assertThat(request.previousTitle()).isNull();
+        assertThat(request.dietPreference()).isNull();
+    }
+
+    @Test
+    void generationPromptUsesNormalizedDietPreferenceAndDefaultGoal() {
+        RecipeGenerateRequest request = new RecipeGenerateRequest(
+                "番茄",
+                "dinner",
+                "  ",
+                "text",
+                null,
+                null,
+                new RecipeGenerateRequest.DietPreference(
+                        "  清淡  ",
+                        "  增肌  ",
+                        List.of(" 香菜 ", "香菜", "  葱  ", " "),
+                        List.of(" 花生 ", "花生", " 牛奶 ")
+                )
+        );
+        RecipeGenerateResponse generated = recipeResponse();
+        when(qwenRecipeClient.generateRecipe(anyString())).thenReturn(generated);
+
+        recipeRecommendationService.generate(request);
+
+        ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(qwenRecipeClient).generateRecipe(promptCaptor.capture());
+        assertThat(promptCaptor.getValue())
+                .contains("饮食目标：增肌")
+                .contains("口味偏好：清淡")
+                .contains("忌口食材（不可使用）：香菜、葱")
+                .contains("过敏食材（不可使用）：花生、牛奶")
+                .contains("忌口食材和过敏食材均不可使用")
+                .doesNotContain("香菜、香菜")
+                .doesNotContain("花生、花生");
+    }
+
+    @Test
+    void requestGoalTakesPriorityOverDietPreferenceDefaultGoal() {
+        RecipeGenerateRequest request = new RecipeGenerateRequest(
+                "番茄",
+                "dinner",
+                "  减脂  ",
+                "text",
+                null,
+                null,
+                new RecipeGenerateRequest.DietPreference("清淡", "增肌", null, null)
+        );
+        when(qwenRecipeClient.generateRecipe(anyString())).thenReturn(recipeResponse());
+
+        recipeRecommendationService.generate(request);
+
+        ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(qwenRecipeClient).generateRecipe(promptCaptor.capture());
+        assertThat(promptCaptor.getValue())
+                .contains("饮食目标：减脂")
+                .doesNotContain("饮食目标：增肌");
+    }
+
+    @Test
+    void dietPreferenceCollectionsAreLengthLimitedBeforeAddingToPrompt() {
+        List<String> avoidIngredients = new ArrayList<>();
+        for (int index = 1; index <= 21; index++) {
+            avoidIngredients.add("忌口" + index);
+        }
+        avoidIngredients.set(0, "超".repeat(45));
+        RecipeGenerateRequest request = new RecipeGenerateRequest(
+                "番茄",
+                "dinner",
+                null,
+                "text",
+                null,
+                null,
+                new RecipeGenerateRequest.DietPreference(
+                        "甜".repeat(85),
+                        null,
+                        avoidIngredients,
+                        null
+                )
+        );
+        when(qwenRecipeClient.generateRecipe(anyString())).thenReturn(recipeResponse());
+
+        recipeRecommendationService.generate(request);
+
+        ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(qwenRecipeClient).generateRecipe(promptCaptor.capture());
+        assertThat(promptCaptor.getValue())
+                .contains("口味偏好：" + "甜".repeat(80))
+                .doesNotContain("甜".repeat(81))
+                .contains("忌口食材（不可使用）：" + "超".repeat(40))
+                .doesNotContain("超".repeat(41))
+                .contains("忌口20")
+                .doesNotContain("忌口21");
     }
 
     @Test
@@ -65,7 +158,13 @@ class RecipeRecommendationServiceTest {
                 "balanced",
                 "text",
                 "减少用油并缩短烹饪时间",
-                "番茄炒蛋"
+                "番茄炒蛋",
+                new RecipeGenerateRequest.DietPreference(
+                        "酸辣",
+                        "均衡",
+                        List.of("香菜"),
+                        List.of("花生")
+                )
         );
         RecipeGenerateResponse generated = recipeResponse();
         when(qwenRecipeClient.generateRecipe(anyString())).thenReturn(generated);
@@ -84,6 +183,10 @@ class RecipeRecommendationServiceTest {
                 .contains("用户已有食材：番茄")
                 .contains("上一版菜名：番茄炒蛋")
                 .contains("调整方向：减少用油并缩短烹饪时间")
+                .contains("口味偏好：酸辣")
+                .contains("忌口食材（不可使用）：香菜")
+                .contains("过敏食材（不可使用）：花生")
+                .contains("忌口食材和过敏食材均不可使用")
                 .contains("\"missingIngredients\"")
                 .contains("\"explanation\"")
                 .contains("仅将用户没有提供、但菜谱需要的食材放入 missingIngredients")

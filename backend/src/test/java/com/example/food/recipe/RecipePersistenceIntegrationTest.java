@@ -15,6 +15,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -89,7 +90,7 @@ class RecipePersistenceIntegrationTest {
                 "其他用户的菜谱"
         );
 
-        List<RecipeHistorySummaryResponse> history = savedRecipeService.list(userId, 20, 0);
+        List<RecipeHistorySummaryResponse> history = savedRecipeService.list(userId, null, null, null, 20, 0);
         RecipeHistoryDetailResponse detail = savedRecipeService.detail(userId, saved.id());
 
         assertThat(searchLogId).isNotNull();
@@ -118,6 +119,113 @@ class RecipePersistenceIntegrationTest {
                 .isInstanceOf(ResponseStatusException.class)
                 .satisfies(exception -> assertThat(((ResponseStatusException) exception).getStatusCode().value())
                         .isEqualTo(403));
+    }
+
+    @Test
+    void searchesAndCombinesSavedRecipeFiltersForCurrentUserWithPagination() {
+        Long userId = insertUser("13900000116", "筛选测试用户");
+        Long otherUserId = insertUser("13900000117", "其他筛选用户");
+        LocalDateTime baseTime = LocalDateTime.of(2026, 8, 13, 12, 0);
+
+        Long matchingLogId = insertSearchLog(userId, "番茄、鸡蛋", "dinner", "balanced");
+        Long matchingRecipeId = insertRecipe(userId, matchingLogId, "番茄炒蛋", baseTime.plusMinutes(4));
+        insertRecipe(userId, insertSearchLog(userId, "番茄", "breakfast", "balanced"),
+                "早餐番茄蛋", baseTime.plusMinutes(3));
+        insertRecipe(userId, insertSearchLog(userId, "番茄", "dinner", "low-fat"),
+                "低脂番茄汤", baseTime.plusMinutes(2));
+        insertRecipe(userId, insertSearchLog(userId, "青椒、猪肉", "dinner", "balanced"),
+                "青椒肉丝", baseTime.plusMinutes(1));
+        insertRecipe(otherUserId, insertSearchLog(otherUserId, "番茄、鸡蛋", "dinner", "balanced"),
+                "番茄炒蛋", baseTime.plusMinutes(5));
+
+        List<RecipeHistorySummaryResponse> filtered = savedRecipeService.list(
+                userId, "番茄", "dinner", "balanced", 50, 0
+        );
+        List<RecipeHistorySummaryResponse> paged = savedRecipeService.list(
+                userId, "", "不限", "不限", 2, 1
+        );
+
+        assertThat(filtered).extracting(RecipeHistorySummaryResponse::id).containsExactly(matchingRecipeId);
+        assertThat(paged).extracting(RecipeHistorySummaryResponse::title)
+                .containsExactly("早餐番茄蛋", "低脂番茄汤");
+    }
+
+    @Test
+    void deletesOnlyOwnedRecipeUsingCascadesAndKeepsSearchLog() {
+        Long userId = insertUser("13900000126", "删除测试用户");
+        Long otherUserId = insertUser("13900000127", "其他删除用户");
+        Long searchLogId = insertSearchLog(userId, "番茄、鸡蛋", "dinner", "balanced");
+        Long recipeId = insertRecipe(userId, searchLogId, "待删除菜谱", LocalDateTime.now());
+        Long otherRecipeId = insertRecipe(otherUserId, null, "他人菜谱", LocalDateTime.now());
+        jdbcTemplate.update(
+                "INSERT INTO recipe_ingredients (recipe_id, ingredient_name) VALUES (?, ?)",
+                recipeId,
+                "番茄"
+        );
+        jdbcTemplate.update(
+                "INSERT INTO recipe_steps (recipe_id, step_no, instruction) VALUES (?, ?, ?)",
+                recipeId,
+                1,
+                "切番茄"
+        );
+
+        savedRecipeService.delete(userId, recipeId);
+
+        assertThat(count("recipe_records", "id", recipeId)).isZero();
+        assertThat(count("recipe_ingredients", "recipe_id", recipeId)).isZero();
+        assertThat(count("recipe_steps", "recipe_id", recipeId)).isZero();
+        assertThat(count("search_logs", "id", searchLogId)).isEqualTo(1);
+        assertThatThrownBy(() -> savedRecipeService.delete(userId, otherRecipeId))
+                .isInstanceOf(ResponseStatusException.class)
+                .satisfies(exception -> assertThat(((ResponseStatusException) exception).getStatusCode().value())
+                        .isEqualTo(404));
+        assertThatThrownBy(() -> savedRecipeService.delete(userId, Long.MAX_VALUE))
+                .isInstanceOf(ResponseStatusException.class)
+                .satisfies(exception -> assertThat(((ResponseStatusException) exception).getStatusCode().value())
+                        .isEqualTo(404));
+        assertThat(count("recipe_records", "id", otherRecipeId)).isEqualTo(1);
+    }
+
+    private Long insertUser(String phone, String nickname) {
+        jdbcTemplate.update(
+                "INSERT INTO users (phone, nickname, role, enabled) VALUES (?, ?, 'USER', 1)",
+                phone,
+                nickname
+        );
+        return jdbcTemplate.queryForObject("SELECT id FROM users WHERE phone = ?", Long.class, phone);
+    }
+
+    private Long insertSearchLog(Long userId, String queryText, String mealType, String goal) {
+        jdbcTemplate.update(
+                """
+                INSERT INTO search_logs (user_id, query_text, input_type, recognized_ingredients, meal_type, goal)
+                VALUES (?, ?, 'text', '[]', ?, ?)
+                """,
+                userId,
+                queryText,
+                mealType,
+                goal
+        );
+        return jdbcTemplate.queryForObject("SELECT MAX(id) FROM search_logs", Long.class);
+    }
+
+    private Long insertRecipe(Long userId, Long searchLogId, String title, LocalDateTime createdAt) {
+        jdbcTemplate.update(
+                "INSERT INTO recipe_records (user_id, search_log_id, title, created_at) VALUES (?, ?, ?, ?)",
+                userId,
+                searchLogId,
+                title,
+                createdAt
+        );
+        return jdbcTemplate.queryForObject("SELECT MAX(id) FROM recipe_records", Long.class);
+    }
+
+    private int count(String table, String column, Long value) {
+        return jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM " + table + " WHERE " + column + " = ?",
+                Integer.class,
+                value
+        );
     }
 
     private SaveRecipeRequest saveRequest(Long searchLogId) {
