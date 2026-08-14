@@ -142,6 +142,31 @@
               </p>
             </div>
 
+            <div v-else-if="showCameraCapture" class="camera-capture-panel" aria-label="拍照识别食材">
+              <div class="camera-capture-copy">
+                <span class="camera-capture-icon" aria-hidden="true">
+                  <Camera :size="20" />
+                </span>
+                <div>
+                  <strong>拍照识别食材</strong>
+                  <p>打开摄像头拍摄食材，照片会自动提交给 AI 识别。</p>
+                </div>
+              </div>
+              <el-button type="primary" :loading="recognizing" @click="openCameraCapture">
+                <Camera :size="16" aria-hidden="true" />
+                <span>打开摄像头</span>
+              </el-button>
+
+              <div v-if="recognizedIngredients.length" class="recognized-result camera-recognized-result">
+                <span v-for="ingredient in recognizedIngredients" :key="ingredient">
+                  {{ ingredient }}
+                </span>
+              </div>
+              <p v-if="recognitionDescription" class="recognition-summary camera-recognition-summary">
+                {{ recognitionDescription }}
+              </p>
+            </div>
+
             <div class="search-actions">
               <el-button
                 type="primary"
@@ -167,6 +192,15 @@
               <h2>{{ resultTitle }}</h2>
             </div>
             <div class="result-header-actions">
+              <el-button
+                v-if="recipe?.steps?.length"
+                class="start-cooking-button"
+                type="primary"
+                @click="openCookingMode"
+              >
+                <Play :size="16" aria-hidden="true" />
+                <span>开始烹饪</span>
+              </el-button>
               <el-dropdown
                 v-if="recipe"
                 trigger="click"
@@ -426,6 +460,13 @@
     :saving="preferenceSaving"
     @save="persistDietPreference"
   />
+  <CameraIngredientCapture v-model="cameraCaptureVisible" @captured="handleCameraCaptured" />
+  <CookingModeDialog
+    v-if="recipe"
+    v-model="cookingModeVisible"
+    :recipe="recipe"
+    :storage-key="cookingStorageKey"
+  />
 </template>
 
 <script setup>
@@ -443,6 +484,7 @@ import {
   HeartPulse,
   ImagePlus,
   Network,
+  Play,
   RefreshCw,
   RotateCcw,
   ScanSearch,
@@ -454,6 +496,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { generateRecipe, recognizeIngredients, saveRecipe } from '../api/recipes'
 import { getRecentSearches } from '../api/searchHistory'
 import { getDietPreference, saveDietPreference } from '../api/userPreferences'
+import CameraIngredientCapture from '../components/CameraIngredientCapture.vue'
+import CookingModeDialog from '../components/CookingModeDialog.vue'
 import DietPreferenceDialog from '../components/DietPreferenceDialog.vue'
 import RecentSearchPopover from '../components/RecentSearchPopover.vue'
 import { useAuthStore } from '../stores/auth'
@@ -478,6 +522,7 @@ const mealType = ref('any')
 const goal = ref('balanced')
 const goalManuallySelected = ref(false)
 const searchMode = ref('text')
+const cameraCaptureVisible = ref(false)
 const imageInput = ref(null)
 const selectedImageFile = ref(null)
 const selectedImagePreview = ref('')
@@ -491,6 +536,7 @@ const recognizing = ref(false)
 const savingRecipe = ref(false)
 const savedRecipeId = ref(null)
 const currentRecipePage = ref(0)
+const cookingModeVisible = ref(false)
 const dietPreference = ref(normalizeDietPreference())
 const preferenceDialogVisible = ref(false)
 const preferenceLoaded = ref(false)
@@ -516,7 +562,7 @@ const regenerationOptions = [
 const modeCards = [
   { value: 'text', label: '文字输入', description: '手动输入现有食材', icon: markRaw(ScanSearch) },
   { value: 'image', label: '图片识别', description: '上传图片识别食材', icon: markRaw(ImagePlus) },
-  { value: 'camera', label: '拍照识别', description: '功能暂未实现', icon: markRaw(Camera), disabled: true }
+  { value: 'camera', label: '拍照识别', description: '使用摄像头拍摄食材', icon: markRaw(Camera) }
 ]
 
 const mealLabels = {
@@ -544,6 +590,12 @@ const modeLabels = {
 
 const hasSearch = computed(() => Boolean(lastSearch.value))
 const showImageUpload = computed(() => searchMode.value === 'image')
+const showCameraCapture = computed(() => searchMode.value === 'camera')
+const cookingStorageKey = computed(() => {
+  const userKey = auth.isUser ? auth.displayName || 'user' : 'guest'
+  const recipeKey = recipe.value?.searchLogId || recipe.value?.title || 'draft'
+  return `ai_smart_recipe:cooking:${encodeURIComponent(userKey)}:${encodeURIComponent(String(recipeKey))}`
+})
 const cleanIngredients = computed(() => lastSearch.value?.ingredients || '暂无')
 const mealTypeLabel = computed(() => mealLabels[lastSearch.value?.mealType || mealType.value] || mealLabels.any)
 const goalLabel = computed(() => goalLabels[lastSearch.value?.goal || goal.value] || goalLabels.balanced)
@@ -605,6 +657,8 @@ const activeRecipePageIndex = computed(() => {
 const activeRecipePage = computed(() => recipePages.value[activeRecipePageIndex.value])
 
 onBeforeUnmount(() => {
+  cameraCaptureVisible.value = false
+  cookingModeVisible.value = false
   revokeImagePreview()
 })
 
@@ -684,6 +738,8 @@ function resetSearch() {
   goalManuallySelected.value = false
   goal.value = auth.isUser ? dietPreference.value.defaultGoal : 'balanced'
   searchMode.value = 'text'
+  cameraCaptureVisible.value = false
+  cookingModeVisible.value = false
   clearSelectedImage()
   lastSearch.value = null
   recipe.value = null
@@ -941,22 +997,32 @@ function openImagePicker() {
   imageInput.value?.click()
 }
 
+function openCameraCapture() {
+  if (!recognizing.value) {
+    cameraCaptureVisible.value = true
+  }
+}
+
 function handleImageSelected(event) {
   const file = event.target.files?.[0]
   if (!file) {
     return
   }
 
+  if (!selectImageFile(file)) {
+    event.target.value = ''
+  }
+}
+
+function selectImageFile(file) {
   if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
     ElMessage.warning('仅支持 JPG、PNG、WebP 图片')
-    event.target.value = ''
-    return
+    return false
   }
 
   if (file.size > 5 * 1024 * 1024) {
     ElMessage.warning('图片大小不能超过 5MB')
-    event.target.value = ''
-    return
+    return false
   }
 
   selectedImageFile.value = file
@@ -964,11 +1030,29 @@ function handleImageSelected(event) {
   recognitionDescription.value = ''
   revokeImagePreview()
   selectedImagePreview.value = URL.createObjectURL(file)
+  return true
+}
+
+async function handleCameraCaptured(file) {
+  cameraCaptureVisible.value = false
+  if (!selectImageFile(file)) {
+    return
+  }
+
+  await recognizeSelectedImage()
 }
 
 async function recognizeUploadedImage() {
+  await recognizeSelectedImage()
+}
+
+async function recognizeSelectedImage() {
   if (!selectedImageFile.value) {
     ElMessage.warning('请先选择食材图片')
+    return
+  }
+
+  if (recognizing.value) {
     return
   }
 
@@ -1051,6 +1135,14 @@ async function preparePlatformSearch(ingredientName) {
   } catch {
     ElMessage.info(`请在平台中搜索“${ingredientName}”`)
   }
+}
+
+function openCookingMode() {
+  if (!recipe.value?.steps?.length) {
+    ElMessage.warning('当前菜谱暂无可执行的烹饪步骤')
+    return
+  }
+  cookingModeVisible.value = true
 }
 
 function clearSelectedImage() {
@@ -1468,6 +1560,65 @@ h3 {
   line-height: 1.5;
 }
 
+.camera-capture-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--app-line-strong);
+  border-radius: 8px;
+  background: var(--app-surface-soft);
+}
+
+.camera-capture-copy {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.camera-capture-icon {
+  display: inline-grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--app-line-strong);
+  border-radius: 7px;
+  color: var(--app-accent);
+  background: var(--app-surface);
+}
+
+.camera-capture-copy strong {
+  display: block;
+  color: var(--app-text);
+  font-size: 13px;
+}
+
+.camera-capture-copy p {
+  margin: 3px 0 0;
+  color: var(--app-text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.camera-capture-panel :deep(.el-button) {
+  min-height: 36px;
+  margin-left: 0;
+}
+
+.camera-capture-panel :deep(.el-button span) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.camera-recognized-result,
+.camera-recognition-summary {
+  grid-column: 1 / -1;
+}
+
 .search-actions {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -1509,12 +1660,14 @@ h3 {
 }
 
 .save-recipe-button,
-.regenerate-recipe-button {
+.regenerate-recipe-button,
+.start-cooking-button {
   white-space: nowrap;
 }
 
 .regenerate-recipe-button :deep(span),
-.save-recipe-button :deep(span) {
+.save-recipe-button :deep(span),
+.start-cooking-button :deep(span) {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -1873,6 +2026,14 @@ h3 {
 
   .search-actions {
     grid-template-columns: 1fr;
+  }
+
+  .camera-capture-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .camera-capture-panel :deep(.el-button) {
+    width: 100%;
   }
 }
 </style>

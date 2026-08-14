@@ -103,7 +103,18 @@
               <h2>{{ selected.recipe?.title || '菜谱详情' }}</h2>
               <p class="saved-time">保存于 {{ formatDate(selected.savedAt) }}</p>
             </div>
-            <span class="detail-id">#{{ selected.id }}</span>
+            <div class="detail-heading-actions">
+              <el-button
+                v-if="selected.recipe?.steps?.length"
+                class="start-cooking-button"
+                type="primary"
+                @click="openCookingMode"
+              >
+                <Play :size="16" aria-hidden="true" />
+                <span>开始烹饪</span>
+              </el-button>
+              <span class="detail-id">#{{ selected.id }}</span>
+            </div>
           </header>
 
           <div v-if="selected.recipe" class="recipe-detail">
@@ -238,13 +249,20 @@
       </section>
     </div>
   </main>
+  <CookingModeDialog
+    v-if="selected?.recipe"
+    v-model="cookingModeVisible"
+    :recipe="selected.recipe"
+    :storage-key="cookingStorageKey"
+  />
 </template>
 
 <script setup>
 import { computed, markRaw, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, ExternalLink, Flame, HeartPulse, Network, Search, Trash2, Video } from 'lucide-vue-next'
+import { ArrowLeft, ExternalLink, Flame, HeartPulse, Network, Play, Search, Trash2, Video } from 'lucide-vue-next'
 import { deleteSavedRecipe, getSavedRecipe, getSavedRecipes } from '../api/recipes'
+import CookingModeDialog from '../components/CookingModeDialog.vue'
 import {
   buildPurchaseLinks,
   buildBilibiliSearchLink,
@@ -260,6 +278,7 @@ const loading = ref(false)
 const detailLoading = ref(false)
 const deletingId = ref(null)
 const activePage = ref('ingredients')
+const cookingModeVisible = ref(false)
 const keywordDraft = ref('')
 const keyword = ref('')
 const mealType = ref('')
@@ -291,6 +310,7 @@ const explanationItems = computed(() => {
   ].filter((item) => item.content)
 })
 const videoKeywords = computed(() => filterVideoKeywords(selected.value?.recipe?.videoKeywords))
+const cookingStorageKey = computed(() => `ai_smart_recipe:cooking:saved:${selected.value?.id || 'draft'}`)
 
 const recipePages = computed(() => {
   const recipe = selected.value?.recipe
@@ -479,6 +499,14 @@ function formatDate(value) {
   }).format(new Date(value))
 }
 
+function openCookingMode() {
+  if (!selected.value?.recipe?.steps?.length) {
+    ElMessage.warning('当前菜谱暂无可执行的烹饪步骤')
+    return
+  }
+  cookingModeVisible.value = true
+}
+
 function getErrorMessage(error) {
   const status = error?.response?.status
   if (status === 401) {
@@ -638,6 +666,20 @@ function getDeleteErrorMessage(error) {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+}
+
+.detail-heading-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.start-cooking-button :deep(span) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .count-badge,
@@ -925,6 +967,14 @@ function getDeleteErrorMessage(error) {
 
   .detail-panel {
     padding: 16px;
+  }
+
+  .detail-heading {
+    align-items: flex-start;
+  }
+
+  .detail-heading-actions {
+    flex-wrap: wrap;
   }
 }
 </style>
