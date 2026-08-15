@@ -6,6 +6,7 @@
     :close-on-click-modal="false"
     :close-on-press-escape="true"
     :show-close="true"
+    append-to-body
     destroy-on-close
     @open="handleDialogOpened"
     @update:model-value="handleDialogVisibility"
@@ -16,7 +17,7 @@
         <span class="camera-heading-icon" aria-hidden="true">
           <ScanLine :size="18" :stroke-width="1.8" />
         </span>
-        <h2 id="camera-capture-title">拍照识别</h2>
+        <h2 id="camera-capture-title">{{ title }}</h2>
       </div>
     </template>
 
@@ -46,10 +47,10 @@
           autoplay
           muted
           playsinline
-          aria-label="摄像头预览"
+          :aria-label="`${subjectLabel}摄像头预览`"
         />
 
-        <img v-if="previewUrl" class="camera-image-preview" :src="previewUrl" alt="已拍摄的食材照片" />
+        <img v-if="previewUrl" class="camera-image-preview" :src="previewUrl" :alt="`已拍摄的${subjectLabel}照片`" />
 
         <div v-if="isStartingCamera" class="camera-stage-state" aria-hidden="true">
           <LoaderCircle class="camera-spinner" :size="28" :stroke-width="1.8" />
@@ -58,7 +59,7 @@
 
         <div v-else-if="!isPreviewing && !hasCapturedImage" class="camera-stage-state" aria-hidden="true">
           <Camera :size="32" :stroke-width="1.5" />
-          <span>准备拍摄食材</span>
+          <span>准备拍摄{{ subjectLabel }}</span>
         </div>
 
         <span v-if="isPreviewing" class="camera-live-status">拍摄中</span>
@@ -133,7 +134,9 @@ import {
 } from '../utils/cameraCapture'
 
 const props = defineProps({
-  modelValue: { type: Boolean, default: false }
+  modelValue: { type: Boolean, default: false },
+  title: { type: String, default: '拍照识别' },
+  subjectLabel: { type: String, default: '食材' }
 })
 
 const emit = defineEmits(['update:modelValue', 'captured', 'close', 'error'])

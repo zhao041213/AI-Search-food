@@ -105,6 +105,15 @@
             </div>
             <div class="detail-heading-actions">
               <el-button
+                v-if="selected.recipe"
+                class="finished-dish-review-button"
+                plain
+                @click="openFinishedDishReview"
+              >
+                <Sparkles :size="16" aria-hidden="true" />
+                <span>评价成品</span>
+              </el-button>
+              <el-button
                 v-if="selected.recipe?.steps?.length"
                 class="start-cooking-button"
                 type="primary"
@@ -255,14 +264,32 @@
     :recipe="selected.recipe"
     :storage-key="cookingStorageKey"
   />
+  <FinishedDishReviewDialog
+    v-if="selected?.recipe"
+    v-model="finishedDishReviewVisible"
+    :recipe="selected.recipe"
+    :recipe-id="selected.id"
+  />
 </template>
 
 <script setup>
 import { computed, markRaw, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, ExternalLink, Flame, HeartPulse, Network, Play, Search, Trash2, Video } from 'lucide-vue-next'
+import {
+  ArrowLeft,
+  ExternalLink,
+  Flame,
+  HeartPulse,
+  Network,
+  Play,
+  Search,
+  Sparkles,
+  Trash2,
+  Video
+} from 'lucide-vue-next'
 import { deleteSavedRecipe, getSavedRecipe, getSavedRecipes } from '../api/recipes'
 import CookingModeDialog from '../components/CookingModeDialog.vue'
+import FinishedDishReviewDialog from '../components/FinishedDishReviewDialog.vue'
 import {
   buildPurchaseLinks,
   buildBilibiliSearchLink,
@@ -279,6 +306,7 @@ const detailLoading = ref(false)
 const deletingId = ref(null)
 const activePage = ref('ingredients')
 const cookingModeVisible = ref(false)
+const finishedDishReviewVisible = ref(false)
 const keywordDraft = ref('')
 const keyword = ref('')
 const mealType = ref('')
@@ -507,6 +535,14 @@ function openCookingMode() {
   cookingModeVisible.value = true
 }
 
+function openFinishedDishReview() {
+  if (!selected.value?.recipe?.title) {
+    ElMessage.warning('当前菜谱信息不完整，暂时无法评价')
+    return
+  }
+  finishedDishReviewVisible.value = true
+}
+
 function getErrorMessage(error) {
   const status = error?.response?.status
   if (status === 401) {
@@ -676,7 +712,8 @@ function getDeleteErrorMessage(error) {
   gap: 8px;
 }
 
-.start-cooking-button :deep(span) {
+.start-cooking-button :deep(span),
+.finished-dish-review-button :deep(span) {
   display: inline-flex;
   align-items: center;
   gap: 6px;
