@@ -11,3 +11,4 @@ backend/src/main/resources/application-local.yml
 .idea/
 .vscode/
 .deploy/*.tar.gz
+/data/finished-dish-reviews/

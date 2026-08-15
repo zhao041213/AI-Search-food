@@ -201,6 +201,16 @@
                 <Play :size="16" aria-hidden="true" />
                 <span>开始烹饪</span>
               </el-button>
+              <el-button
+                v-if="recipe"
+                class="finished-dish-review-button"
+                plain
+                :disabled="generating"
+                @click="openFinishedDishReview"
+              >
+                <Sparkles :size="16" aria-hidden="true" />
+                <span>评价成品</span>
+              </el-button>
               <el-dropdown
                 v-if="recipe"
                 trigger="click"
@@ -467,6 +477,12 @@
     :recipe="recipe"
     :storage-key="cookingStorageKey"
   />
+  <FinishedDishReviewDialog
+    v-if="recipe"
+    v-model="finishedDishReviewVisible"
+    :recipe="recipe"
+    :recipe-id="savedRecipeId"
+  />
 </template>
 
 <script setup>
@@ -499,6 +515,7 @@ import { getDietPreference, saveDietPreference } from '../api/userPreferences'
 import CameraIngredientCapture from '../components/CameraIngredientCapture.vue'
 import CookingModeDialog from '../components/CookingModeDialog.vue'
 import DietPreferenceDialog from '../components/DietPreferenceDialog.vue'
+import FinishedDishReviewDialog from '../components/FinishedDishReviewDialog.vue'
 import RecentSearchPopover from '../components/RecentSearchPopover.vue'
 import { useAuthStore } from '../stores/auth'
 import {
@@ -537,6 +554,7 @@ const savingRecipe = ref(false)
 const savedRecipeId = ref(null)
 const currentRecipePage = ref(0)
 const cookingModeVisible = ref(false)
+const finishedDishReviewVisible = ref(false)
 const dietPreference = ref(normalizeDietPreference())
 const preferenceDialogVisible = ref(false)
 const preferenceLoaded = ref(false)
@@ -659,6 +677,7 @@ const activeRecipePage = computed(() => recipePages.value[activeRecipePageIndex.
 onBeforeUnmount(() => {
   cameraCaptureVisible.value = false
   cookingModeVisible.value = false
+  finishedDishReviewVisible.value = false
   revokeImagePreview()
 })
 
@@ -740,6 +759,7 @@ function resetSearch() {
   searchMode.value = 'text'
   cameraCaptureVisible.value = false
   cookingModeVisible.value = false
+  finishedDishReviewVisible.value = false
   clearSelectedImage()
   lastSearch.value = null
   recipe.value = null
@@ -1143,6 +1163,14 @@ function openCookingMode() {
     return
   }
   cookingModeVisible.value = true
+}
+
+function openFinishedDishReview() {
+  if (!recipe.value?.title) {
+    ElMessage.warning('当前菜谱信息不完整，暂时无法评价')
+    return
+  }
+  finishedDishReviewVisible.value = true
 }
 
 function clearSelectedImage() {
@@ -1661,13 +1689,15 @@ h3 {
 
 .save-recipe-button,
 .regenerate-recipe-button,
-.start-cooking-button {
+.start-cooking-button,
+.finished-dish-review-button {
   white-space: nowrap;
 }
 
 .regenerate-recipe-button :deep(span),
 .save-recipe-button :deep(span),
-.start-cooking-button :deep(span) {
+.start-cooking-button :deep(span),
+.finished-dish-review-button :deep(span) {
   display: inline-flex;
   align-items: center;
   gap: 6px;
