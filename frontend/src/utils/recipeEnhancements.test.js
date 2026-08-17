@@ -6,7 +6,11 @@ import {
   buildBilibiliSearchLink,
   copyIngredientName,
   filterVideoKeywords,
-  parseIngredientNames
+  getShoppingItemStatus,
+  isShoppingItemChecked,
+  normalizeShoppingStatus,
+  parseIngredientNames,
+  shoppingChecklistKey
 } from './recipeEnhancements.js'
 
 test('parseIngredientNames splits common separators, normalizes aliases, and removes duplicates', () => {
@@ -148,4 +152,23 @@ test('buildShoppingList filters recipe ingredients with empty names', () => {
       purchaseLinks: buildPurchaseLinks('番茄')
     }
   ])
+})
+
+test('shopping checklist preserves selectable procurement statuses', () => {
+  const item = { name: 'egg', alreadyOwned: false }
+
+  assert.equal(normalizeShoppingStatus('purchasing'), 'PURCHASING')
+  assert.equal(getShoppingItemStatus(item), 'PENDING')
+  assert.equal(getShoppingItemStatus(item, { egg: 'PURCHASED' }), 'PURCHASED')
+  assert.equal(getShoppingItemStatus({ ...item, status: 'READY' }), 'READY')
+  assert.equal(getShoppingItemStatus(item, { egg: 'unknown' }), 'PENDING')
+})
+
+test('shopping checklist uses inventory by default and preserves a manual override', () => {
+  const item = { name: '西红柿', alreadyOwned: true }
+
+  assert.equal(shoppingChecklistKey('西红柿'), '番茄')
+  assert.equal(isShoppingItemChecked(item), true)
+  assert.equal(isShoppingItemChecked(item, { 番茄: false }), false)
+  assert.equal(isShoppingItemChecked({ name: '鸡蛋', alreadyOwned: false }, { 鸡蛋: true }), true)
 })

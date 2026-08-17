@@ -56,6 +56,16 @@ class PersistenceSchemaTest {
     }
 
     @Test
+    void shoppingItemCheckTableIsCreatedByFlyway() {
+        assertThat(tableExists("shopping_item_checks")).isTrue();
+        assertThat(columnExists("shopping_item_checks", "user_id")).isTrue();
+        assertThat(columnExists("shopping_item_checks", "search_log_id")).isTrue();
+        assertThat(columnExists("shopping_item_checks", "ingredient_name")).isTrue();
+        assertThat(columnExists("shopping_item_checks", "status")).isTrue();
+        assertThat(columnExists("shopping_item_checks", "checked")).isTrue();
+    }
+
+    @Test
     void dietPreferenceIsDeletedWithItsUser() {
         jdbcTemplate.update("""
                 INSERT INTO users (phone, nickname)

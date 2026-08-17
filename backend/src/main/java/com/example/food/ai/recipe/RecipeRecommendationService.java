@@ -3,7 +3,9 @@ package com.example.food.ai.recipe;
 import com.example.food.ai.qwen.QwenRecipeClient;
 import com.example.food.ai.recipe.dto.RecipeGenerateRequest;
 import com.example.food.ai.recipe.dto.RecipeGenerateResponse;
+import com.example.food.pantry.UserPantryService;
 import com.example.food.recipe.SearchLogService;
+import com.example.food.security.AppRole;
 import com.example.food.security.AuthPrincipal;
 import org.springframework.stereotype.Service;
 
@@ -19,10 +21,16 @@ public class RecipeRecommendationService {
 
     private final QwenRecipeClient qwenRecipeClient;
     private final SearchLogService searchLogService;
+    private final UserPantryService userPantryService;
 
-    public RecipeRecommendationService(QwenRecipeClient qwenRecipeClient, SearchLogService searchLogService) {
+    public RecipeRecommendationService(
+            QwenRecipeClient qwenRecipeClient,
+            SearchLogService searchLogService,
+            UserPantryService userPantryService
+    ) {
         this.qwenRecipeClient = qwenRecipeClient;
         this.searchLogService = searchLogService;
+        this.userPantryService = userPantryService;
     }
 
     public RecipeGenerateResponse generate(RecipeGenerateRequest request) {
@@ -34,16 +42,19 @@ public class RecipeRecommendationService {
             AuthPrincipal principal,
             String anonymousId
     ) {
-        RecipeGenerateResponse response = qwenRecipeClient.generateRecipe(buildPrompt(request));
+        RecipeGenerateResponse response = qwenRecipeClient.generateRecipe(
+                buildPrompt(request, pantryIngredients(principal))
+        );
         Long searchLogId = searchLogService.record(request, response, principal, anonymousId);
         return response.withSearchLogId(searchLogId);
     }
 
-    private String buildPrompt(RecipeGenerateRequest request) {
+    private String buildPrompt(RecipeGenerateRequest request, List<String> pantryIngredients) {
         return """
                 请根据以下信息生成一份适合家庭烹饪的中文菜谱。
 
-                用户已有食材：%s
+                本次指定食材：%s
+                用户库存食材：%s
                 餐次：%s
                 饮食目标：%s
                 输入方式：%s
@@ -73,17 +84,25 @@ public class RecipeRecommendationService {
                 }
 
                 ingredients 必须列出完成菜谱所需的全部食材。
-                将“用户已有食材”视为用户已经提供的食材，并按常见别名和语义判断是否已有。
+                将“本次指定食材”和“用户库存食材”都视为用户可用的已有食材，并按常见别名和语义判断是否已有。
                 仅将用户没有提供、但菜谱需要的食材放入 missingIngredients；没有缺失食材时返回空数组。
                 只为 missingIngredients 中的缺失食材提供 substitutes，不要为已有食材提供替代建议。
                 effects 与 explanation 只能提供一般饮食和烹饪信息，不得作出疾病治疗、预防或疗效保证等医疗承诺。
                 """.formatted(
                 safeText(request.ingredients()),
+                safeIngredients(pantryIngredients),
                 safeText(request.mealType()),
                 safeText(resolveGoal(request)),
                 safeText(request.searchMode()),
                 requestContext(request)
         );
+    }
+
+    private List<String> pantryIngredients(AuthPrincipal principal) {
+        if (principal == null || principal.role() != AppRole.USER) {
+            return List.of();
+        }
+        return userPantryService.listIngredientNames(principal.id());
     }
 
     private String resolveGoal(RecipeGenerateRequest request) {

@@ -3,7 +3,10 @@ package com.example.food.ai.recipe;
 import com.example.food.ai.qwen.QwenRecipeClient;
 import com.example.food.ai.recipe.dto.RecipeGenerateRequest;
 import com.example.food.ai.recipe.dto.RecipeGenerateResponse;
+import com.example.food.pantry.UserPantryService;
 import com.example.food.recipe.SearchLogService;
+import com.example.food.security.AppRole;
+import com.example.food.security.AuthPrincipal;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -29,6 +32,9 @@ class RecipeRecommendationServiceTest {
 
     @Mock
     private SearchLogService searchLogService;
+
+    @Mock
+    private UserPantryService userPantryService;
 
     @InjectMocks
     private RecipeRecommendationService recipeRecommendationService;
@@ -115,6 +121,24 @@ class RecipeRecommendationServiceTest {
     }
 
     @Test
+    void generationPromptIncludesLoggedInUsersPantryIngredients() {
+        RecipeGenerateRequest request = new RecipeGenerateRequest("番茄", "dinner", "balanced", "text");
+        AuthPrincipal principal = new AuthPrincipal(7L, "13800138000", AppRole.USER);
+        when(userPantryService.listIngredientNames(7L)).thenReturn(List.of("鸡蛋", "土豆"));
+        when(qwenRecipeClient.generateRecipe(anyString())).thenReturn(recipeResponse());
+
+        recipeRecommendationService.generate(request, principal, null);
+
+        ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(qwenRecipeClient).generateRecipe(promptCaptor.capture());
+        assertThat(promptCaptor.getValue())
+                .contains("本次指定食材：番茄")
+                .contains("用户库存食材：鸡蛋、土豆")
+                .contains("将“本次指定食材”和“用户库存食材”都视为用户可用的已有食材");
+        verify(userPantryService).listIngredientNames(7L);
+    }
+
+    @Test
     void dietPreferenceCollectionsAreLengthLimitedBeforeAddingToPrompt() {
         List<String> avoidIngredients = new ArrayList<>();
         for (int index = 1; index <= 21; index++) {
@@ -180,7 +204,8 @@ class RecipeRecommendationServiceTest {
         verify(qwenRecipeClient).generateRecipe(promptCaptor.capture());
         String prompt = promptCaptor.getValue();
         assertThat(prompt)
-                .contains("用户已有食材：番茄")
+                .contains("本次指定食材：番茄")
+                .contains("用户库存食材：未指定")
                 .contains("上一版菜名：番茄炒蛋")
                 .contains("调整方向：减少用油并缩短烹饪时间")
                 .contains("口味偏好：酸辣")

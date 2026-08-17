@@ -77,6 +77,10 @@
           <Bookmark :size="17" aria-hidden="true" />
           <span>我的菜谱</span>
         </RouterLink>
+        <RouterLink v-if="auth.isUser" class="sidebar-link" to="/pantry">
+          <Package :size="17" aria-hidden="true" />
+          <span>我的食材</span>
+        </RouterLink>
 
         <div class="sidebar-caption sidebar-caption-spaced">功能扩展</div>
         <RouterLink class="sidebar-link" :to="hotIngredientNavigation.to">
@@ -105,7 +109,7 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { Bookmark, Circle, Flame, Home, LogIn, LogOut, Palette, ShieldCheck, Utensils } from 'lucide-vue-next'
+import { Bookmark, Circle, Flame, Home, LogIn, LogOut, Package, Palette, ShieldCheck, Utensils } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from './stores/auth'
 import { getHotIngredientNavigation, shouldShowSavedRecipesNavigation } from './utils/hotIngredientNavigation'
@@ -578,6 +582,10 @@ function applyTheme(theme) {
 }
 
 .header-button {
+  --el-button-text-color: #000000;
+  --el-button-hover-text-color: #000000;
+  --el-button-active-text-color: #000000;
+  color: #000000 !important;
   font-weight: 700;
 }
 
