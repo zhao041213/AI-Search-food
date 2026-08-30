@@ -22,6 +22,12 @@ Current stack:
 - Do not overwrite user changes. If user changes affect the task, work with them.
 - All frontend pages must use Chinese as the primary visible language. English copy should only remain for code identifiers, API values, or unavoidable third-party terms.
 
+## Technical Discussion And Challenge
+
+- Maintain independent technical judgment. When a user proposal creates a material risk to correctness, usability, feasibility, maintainability, cost, security, or the agreed product goal, raise the concern clearly and discuss it instead of silently following it.
+- Explain the concrete reasoning, trade-offs, and a practical alternative. Respect the user's final product decision unless a platform, safety, or technical constraint makes it impossible.
+- Keep disagreements factual, respectful, and scoped to the current task. Do not argue without a specific engineering reason or user benefit.
+
 ## Required Flow For Code Changes
 
 Before changing code:
@@ -81,6 +87,8 @@ rollback the last modification made by the agent:
 
 ## Git And GitHub Rules
 
+- Before adding a feature, fixing a bug, adding or changing tests, or making other implementation changes, create and work on a dedicated branch. Do not make these changes directly on `main`.
+- Use concise, descriptive branch names that make the purpose clear. Use a type prefix and lowercase hyphen-separated words, such as `feature/ingredient-image-cache`, `fix/eggplant-image`, or `test/recipe-search-coverage`.
 - Do not commit unless the user explicitly approves.
 - Do not push to GitHub unless the user explicitly approves.
 - Do not merge branches unless the user explicitly approves.

@@ -66,6 +66,18 @@ class PersistenceSchemaTest {
     }
 
     @Test
+    void healthProfileTableIsCreatedByFlyway() {
+        assertThat(tableExists("user_health_profiles")).isTrue();
+        assertThat(columnExists("user_health_profiles", "user_id")).isTrue();
+        assertThat(columnExists("user_health_profiles", "age_range")).isTrue();
+        assertThat(columnExists("user_health_profiles", "height_cm")).isTrue();
+        assertThat(columnExists("user_health_profiles", "weight_kg")).isTrue();
+        assertThat(columnExists("user_health_profiles", "activity_level")).isTrue();
+        assertThat(columnExists("user_health_profiles", "created_at")).isTrue();
+        assertThat(columnExists("user_health_profiles", "updated_at")).isTrue();
+    }
+
+    @Test
     void dietPreferenceIsDeletedWithItsUser() {
         jdbcTemplate.update("""
                 INSERT INTO users (phone, nickname)
@@ -86,6 +98,33 @@ class PersistenceSchemaTest {
 
         Integer count = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM user_diet_preferences WHERE user_id = ?",
+                Integer.class,
+                userId
+        );
+        assertThat(count).isZero();
+    }
+
+    @Test
+    void healthProfileIsDeletedWithItsUser() {
+        jdbcTemplate.update("""
+                INSERT INTO users (phone, nickname)
+                VALUES (?, ?)
+                """, "13800138002", "health-profile-test");
+        Long userId = jdbcTemplate.queryForObject(
+                "SELECT id FROM users WHERE phone = ?",
+                Long.class,
+                "13800138002"
+        );
+        jdbcTemplate.update("""
+                INSERT INTO user_health_profiles (
+                    user_id, age_range, height_cm, weight_kg, activity_level
+                ) VALUES (?, ?, ?, ?, ?)
+                """, userId, "AGE_30_44", 172.0, 64.0, "MODERATE");
+
+        jdbcTemplate.update("DELETE FROM users WHERE id = ?", userId);
+
+        Integer count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM user_health_profiles WHERE user_id = ?",
                 Integer.class,
                 userId
         );

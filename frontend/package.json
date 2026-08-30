@@ -4,6 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "start": "powershell -ExecutionPolicy Bypass -File ./scripts/start-nginx.ps1",
+    "stop": "powershell -ExecutionPolicy Bypass -File ./scripts/stop-nginx.ps1",
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0"

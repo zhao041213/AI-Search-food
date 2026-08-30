@@ -81,6 +81,10 @@
           <Package :size="17" aria-hidden="true" />
           <span>我的食材</span>
         </RouterLink>
+        <RouterLink v-if="auth.isUser" class="sidebar-link" to="/health-profile">
+          <HeartPulse :size="17" aria-hidden="true" />
+          <span>健康档案</span>
+        </RouterLink>
 
         <div class="sidebar-caption sidebar-caption-spaced">功能扩展</div>
         <RouterLink class="sidebar-link" :to="hotIngredientNavigation.to">
@@ -109,7 +113,7 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { Bookmark, Circle, Flame, Home, LogIn, LogOut, Package, Palette, ShieldCheck, Utensils } from 'lucide-vue-next'
+import { Bookmark, Circle, Flame, HeartPulse, Home, LogIn, LogOut, Package, Palette, ShieldCheck, Utensils } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from './stores/auth'
 import { getHotIngredientNavigation, shouldShowSavedRecipesNavigation } from './utils/hotIngredientNavigation'

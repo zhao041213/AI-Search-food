@@ -7,6 +7,7 @@ import AdminDashboardView from '../views/AdminDashboardView.vue'
 import SavedRecipesView from '../views/SavedRecipesView.vue'
 import HotIngredientsView from '../views/HotIngredientsView.vue'
 import PantryView from '../views/PantryView.vue'
+import HealthProfileView from '../views/HealthProfileView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -37,6 +38,12 @@ const router = createRouter({
       path: '/pantry',
       name: 'pantry',
       component: PantryView,
+      meta: { requiresUser: true }
+    },
+    {
+      path: '/health-profile',
+      name: 'health-profile',
+      component: HealthProfileView,
       meta: { requiresUser: true }
     },
     {

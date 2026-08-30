@@ -2,6 +2,7 @@ target/
 .m2/
 node_modules/
 dist/
+frontend/nginx/runtime-local.conf
 .env
 backend/src/main/resources/application-local.yml
 *.log
