@@ -91,9 +91,10 @@
           <Flame :size="17" aria-hidden="true" />
           <span>{{ hotIngredientNavigation.label }}</span>
         </RouterLink>
-        <button class="sidebar-placeholder" type="button" disabled title="功能暂未开放">
-          <Circle :size="17" aria-hidden="true" />
-        </button>
+        <RouterLink v-if="auth.isUser" class="sidebar-link" to="/weekly-menu">
+          <CalendarDays :size="17" aria-hidden="true" />
+          <span>一周菜单</span>
+        </RouterLink>
         <button class="sidebar-placeholder" type="button" disabled title="功能暂未开放">
           <Circle :size="17" aria-hidden="true" />
         </button>
@@ -113,7 +114,7 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { Bookmark, Circle, Flame, HeartPulse, Home, LogIn, LogOut, Package, Palette, ShieldCheck, Utensils } from 'lucide-vue-next'
+import { Bookmark, CalendarDays, Circle, Flame, HeartPulse, Home, LogIn, LogOut, Package, Palette, ShieldCheck, Utensils } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from './stores/auth'
 import { getHotIngredientNavigation, shouldShowSavedRecipesNavigation } from './utils/hotIngredientNavigation'

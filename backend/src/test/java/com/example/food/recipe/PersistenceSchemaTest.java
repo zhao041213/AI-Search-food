@@ -131,6 +131,21 @@ class PersistenceSchemaTest {
         assertThat(count).isZero();
     }
 
+    @Test
+    void weeklyMenuTablesAreCreatedByFlyway() {
+        assertThat(tableExists("weekly_menu_plans")).isTrue();
+        assertThat(columnExists("weekly_menu_plans", "user_id")).isTrue();
+        assertThat(columnExists("weekly_menu_plans", "week_start_date")).isTrue();
+        assertThat(tableExists("weekly_menu_items")).isTrue();
+        assertThat(columnExists("weekly_menu_items", "plan_id")).isTrue();
+        assertThat(columnExists("weekly_menu_items", "menu_date")).isTrue();
+        assertThat(columnExists("weekly_menu_items", "meal_type")).isTrue();
+        assertThat(columnExists("weekly_menu_items", "recipe_id")).isTrue();
+        assertThat(tableExists("weekly_menu_shopping_checks")).isTrue();
+        assertThat(columnExists("weekly_menu_shopping_checks", "ingredient_name")).isTrue();
+        assertThat(columnExists("weekly_menu_shopping_checks", "status")).isTrue();
+    }
+
     private boolean tableExists(String tableName) {
         Integer count = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE LOWER(TABLE_NAME) = ?",

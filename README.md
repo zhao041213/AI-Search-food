@@ -77,6 +77,9 @@ MYSQL_PASSWORD=你的 MySQL 密码
 
 - `POST /api/ai/recipes/generate`：根据文字食材生成菜谱。
 - `POST /api/ai/ingredients/recognize`：上传 JPG、PNG 或 WebP 图片识别食材，最大 5MB。
+- `GET/PUT /api/users/me/weekly-menu`：读取或保存当前用户的一周菜单。
+- `POST /api/users/me/weekly-menu/auto-generate`：结合用户已保存菜谱、健康档案、饮食偏好和已有食材，调用 AI 自动安排一周 21 个餐次；覆盖已有菜单时传入 `overwrite=true`。
+- `PUT /api/users/me/weekly-menu/shopping-status`：更新本周采购清单中的食材状态。
 
 PowerShell 临时配置千问 Key：
 

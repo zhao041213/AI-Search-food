@@ -1,0 +1,752 @@
+<template>
+  <main class="weekly-menu-page">
+    <header class="weekly-menu-heading">
+      <div>
+        <p class="eyebrow">每周规划</p>
+        <h1>一周菜单</h1>
+        <p>从已保存菜谱中安排餐次，保存后自动汇总本周全部采购食材。</p>
+      </div>
+      <div class="week-controls" aria-label="周菜单控制">
+        <el-tooltip content="上一周" placement="top">
+          <button
+            class="week-icon-button"
+            type="button"
+            aria-label="上一周"
+            :disabled="loading || saving || autoGenerating"
+            @click="changeWeek(-7)"
+          >
+            <ChevronLeft :size="18" aria-hidden="true" />
+          </button>
+        </el-tooltip>
+        <el-button plain :disabled="loading || saving || autoGenerating" @click="goCurrentWeek">
+          <CalendarDays :size="16" aria-hidden="true" />
+          <span>本周</span>
+        </el-button>
+        <el-date-picker
+          v-model="weekPickerValue"
+          type="date"
+          value-format="YYYY-MM-DD"
+          format="YYYY-MM-DD"
+          placeholder="选择日期"
+          aria-label="选择所在周"
+          :disabled="loading || saving || autoGenerating"
+          @change="handleWeekPickerChange"
+        />
+        <el-tooltip content="下一周" placement="top">
+          <button
+            class="week-icon-button"
+            type="button"
+            aria-label="下一周"
+            :disabled="loading || saving || autoGenerating"
+            @click="changeWeek(7)"
+          >
+            <ChevronRight :size="18" aria-hidden="true" />
+          </button>
+        </el-tooltip>
+      </div>
+    </header>
+
+    <section class="weekly-menu-summary" aria-label="本周菜单摘要">
+      <div>
+        <span class="panel-kicker">当前周</span>
+        <h2>{{ weekRangeLabel }}</h2>
+        <p>已安排 {{ assignedCount }} / 21 个餐次</p>
+      </div>
+      <div class="summary-actions">
+        <el-button
+          v-if="menuSaved"
+          plain
+          :disabled="loading || saving || autoGenerating"
+          @click="clearWeeklyMenu"
+        >
+          <Trash2 :size="16" aria-hidden="true" />
+          <span>清空本周</span>
+        </el-button>
+        <el-button
+          plain
+          :loading="autoGenerating"
+          :disabled="loading || recipesLoading || !recipes.length || saving"
+          @click="autoGenerateMenu"
+        >
+          <Sparkles :size="16" aria-hidden="true" />
+          <span>AI 自动安排</span>
+        </el-button>
+        <el-button
+          type="primary"
+          :loading="saving"
+          :disabled="loading || recipesLoading || !recipes.length || autoGenerating"
+          @click="saveMenu"
+        >
+          <Save :size="16" aria-hidden="true" />
+          <span>保存本周菜单</span>
+        </el-button>
+      </div>
+    </section>
+
+    <section class="weekly-menu-workspace" v-loading="loading || recipesLoading" aria-label="一周菜单工作区">
+      <el-empty v-if="!recipesLoading && !recipes.length" description="还没有已保存菜谱">
+        <RouterLink class="empty-action" to="/recipes/saved">
+          <BookOpen :size="16" aria-hidden="true" />
+          <span>去我的菜谱添加选择</span>
+        </RouterLink>
+      </el-empty>
+
+      <el-tabs v-else v-model="activeTab" class="weekly-tabs">
+        <el-tab-pane label="菜单安排" name="menu">
+          <div class="menu-grid">
+            <article
+              v-for="day in weekDays"
+              :key="day.date"
+              class="day-card"
+              :class="{ 'day-card-today': day.date === todayDate }"
+            >
+              <header class="day-card-heading">
+                <div>
+                  <span>{{ day.weekday }}</span>
+                  <strong>{{ day.dateLabel }}</strong>
+                </div>
+                <CalendarDays :size="16" aria-hidden="true" />
+              </header>
+
+              <div v-for="meal in WEEKLY_MEAL_OPTIONS" :key="meal.value" class="meal-slot">
+                <div class="meal-slot-heading">
+                  <span>{{ meal.label }}</span>
+                  <el-tooltip v-if="getSlotSelection(day.date, meal.value)" content="清除该餐次" placement="top">
+                    <button
+                      class="clear-slot-button"
+                      type="button"
+                      :aria-label="`清除${day.weekday}${meal.label}安排`"
+                      @click="clearSlot(day.date, meal.value)"
+                    >
+                      <X :size="14" aria-hidden="true" />
+                    </button>
+                  </el-tooltip>
+                </div>
+                <el-select
+                  :model-value="getSlotSelection(day.date, meal.value)"
+                  clearable
+                  filterable
+                  :placeholder="`选择${meal.label}菜谱`"
+                  :aria-label="`${day.weekday}${meal.label}菜谱`"
+                  @update:model-value="setSlotSelection(day.date, meal.value, $event)"
+                >
+                  <el-option
+                    v-for="recipe in recipes"
+                    :key="recipe.id"
+                    :label="recipe.title"
+                    :value="String(recipe.id)"
+                  />
+                </el-select>
+              </div>
+            </article>
+          </div>
+        </el-tab-pane>
+
+        <el-tab-pane label="采购清单" name="shopping">
+          <div v-if="!menuSaved" class="shopping-empty">
+            <ClipboardList :size="30" aria-hidden="true" />
+            <strong>保存菜单后生成采购清单</strong>
+            <span>系统会合并重复食材，并结合“我的食材”库存标记已有食材。</span>
+            <el-button plain @click="activeTab = 'menu'">
+              <CalendarDays :size="16" aria-hidden="true" />
+              <span>返回菜单安排</span>
+            </el-button>
+          </div>
+          <div v-else-if="!shoppingItems.length" class="shopping-empty">
+            <ClipboardList :size="30" aria-hidden="true" />
+            <strong>本周暂无采购食材</strong>
+            <span>请先在菜单安排中选择至少一道已保存菜谱。</span>
+            <el-button plain @click="activeTab = 'menu'">
+              <CalendarDays :size="16" aria-hidden="true" />
+              <span>返回菜单安排</span>
+            </el-button>
+          </div>
+          <ShoppingChecklistTable
+            v-else
+            :items="shoppingItems"
+            :overrides="shoppingOverrides"
+            :saving-key="shoppingSavingKey"
+            @status-change="handleShoppingStatusChange"
+            @purchase-search="preparePlatformSearch"
+          />
+        </el-tab-pane>
+      </el-tabs>
+    </section>
+  </main>
+</template>
+
+<script setup>
+import { computed, onMounted, reactive, ref } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import {
+  BookOpen,
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  ClipboardList,
+  Save,
+  Sparkles,
+  Trash2,
+  X
+} from 'lucide-vue-next'
+import { getSavedRecipes } from '../api/recipes'
+import {
+  autoGenerateWeeklyMenu,
+  deleteWeeklyMenu,
+  getWeeklyMenu,
+  saveWeeklyMenu,
+  saveWeeklyShoppingStatus
+} from '../api/weeklyMenu'
+import ShoppingChecklistTable from '../components/ShoppingChecklistTable.vue'
+import {
+  buildPurchaseLinks,
+  copyIngredientName,
+  normalizeShoppingStatus,
+  shoppingChecklistKey
+} from '../utils/recipeEnhancements'
+import {
+  addDays,
+  buildWeekDays,
+  buildWeeklyMenuPayload,
+  getWeekStart,
+  normalizeWeeklyMenu,
+  toDateString,
+  weeklySlotKey,
+  WEEKLY_MEAL_OPTIONS
+} from '../utils/weeklyMenu'
+
+const weekStart = ref(toDateString(getWeekStart()))
+const weekPickerValue = ref(weekStart.value)
+const activeTab = ref('menu')
+const recipes = ref([])
+const recipesLoading = ref(false)
+const loading = ref(false)
+const saving = ref(false)
+const autoGenerating = ref(false)
+const planId = ref(null)
+const persistedPlanId = ref(null)
+const shoppingItems = ref([])
+const shoppingOverrides = ref({})
+const shoppingSavingKey = ref('')
+const slotSelections = reactive({})
+let requestId = 0
+
+const weekDays = computed(() => buildWeekDays(weekStart.value))
+const todayDate = computed(() => toDateString(new Date()))
+const assignedCount = computed(() => Object.values(slotSelections).filter(Boolean).length)
+const menuSaved = computed(() => planId.value !== null)
+const weekRangeLabel = computed(() => {
+  const start = getWeekStart(weekStart.value)
+  const end = addDays(start, 6)
+  const formatter = new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' })
+  return `${formatter.format(start)} - ${formatter.format(end)}`
+})
+
+onMounted(() => {
+  loadRecipes()
+  loadWeeklyMenu()
+})
+
+async function loadRecipes() {
+  recipesLoading.value = true
+  try {
+    const response = await getSavedRecipes({ limit: 50, offset: 0 })
+    recipes.value = response.data.data || []
+  } catch (error) {
+    ElMessage.error(getErrorMessage(error, '已保存菜谱加载失败'))
+  } finally {
+    recipesLoading.value = false
+  }
+}
+
+async function loadWeeklyMenu() {
+  const currentRequestId = ++requestId
+  loading.value = true
+  try {
+    const response = await getWeeklyMenu(weekStart.value)
+    if (currentRequestId !== requestId) {
+      return
+    }
+    applyWeeklyMenu(response.data.data)
+  } catch (error) {
+    if (currentRequestId === requestId) {
+      ElMessage.error(getErrorMessage(error, '一周菜单加载失败'))
+    }
+  } finally {
+    if (currentRequestId === requestId) {
+      loading.value = false
+    }
+  }
+}
+
+async function saveMenu() {
+  if (loading.value || saving.value || autoGenerating.value) {
+    return
+  }
+  saving.value = true
+  try {
+    const response = await saveWeeklyMenu(buildWeeklyMenuPayload(weekStart.value, slotSelections))
+    applyWeeklyMenu(response.data.data)
+    activeTab.value = 'shopping'
+    ElMessage.success('本周菜单已保存，采购清单已更新')
+  } catch (error) {
+    ElMessage.error(getErrorMessage(error, '本周菜单保存失败'))
+  } finally {
+    saving.value = false
+  }
+}
+
+async function autoGenerateMenu() {
+  if (loading.value || autoGenerating.value || saving.value || !recipes.value.length) {
+    return
+  }
+
+  const overwrite = persistedPlanId.value !== null
+  if (overwrite) {
+    try {
+      await ElMessageBox.confirm(
+        'AI 将覆盖当前周的餐次安排，但不会删除已保存菜谱。',
+        '确认覆盖本周菜单',
+        {
+          confirmButtonText: '确认覆盖',
+          cancelButtonText: '取消',
+          type: 'warning'
+        }
+      )
+    } catch {
+      return
+    }
+  }
+
+  autoGenerating.value = true
+  try {
+    const response = await autoGenerateWeeklyMenu({
+      weekStart: weekStart.value,
+      overwrite
+    })
+    applyWeeklyMenu(response.data.data)
+    activeTab.value = 'shopping'
+    ElMessage.success('AI 已生成本周菜单，采购清单已更新')
+  } catch (error) {
+    ElMessage.error(getErrorMessage(error, 'AI 周菜单生成失败'))
+  } finally {
+    autoGenerating.value = false
+  }
+}
+
+async function clearWeeklyMenu() {
+  if (loading.value || saving.value || autoGenerating.value) {
+    return
+  }
+  try {
+    await ElMessageBox.confirm('清空后，本周餐次安排和采购状态都会移除。', '清空本周菜单', {
+      confirmButtonText: '确认清空',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+  } catch {
+    return
+  }
+
+  saving.value = true
+  try {
+    await deleteWeeklyMenu(weekStart.value)
+    applyWeeklyMenu({ weekStart: weekStart.value, items: [], shoppingItems: [] })
+    activeTab.value = 'menu'
+    ElMessage.success('本周菜单已清空')
+  } catch (error) {
+    ElMessage.error(getErrorMessage(error, '本周菜单清空失败'))
+  } finally {
+    saving.value = false
+  }
+}
+
+async function handleShoppingStatusChange({ item, status }) {
+  const key = shoppingChecklistKey(item?.name)
+  if (!key || !status || shoppingSavingKey.value) {
+    return
+  }
+
+  const previousExists = Object.prototype.hasOwnProperty.call(shoppingOverrides.value, key)
+  const previousValue = shoppingOverrides.value[key]
+  shoppingOverrides.value = { ...shoppingOverrides.value, [key]: status }
+  shoppingSavingKey.value = key
+
+  try {
+    const response = await saveWeeklyShoppingStatus({
+      weekStart: weekStart.value,
+      ingredientName: item.name,
+      status
+    })
+    shoppingOverrides.value = {
+      ...shoppingOverrides.value,
+      [key]: normalizeShoppingStatus(response.data.data?.status, status)
+    }
+  } catch (error) {
+    const restored = { ...shoppingOverrides.value }
+    if (previousExists) {
+      restored[key] = previousValue
+    } else {
+      delete restored[key]
+    }
+    shoppingOverrides.value = restored
+    ElMessage.error(getErrorMessage(error, '采购状态保存失败'))
+  } finally {
+    if (shoppingSavingKey.value === key) {
+      shoppingSavingKey.value = ''
+    }
+  }
+}
+
+function applyWeeklyMenu(value) {
+  const normalized = normalizeWeeklyMenu(value)
+  weekStart.value = normalized.weekStart
+  weekPickerValue.value = normalized.weekStart
+  planId.value = normalized.id
+  persistedPlanId.value = normalized.id
+  Object.keys(slotSelections).forEach((key) => delete slotSelections[key])
+  normalized.items.forEach((item) => {
+    slotSelections[weeklySlotKey(item.menuDate, item.mealType)] = String(item.recipeId)
+  })
+  shoppingItems.value = normalized.shoppingItems.map((item) => ({
+    ...item,
+    name: item.ingredientName,
+    purchaseLinks: buildPurchaseLinks(item.ingredientName)
+  }))
+  shoppingOverrides.value = normalized.shoppingItems.reduce((overrides, item) => {
+    const key = shoppingChecklistKey(item.ingredientName)
+    if (key && item.status) {
+      overrides[key] = normalizeShoppingStatus(item.status, item.alreadyOwned)
+    }
+    return overrides
+  }, {})
+}
+
+function getSlotSelection(menuDate, mealType) {
+  return slotSelections[weeklySlotKey(menuDate, mealType)] || ''
+}
+
+function setSlotSelection(menuDate, mealType, recipeId) {
+  const key = weeklySlotKey(menuDate, mealType)
+  if (!recipeId) {
+    delete slotSelections[key]
+    return
+  }
+  slotSelections[key] = String(recipeId)
+  planId.value = null
+}
+
+function clearSlot(menuDate, mealType) {
+  setSlotSelection(menuDate, mealType, '')
+}
+
+function handleWeekPickerChange(value) {
+  if (!value) {
+    return
+  }
+  weekStart.value = toDateString(getWeekStart(value))
+  weekPickerValue.value = weekStart.value
+  clearLoadedShoppingState()
+  loadWeeklyMenu()
+}
+
+function changeWeek(days) {
+  weekStart.value = toDateString(addDays(weekStart.value, days))
+  weekPickerValue.value = weekStart.value
+  clearLoadedShoppingState()
+  loadWeeklyMenu()
+}
+
+function goCurrentWeek() {
+  weekStart.value = toDateString(getWeekStart())
+  weekPickerValue.value = weekStart.value
+  clearLoadedShoppingState()
+  loadWeeklyMenu()
+}
+
+function clearLoadedShoppingState() {
+  planId.value = null
+  persistedPlanId.value = null
+  shoppingItems.value = []
+  shoppingOverrides.value = {}
+  Object.keys(slotSelections).forEach((key) => delete slotSelections[key])
+}
+
+async function preparePlatformSearch(ingredientName) {
+  try {
+    if (await copyIngredientName(ingredientName, navigator.clipboard)) {
+      ElMessage.info(`已复制“${ingredientName}”，请在平台中粘贴搜索`)
+    }
+  } catch {
+    ElMessage.info(`请在平台中搜索“${ingredientName}”`)
+  }
+}
+
+function getErrorMessage(error, fallback) {
+  return error?.response?.data?.message || error?.message || fallback
+}
+</script>
+
+<style scoped>
+.weekly-menu-page {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+  padding: clamp(16px, 2vw, 28px);
+}
+
+.weekly-menu-heading,
+.weekly-menu-summary {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.weekly-menu-heading h1,
+.weekly-menu-summary h2 {
+  margin: 0;
+  color: var(--app-text);
+}
+
+.weekly-menu-heading h1 {
+  font-size: 24px;
+}
+
+.weekly-menu-heading p:not(.eyebrow),
+.weekly-menu-summary p {
+  margin: 7px 0 0;
+  color: var(--app-text-muted);
+  line-height: 1.65;
+}
+
+.eyebrow,
+.panel-kicker {
+  margin: 0 0 5px;
+  color: var(--app-accent);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.week-controls,
+.summary-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.week-icon-button,
+.clear-slot-button {
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--app-line-strong);
+  color: var(--app-text-soft);
+  background: var(--app-surface);
+  cursor: pointer;
+}
+
+.week-icon-button {
+  width: 44px;
+  height: 44px;
+  border-radius: 6px;
+}
+
+.week-icon-button:hover,
+.week-icon-button:focus-visible,
+.clear-slot-button:hover,
+.clear-slot-button:focus-visible {
+  border-color: var(--app-accent);
+  color: var(--app-text);
+  background: var(--app-accent-soft);
+  outline: none;
+}
+
+.week-icon-button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.week-controls :deep(.el-date-editor) {
+  width: 150px;
+}
+
+.weekly-menu-summary,
+.weekly-menu-workspace {
+  min-width: 0;
+  border: 1px solid var(--app-line);
+  border-radius: 8px;
+  background: var(--app-surface);
+  box-shadow: var(--app-panel-shadow);
+}
+
+.weekly-menu-summary {
+  align-items: center;
+  padding: 18px 20px;
+}
+
+.weekly-menu-summary h2 {
+  font-size: 19px;
+}
+
+.weekly-menu-workspace {
+  padding: 16px;
+}
+
+.weekly-tabs :deep(.el-tabs__header) {
+  margin-bottom: 16px;
+}
+
+.menu-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.day-card {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--app-line);
+  border-radius: 7px;
+  background: var(--app-surface-soft);
+}
+
+.day-card-today {
+  border-color: var(--app-accent);
+  box-shadow: inset 0 2px 0 var(--app-accent);
+}
+
+.day-card-heading,
+.meal-slot-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.day-card-heading {
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--app-line);
+  color: var(--app-text-muted);
+}
+
+.day-card-heading div {
+  display: grid;
+  gap: 2px;
+}
+
+.day-card-heading strong {
+  color: var(--app-text);
+  font-size: 14px;
+}
+
+.meal-slot {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.meal-slot-heading {
+  color: var(--app-text-soft);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.clear-slot-button {
+  width: 36px;
+  height: 36px;
+  border-radius: 5px;
+}
+
+.meal-slot :deep(.el-select) {
+  width: 100%;
+}
+
+.shopping-empty {
+  display: grid;
+  place-items: center;
+  gap: 10px;
+  min-height: 280px;
+  padding: 24px;
+  color: var(--app-text-muted);
+  text-align: center;
+}
+
+.shopping-empty strong {
+  color: var(--app-text);
+  font-size: 17px;
+}
+
+.shopping-empty span {
+  max-width: 420px;
+  line-height: 1.65;
+}
+
+.empty-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--app-line-strong);
+  border-radius: 6px;
+  color: var(--app-text);
+  background: var(--app-surface);
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.empty-action:hover,
+.empty-action:focus-visible {
+  border-color: var(--app-accent);
+  background: var(--app-accent-soft);
+  outline: none;
+}
+
+@media (max-width: 1180px) {
+  .menu-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 820px) {
+  .menu-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .weekly-menu-heading,
+  .weekly-menu-summary {
+    flex-direction: column;
+  }
+
+  .week-controls,
+  .summary-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .week-controls :deep(.el-date-editor) {
+    flex: 1 1 150px;
+  }
+
+  .summary-actions :deep(.el-button) {
+    flex: 1 1 150px;
+  }
+}
+
+@media (max-width: 480px) {
+  .weekly-menu-workspace {
+    padding: 10px;
+  }
+
+  .menu-grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

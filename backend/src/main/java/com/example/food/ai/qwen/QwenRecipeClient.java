@@ -84,6 +84,25 @@ public class QwenRecipeClient {
         }
     }
 
+    public List<WeeklyMenuSelection> generateWeeklyMenu(String prompt) {
+        AiModelRuntimeConfig runtimeConfig = runtimeConfig();
+        if (runtimeConfig.apiKey() == null || runtimeConfig.apiKey().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "千问 API Key 未配置，请设置 DASHSCOPE_API_KEY");
+        }
+
+        try {
+            ResponseEntity<QwenChatResponse> response = restTemplate.exchange(
+                    runtimeConfig.endpoint(),
+                    HttpMethod.POST,
+                    new HttpEntity<>(requestBody(prompt, runtimeConfig), headers(runtimeConfig)),
+                    QwenChatResponse.class
+            );
+            return parseWeeklyMenu(response.getBody());
+        } catch (RestClientException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "千问服务调用失败，请稍后重试", exception);
+        }
+    }
+
     private AiModelRuntimeConfig runtimeConfig() {
         if (aiModelConfigService != null) {
             return aiModelConfigService.textRecipeRuntimeConfig();
@@ -152,6 +171,24 @@ public class QwenRecipeClient {
         }
     }
 
+    private List<WeeklyMenuSelection> parseWeeklyMenu(QwenChatResponse response) {
+        String content = firstContent(response);
+        try {
+            com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(stripJsonFence(content));
+            if (node == null || node.isNull() || (!node.isArray() && !node.isObject())) {
+                throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "千问返回的周菜单不是有效 JSON");
+            }
+            if (node.isArray()) {
+                return objectMapper.convertValue(node, objectMapper.getTypeFactory()
+                        .constructCollectionType(List.class, WeeklyMenuSelection.class));
+            }
+            WeeklyMenuPayload payload = objectMapper.treeToValue(node, WeeklyMenuPayload.class);
+            return payload.items() == null ? List.of() : List.copyOf(payload.items());
+        } catch (IOException | IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "千问返回的周菜单不是有效 JSON", exception);
+        }
+    }
+
     private String stripJsonFence(String content) {
         String trimmed = content.trim();
         if (trimmed.startsWith("```")) {
@@ -184,6 +221,18 @@ public class QwenRecipeClient {
             List<String> tips,
             List<String> videoKeywords,
             RecipeGenerateResponse.Explanation explanation
+    ) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record WeeklyMenuPayload(List<WeeklyMenuSelection> items) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record WeeklyMenuSelection(
+            String menuDate,
+            String mealType,
+            Long recipeId
     ) {
     }
 }

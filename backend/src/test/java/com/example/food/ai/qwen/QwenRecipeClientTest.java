@@ -11,6 +11,8 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestTemplate;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -114,6 +116,73 @@ class QwenRecipeClientTest {
         assertThat(response.explanation().pairingLogic()).isEmpty();
         assertThat(response.explanation().nutrition()).isEmpty();
         assertThat(response.explanation().cookingPrinciple()).isEmpty();
+        server.verify();
+    }
+
+    @Test
+    void generateWeeklyMenuParsesStructuredSelections() {
+        RestTemplate restTemplate = new RestTemplateBuilder().build();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restTemplate).build();
+        QwenProperties properties = new QwenProperties(
+                "test-api-key",
+                "qwen-plus",
+                "https://dashscope.test/compatible-mode/v1/chat/completions"
+        );
+        QwenRecipeClient client = new QwenRecipeClient(restTemplate, new ObjectMapper(), properties);
+
+        server.expect(once(), requestTo(properties.endpoint()))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(header("Authorization", "Bearer test-api-key"))
+                .andExpect(jsonPath("$.model").value("qwen-plus"))
+                .andRespond(withSuccess("""
+                        {
+                          "choices": [
+                            {
+                              "message": {
+                                "content": "{\\"items\\":[{\\"menuDate\\":\\"2026-08-31\\",\\"mealType\\":\\"BREAKFAST\\",\\"recipeId\\":7}]}"
+                              }
+                            }
+                          ]
+                        }
+                        """, MediaType.APPLICATION_JSON));
+
+        List<QwenRecipeClient.WeeklyMenuSelection> selections = client.generateWeeklyMenu("请安排一周菜单");
+
+        assertThat(selections).containsExactly(new QwenRecipeClient.WeeklyMenuSelection(
+                "2026-08-31",
+                "BREAKFAST",
+                7L
+        ));
+        server.verify();
+    }
+
+    @Test
+    void generateWeeklyMenuAcceptsAJsonArrayResponse() {
+        RestTemplate restTemplate = new RestTemplateBuilder().build();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restTemplate).build();
+        QwenProperties properties = new QwenProperties(
+                "test-api-key",
+                "qwen-plus",
+                "https://dashscope.test/compatible-mode/v1/chat/completions"
+        );
+        QwenRecipeClient client = new QwenRecipeClient(restTemplate, new ObjectMapper(), properties);
+
+        server.expect(once(), requestTo(properties.endpoint()))
+                .andRespond(withSuccess("""
+                        {
+                          "choices": [
+                            {
+                              "message": {
+                                "content": "[{\\"menuDate\\":\\"2026-09-01\\",\\"mealType\\":\\"DINNER\\",\\"recipeId\\":8}]"
+                              }
+                            }
+                          ]
+                        }
+                        """, MediaType.APPLICATION_JSON));
+
+        assertThat(client.generateWeeklyMenu("请安排一周菜单")).containsExactly(
+                new QwenRecipeClient.WeeklyMenuSelection("2026-09-01", "DINNER", 8L)
+        );
         server.verify();
     }
 }
