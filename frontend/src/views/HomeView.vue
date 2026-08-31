@@ -13,6 +13,15 @@
         </div>
       </header>
 
+      <div v-if="auth.isUser && pantryExpiryNotice" class="pantry-expiry-banner" role="alert">
+        <TriangleAlert :size="17" aria-hidden="true" />
+        <div>
+          <strong>库存保质期提醒</strong>
+          <span>{{ pantryExpiryNoticeText }}</span>
+        </div>
+        <RouterLink class="pantry-expiry-link" to="/pantry">查看库存</RouterLink>
+      </div>
+
       <div class="command-grid">
         <section class="search-panel" aria-label="菜谱搜索表单">
           <div class="panel-title">
@@ -475,13 +484,14 @@ import {
   ScanSearch,
   SlidersHorizontal,
   Sparkles,
+  TriangleAlert,
   Video
 } from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
 import { generateRecipe, recognizeIngredients, saveRecipe } from '../api/recipes'
 import { getRecentSearches } from '../api/searchHistory'
 import { getDietPreference, saveDietPreference } from '../api/userPreferences'
-import { getPantryItems } from '../api/pantry'
+import { getPantryExpiryAlerts, getPantryItems } from '../api/pantry'
 import { getShoppingItemChecks, saveShoppingItemCheck } from '../api/shoppingChecks'
 import CameraIngredientCapture from '../components/CameraIngredientCapture.vue'
 import CookingModeDialog from '../components/CookingModeDialog.vue'
@@ -540,6 +550,7 @@ const recentSearchLoaded = ref(false)
 const recentSearchVisible = ref(false)
 const pantryItems = ref([])
 const pantryLoading = ref(false)
+const pantryExpirySummary = ref(emptyPantryExpirySummary())
 const shoppingCheckOverrides = ref({})
 const shoppingCheckSavingKey = ref('')
 const router = useRouter()
@@ -597,6 +608,21 @@ const ownedIngredients = computed(() => [
   lastSearch.value?.ingredients || ingredients.value,
   ...pantryItems.value.map((item) => item.ingredientName)
 ])
+const pantryExpiryNotice = computed(() => {
+  const summary = pantryExpirySummary.value
+  return summary.expiredItems.length + summary.expiringSoonItems.length > 0
+})
+const pantryExpiryNoticeText = computed(() => {
+  const summary = pantryExpirySummary.value
+  const messages = []
+  if (summary.expiredItems.length) {
+    messages.push(`${summary.expiredItems.length} 种食材已过期`)
+  }
+  if (summary.expiringSoonItems.length) {
+    messages.push(`${summary.expiringSoonItems.length} 种食材将在 ${summary.warningDays} 天内到期`)
+  }
+  return messages.join('，')
+})
 const mealTypeLabel = computed(() => mealLabels[lastSearch.value?.mealType || mealType.value] || mealLabels.any)
 const goalLabel = computed(() => goalLabels[lastSearch.value?.goal || goal.value] || goalLabels.balanced)
 const searchModeLabel = computed(() => modeLabels[lastSearch.value?.searchMode || searchMode.value])
@@ -1005,8 +1031,18 @@ function clearPersonalizationState() {
 function clearPantryState() {
   pantryItems.value = []
   pantryLoading.value = false
+  pantryExpirySummary.value = emptyPantryExpirySummary()
   shoppingCheckOverrides.value = {}
   shoppingCheckSavingKey.value = ''
+}
+
+function emptyPantryExpirySummary() {
+  return {
+    asOf: null,
+    warningDays: 7,
+    expiredItems: [],
+    expiringSoonItems: []
+  }
 }
 
 async function loadPantryItems() {
@@ -1017,15 +1053,25 @@ async function loadPantryItems() {
   const token = auth.token
   pantryLoading.value = true
   try {
-    const response = await getPantryItems()
+    const [pantryResult, expiryResult] = await Promise.allSettled([
+      getPantryItems(),
+      getPantryExpiryAlerts()
+    ])
+    if (pantryResult.status === 'rejected') {
+      throw pantryResult.reason
+    }
     if (!auth.isUser || auth.token !== token) {
       return
     }
-    pantryItems.value = response.data.data || []
+    pantryItems.value = pantryResult.value.data.data || []
+    pantryExpirySummary.value = expiryResult.status === 'fulfilled'
+      ? expiryResult.value.data.data || emptyPantryExpirySummary()
+      : emptyPantryExpirySummary()
     await loadShoppingChecks()
   } catch (error) {
     if (auth.isUser && auth.token === token) {
       pantryItems.value = []
+      pantryExpirySummary.value = emptyPantryExpirySummary()
       ElMessage.warning('食材库存加载失败，本次将仅使用输入食材')
     }
   } finally {
@@ -1334,7 +1380,7 @@ function getErrorMessage(error) {
 
 .command-shell {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   gap: 10px;
   width: min(1360px, 100%);
   height: 100%;
@@ -1400,6 +1446,47 @@ h3 {
   background: var(--app-surface);
   font-size: 11px;
   font-weight: 800;
+}
+
+.pantry-expiry-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 8px 12px;
+  border: 1px solid var(--app-accent);
+  border-radius: 8px;
+  color: var(--app-text);
+  background: var(--app-accent-soft);
+}
+
+.pantry-expiry-banner > svg {
+  flex: 0 0 auto;
+}
+
+.pantry-expiry-banner > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.pantry-expiry-banner strong {
+  font-size: 13px;
+}
+
+.pantry-expiry-banner span {
+  color: var(--app-text-muted);
+  font-size: 12px;
+}
+
+.pantry-expiry-link {
+  flex: 0 0 auto;
+  color: var(--app-text);
+  font-size: 12px;
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .command-grid {
@@ -2149,6 +2236,15 @@ h3 {
 
   .signal-strip {
     justify-content: flex-start;
+  }
+
+  .pantry-expiry-banner {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .pantry-expiry-link {
+    margin-left: 27px;
   }
 
   .mode-grid,

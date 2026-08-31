@@ -6,6 +6,7 @@ import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @Mapper
@@ -22,6 +23,21 @@ public interface UserPantryItemMapper extends BaseMapper<UserPantryItem> {
                 id DESC
             """)
     List<UserPantryItem> findByUserId(@Param("userId") Long userId);
+
+    @Select("""
+            SELECT *
+            FROM user_pantry_items
+            WHERE user_id = #{userId}
+              AND quantity IS NOT NULL
+              AND quantity > 0
+              AND expire_date IS NOT NULL
+              AND expire_date <= #{warningUntil}
+            ORDER BY expire_date ASC, updated_at DESC, id DESC
+            """)
+    List<UserPantryItem> findExpiryAlertsByUserId(
+            @Param("userId") Long userId,
+            @Param("warningUntil") LocalDate warningUntil
+    );
 
     @Update("""
             UPDATE user_pantry_items

@@ -24,7 +24,15 @@
           <span class="panel-kicker">库存清单</span>
           <h2>现有食材</h2>
         </div>
-        <span class="count-badge" role="status" aria-atomic="true">{{ items.length }}</span>
+        <div class="panel-metrics">
+          <span v-if="expirySummary.expiredItems.length" class="summary-badge expired" role="status">
+            已过期 {{ expirySummary.expiredItems.length }}
+          </span>
+          <span v-if="expirySummary.expiringSoonItems.length" class="summary-badge soon" role="status">
+            7天内到期 {{ expirySummary.expiringSoonItems.length }}
+          </span>
+          <span class="count-badge" role="status" aria-atomic="true">{{ items.length }}</span>
+        </div>
       </div>
 
       <el-skeleton v-if="loading" :rows="7" animated />
@@ -32,37 +40,123 @@
         <el-button type="primary" @click="openCreateDialog">添加第一种食材</el-button>
       </el-empty>
       <template v-else>
-        <el-table class="pantry-table" :data="items" size="large">
-          <el-table-column prop="ingredientName" label="食材" min-width="160" />
-          <el-table-column label="分类" min-width="110">
-            <template #default="scope">
-              {{ scope.row.category || '未分类' }}
-            </template>
-          </el-table-column>
-          <el-table-column label="库存" min-width="130">
-            <template #default="scope">
-              {{ formatQuantity(scope.row) }}
-            </template>
-          </el-table-column>
-          <el-table-column label="保质期" min-width="180">
-            <template #default="scope">
-              <div class="expiry-cell">
-                <span>{{ scope.row.expireDate || '未填写' }}</span>
-                <span v-if="scope.row.expireDate" class="expiry-tag" :class="expiryClass(scope.row.expireDate)">
-                  {{ expiryLabel(scope.row.expireDate) }}
-                </span>
+        <div v-if="expirySummary.expiredItems.length || expirySummary.expiringSoonItems.length" class="expiry-alert" role="alert">
+          <TriangleAlert :size="17" aria-hidden="true" />
+          <div>
+            <strong>库存保质期提醒</strong>
+            <span>{{ expiryNoticeText }}</span>
+          </div>
+          <el-button link type="primary" @click="statusFilter = 'attention'">查看临期食材</el-button>
+        </div>
+
+        <div class="pantry-toolbar" aria-label="库存筛选和排序">
+          <el-radio-group v-model="statusFilter" size="small" aria-label="按保质期筛选">
+            <el-radio-button label="all">全部 {{ items.length }}</el-radio-button>
+            <el-radio-button label="attention">需处理 {{ expirySummary.expiredItems.length + expirySummary.expiringSoonItems.length }}</el-radio-button>
+            <el-radio-button label="soon">临期 {{ expirySummary.expiringSoonItems.length }}</el-radio-button>
+            <el-radio-button label="expired">已过期 {{ expirySummary.expiredItems.length }}</el-radio-button>
+            <el-radio-button label="missing">未填写 {{ expirySummary.statusCounts.missing }}</el-radio-button>
+          </el-radio-group>
+          <el-select v-model="sortOrder" size="small" aria-label="库存排序" class="sort-select">
+            <el-option label="按保质期排序" value="expiry" />
+            <el-option label="按名称排序" value="name" />
+            <el-option label="按最近更新排序" value="updated" />
+          </el-select>
+        </div>
+
+        <el-empty v-if="!visibleItems.length" description="没有符合条件的库存">
+          <el-button plain @click="statusFilter = 'all'">查看全部库存</el-button>
+        </el-empty>
+        <template v-else>
+          <el-table class="pantry-table" :data="visibleItems" size="large">
+            <el-table-column prop="ingredientName" label="食材" min-width="160" />
+            <el-table-column label="分类" min-width="110">
+              <template #default="scope">
+                {{ scope.row.category || '未分类' }}
+              </template>
+            </el-table-column>
+            <el-table-column label="库存" min-width="130">
+              <template #default="scope">
+                {{ formatQuantity(scope.row) }}
+              </template>
+            </el-table-column>
+            <el-table-column label="保质期" min-width="180">
+              <template #default="scope">
+                <div class="expiry-cell">
+                  <span>{{ scope.row.expireDate || '未填写' }}</span>
+                  <span v-if="scope.row.expireDate" class="expiry-tag" :class="expiryClass(scope.row.expireDate)">
+                    {{ expiryLabel(scope.row.expireDate) }}
+                  </span>
+                </div>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="172" fixed="right">
+              <template #default="scope">
+                <div class="row-actions">
+                  <el-tooltip content="消耗库存" placement="top">
+                    <button
+                      class="icon-button consume"
+                      type="button"
+                      :aria-label="`消耗${scope.row.ingredientName}的库存`"
+                      @click="openConsumeDialog(scope.row)"
+                    >
+                      <Minus :size="16" aria-hidden="true" />
+                    </button>
+                  </el-tooltip>
+                  <el-tooltip content="编辑食材" placement="top">
+                    <button
+                      class="icon-button"
+                      type="button"
+                      :aria-label="`编辑${scope.row.ingredientName}`"
+                      @click="openEditDialog(scope.row)"
+                    >
+                      <Pencil :size="16" aria-hidden="true" />
+                    </button>
+                  </el-tooltip>
+                  <el-tooltip content="删除食材" placement="top">
+                    <button
+                      class="icon-button danger"
+                      type="button"
+                      :aria-label="`删除${scope.row.ingredientName}`"
+                      :disabled="deletingId !== null"
+                      @click="confirmDelete(scope.row)"
+                    >
+                      <Trash2 :size="16" aria-hidden="true" />
+                    </button>
+                  </el-tooltip>
+                </div>
+              </template>
+            </el-table-column>
+          </el-table>
+
+          <div class="pantry-mobile-list">
+            <article v-for="item in visibleItems" :key="item.id" class="pantry-mobile-item">
+              <div class="mobile-item-heading">
+                <strong>{{ item.ingredientName }}</strong>
+                <span>{{ item.category || '未分类' }}</span>
               </div>
-            </template>
-          </el-table-column>
-          <el-table-column label="操作" width="172" fixed="right">
-            <template #default="scope">
-              <div class="row-actions">
+              <dl class="mobile-item-details">
+                <div>
+                  <dt>库存</dt>
+                  <dd>{{ formatQuantity(item) }}</dd>
+                </div>
+                <div>
+                  <dt>保质期</dt>
+                  <dd>
+                    {{ item.expireDate || '未填写' }}
+                    <span v-if="item.expireDate" class="expiry-tag" :class="expiryClass(item.expireDate)">
+                      {{ expiryLabel(item.expireDate) }}
+                    </span>
+                  </dd>
+                </div>
+              </dl>
+              <div class="row-actions mobile-row-actions">
                 <el-tooltip content="消耗库存" placement="top">
                   <button
                     class="icon-button consume"
                     type="button"
-                    :aria-label="`消耗${scope.row.ingredientName}的库存`"
-                    @click="openConsumeDialog(scope.row)"
+                    :aria-label="`消耗${item.ingredientName}的库存`"
+                    @click="openConsumeDialog(item)"
                   >
                     <Minus :size="16" aria-hidden="true" />
                   </button>
@@ -71,8 +165,8 @@
                   <button
                     class="icon-button"
                     type="button"
-                    :aria-label="`编辑${scope.row.ingredientName}`"
-                    @click="openEditDialog(scope.row)"
+                    :aria-label="`编辑${item.ingredientName}`"
+                    @click="openEditDialog(item)"
                   >
                     <Pencil :size="16" aria-hidden="true" />
                   </button>
@@ -81,74 +175,17 @@
                   <button
                     class="icon-button danger"
                     type="button"
-                    :aria-label="`删除${scope.row.ingredientName}`"
+                    :aria-label="`删除${item.ingredientName}`"
                     :disabled="deletingId !== null"
-                    @click="confirmDelete(scope.row)"
+                    @click="confirmDelete(item)"
                   >
                     <Trash2 :size="16" aria-hidden="true" />
                   </button>
                 </el-tooltip>
               </div>
-            </template>
-          </el-table-column>
-        </el-table>
-
-        <div class="pantry-mobile-list">
-          <article v-for="item in items" :key="item.id" class="pantry-mobile-item">
-            <div class="mobile-item-heading">
-              <strong>{{ item.ingredientName }}</strong>
-              <span>{{ item.category || '未分类' }}</span>
-            </div>
-            <dl class="mobile-item-details">
-              <div>
-                <dt>库存</dt>
-                <dd>{{ formatQuantity(item) }}</dd>
-              </div>
-              <div>
-                <dt>保质期</dt>
-                <dd>
-                  {{ item.expireDate || '未填写' }}
-                  <span v-if="item.expireDate" class="expiry-tag" :class="expiryClass(item.expireDate)">
-                    {{ expiryLabel(item.expireDate) }}
-                  </span>
-                </dd>
-              </div>
-            </dl>
-            <div class="row-actions mobile-row-actions">
-              <el-tooltip content="消耗库存" placement="top">
-                <button
-                  class="icon-button consume"
-                  type="button"
-                  :aria-label="`消耗${item.ingredientName}的库存`"
-                  @click="openConsumeDialog(item)"
-                >
-                  <Minus :size="16" aria-hidden="true" />
-                </button>
-              </el-tooltip>
-              <el-tooltip content="编辑食材" placement="top">
-                <button
-                  class="icon-button"
-                  type="button"
-                  :aria-label="`编辑${item.ingredientName}`"
-                  @click="openEditDialog(item)"
-                >
-                  <Pencil :size="16" aria-hidden="true" />
-                </button>
-              </el-tooltip>
-              <el-tooltip content="删除食材" placement="top">
-                <button
-                  class="icon-button danger"
-                  type="button"
-                  :aria-label="`删除${item.ingredientName}`"
-                  :disabled="deletingId !== null"
-                  @click="confirmDelete(item)"
-                >
-                  <Trash2 :size="16" aria-hidden="true" />
-                </button>
-              </el-tooltip>
-            </div>
-          </article>
-        </div>
+            </article>
+          </div>
+        </template>
       </template>
     </section>
   </main>
@@ -246,7 +283,7 @@
 <script setup>
 import { computed, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Minus, Pencil, Plus, Trash2 } from 'lucide-vue-next'
+import { ArrowLeft, Minus, Pencil, Plus, Trash2, TriangleAlert } from 'lucide-vue-next'
 import {
   consumePantryItem,
   createPantryItem,
@@ -254,8 +291,18 @@ import {
   getPantryItems,
   updatePantryItem
 } from '../api/pantry'
+import {
+  getDaysUntilExpiry,
+  getExpiryClass as expiryClass,
+  getExpiryLabel as expiryLabel,
+  getExpiryStatus,
+  hasAvailableQuantity,
+  summarizePantryExpiry
+} from '../utils/pantryExpiry'
 
 const items = ref([])
+const statusFilter = ref('all')
+const sortOrder = ref('expiry')
 const loading = ref(false)
 const saving = ref(false)
 const deletingId = ref(null)
@@ -268,6 +315,55 @@ const consumeFormRef = ref(null)
 const consumingItem = ref(null)
 const consuming = ref(false)
 const consumeForm = reactive({ quantity: null })
+
+const expirySummary = computed(() => summarizePantryExpiry(items.value))
+const expiryNoticeText = computed(() => {
+  const messages = []
+  if (expirySummary.value.expiredItems.length) {
+    messages.push(`${expirySummary.value.expiredItems.length} 种食材已过期`)
+  }
+  if (expirySummary.value.expiringSoonItems.length) {
+    messages.push(`${expirySummary.value.expiringSoonItems.length} 种食材将在 7 天内到期`)
+  }
+  return messages.join('，')
+})
+const visibleItems = computed(() => {
+  const filtered = items.value.filter((item) => {
+    const status = getExpiryStatus(item.expireDate)
+    if (statusFilter.value === 'all') {
+      return true
+    }
+    if (statusFilter.value === 'attention') {
+      return hasAvailableQuantity(item) && (status === 'expired' || status === 'soon')
+    }
+    if (statusFilter.value === 'expired' || statusFilter.value === 'soon') {
+      return hasAvailableQuantity(item) && status === statusFilter.value
+    }
+    return status === statusFilter.value
+  })
+
+  return [...filtered].sort((left, right) => {
+    if (sortOrder.value === 'name') {
+      return String(left.ingredientName || '').localeCompare(String(right.ingredientName || ''), 'zh-CN')
+    }
+    if (sortOrder.value === 'updated') {
+      return String(right.updatedAt || '').localeCompare(String(left.updatedAt || ''))
+    }
+
+    const leftDays = getDaysUntilExpiry(left.expireDate)
+    const rightDays = getDaysUntilExpiry(right.expireDate)
+    if (leftDays === null && rightDays === null) {
+      return Number(right.id || 0) - Number(left.id || 0)
+    }
+    if (leftDays === null) {
+      return 1
+    }
+    if (rightDays === null) {
+      return -1
+    }
+    return leftDays - rightDays || Number(right.id || 0) - Number(left.id || 0)
+  })
+})
 
 const availableQuantity = computed(() => Number(consumingItem.value?.quantity || 0))
 const remainingQuantity = computed(() => {
@@ -477,34 +573,6 @@ function formatNumber(value) {
   return Number(value || 0).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')
 }
 
-function expiryLabel(value) {
-  const days = Math.floor((new Date(`${value}T00:00:00`).getTime() - startOfToday()) / 86400000)
-  if (days < 0) {
-    return '已过期'
-  }
-  if (days <= 2) {
-    return '即将到期'
-  }
-  return '正常'
-}
-
-function expiryClass(value) {
-  const label = expiryLabel(value)
-  if (label === '已过期') {
-    return 'expired'
-  }
-  if (label === '即将到期') {
-    return 'soon'
-  }
-  return 'normal'
-}
-
-function startOfToday() {
-  const now = new Date()
-  now.setHours(0, 0, 0, 0)
-  return now.getTime()
-}
-
 function getErrorMessage(error, fallback) {
   const status = error?.response?.status
   if (status === 401) {
@@ -615,6 +683,94 @@ function getErrorMessage(error, fallback) {
   background: var(--app-surface-soft);
   font-size: 12px;
   font-weight: 900;
+}
+
+.panel-metrics {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.summary-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 9px;
+  border: 1px solid var(--app-line-strong);
+  border-radius: 6px;
+  color: var(--app-text-soft);
+  background: var(--app-surface-soft);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.summary-badge.soon {
+  border-color: var(--app-accent);
+  color: var(--app-text);
+  background: var(--app-accent-soft);
+}
+
+.summary-badge.expired {
+  border-color: #d14343;
+  color: #b42318;
+  background: #fff1f0;
+}
+
+.expiry-alert {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+  padding: 11px 12px;
+  border: 1px solid var(--app-accent);
+  border-radius: 6px;
+  color: var(--app-text);
+  background: var(--app-accent-soft);
+}
+
+.expiry-alert > svg {
+  flex: 0 0 auto;
+}
+
+.expiry-alert > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.expiry-alert strong {
+  font-size: 13px;
+}
+
+.expiry-alert span {
+  color: var(--app-text-muted);
+  font-size: 12px;
+}
+
+.expiry-alert :deep(.el-button) {
+  flex: 0 0 auto;
+  min-height: 30px;
+}
+
+.pantry-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.pantry-toolbar :deep(.el-radio-group) {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.sort-select {
+  width: 150px;
+  flex: 0 0 auto;
 }
 
 .pantry-panel :deep(.el-table) {
@@ -764,6 +920,32 @@ function getErrorMessage(error, fallback) {
   .pantry-panel {
     min-height: 0;
     padding: 14px;
+  }
+
+  .panel-heading {
+    align-items: flex-start;
+  }
+
+  .panel-metrics {
+    max-width: 55%;
+  }
+
+  .expiry-alert {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .expiry-alert :deep(.el-button) {
+    margin-left: 27px;
+  }
+
+  .pantry-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .sort-select {
+    width: 100%;
   }
 
   .pantry-table {

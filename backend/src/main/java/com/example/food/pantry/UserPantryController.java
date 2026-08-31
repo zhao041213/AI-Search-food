@@ -4,6 +4,7 @@ import com.example.food.common.ApiResponse;
 import com.example.food.pantry.dto.ConsumePantryItemRequest;
 import com.example.food.pantry.dto.PantryItemRequest;
 import com.example.food.pantry.dto.PantryItemResponse;
+import com.example.food.pantry.dto.PantryExpirySummaryResponse;
 import com.example.food.security.AuthPrincipal;
 import jakarta.validation.Valid;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -33,6 +34,13 @@ public class UserPantryController {
             @AuthenticationPrincipal AuthPrincipal principal
     ) {
         return ApiResponse.ok(service.list(principal.id()));
+    }
+
+    @GetMapping("/expiry-alerts")
+    public ApiResponse<PantryExpirySummaryResponse> expiryAlerts(
+            @AuthenticationPrincipal AuthPrincipal principal
+    ) {
+        return ApiResponse.ok(service.expirySummary(principal.id()));
     }
 
     @PostMapping

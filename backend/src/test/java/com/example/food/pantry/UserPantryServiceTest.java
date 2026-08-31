@@ -12,7 +12,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -46,6 +48,33 @@ class UserPantryServiceTest {
         assertThat(items).extracting(PantryItemResponse::ingredientName)
                 .containsExactly("番茄", "鸡蛋", "番茄");
         assertThat(service.listIngredientNames(7L)).containsExactly("番茄", "鸡蛋");
+    }
+
+    @Test
+    void summarizesActiveExpiredAndSoonToExpireItems() {
+        Clock clock = Clock.fixed(
+                LocalDate.of(2026, 8, 31).atStartOfDay(ZoneId.of("Asia/Shanghai")).toInstant(),
+                ZoneId.of("Asia/Shanghai")
+        );
+        UserPantryService fixedService = new UserPantryService(mapper, new IngredientNormalizer(), clock);
+
+        UserPantryItem expired = item(1L, 7L, "西兰花");
+        expired.setQuantity(new BigDecimal("1"));
+        expired.setExpireDate(LocalDate.of(2026, 8, 30));
+        UserPantryItem soon = item(2L, 7L, "牛奶");
+        soon.setQuantity(new BigDecimal("2"));
+        soon.setExpireDate(LocalDate.of(2026, 9, 2));
+        when(mapper.findExpiryAlertsByUserId(7L, LocalDate.of(2026, 9, 7)))
+                .thenReturn(List.of(expired, soon));
+
+        var summary = fixedService.expirySummary(7L);
+
+        assertThat(summary.asOf()).isEqualTo(LocalDate.of(2026, 8, 31));
+        assertThat(summary.warningDays()).isEqualTo(7);
+        assertThat(summary.expiredItems()).extracting(PantryItemResponse::ingredientName)
+                .containsExactly("西兰花");
+        assertThat(summary.expiringSoonItems()).extracting(PantryItemResponse::ingredientName)
+                .containsExactly("牛奶");
     }
 
     @Test

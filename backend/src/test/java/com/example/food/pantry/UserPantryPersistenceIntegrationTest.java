@@ -1,5 +1,6 @@
 package com.example.food.pantry;
 
+import com.example.food.pantry.dto.PantryItemResponse;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -10,6 +11,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -80,5 +82,49 @@ class UserPantryPersistenceIntegrationTest {
                 BigDecimal.class,
                 itemId
         )).isEqualByComparingTo("1.25");
+    }
+
+    @Test
+    void expirySummaryOnlyReturnsItemsWithStockWithinWarningWindow() {
+        LocalDate today = LocalDate.now();
+        jdbcTemplate.update(
+                "INSERT INTO user_pantry_items (user_id, ingredient_name, quantity, unit, expire_date) VALUES (?, ?, ?, ?, ?)",
+                userId,
+                "西兰花",
+                new BigDecimal("1"),
+                "棵",
+                today.minusDays(1)
+        );
+        jdbcTemplate.update(
+                "INSERT INTO user_pantry_items (user_id, ingredient_name, quantity, unit, expire_date) VALUES (?, ?, ?, ?, ?)",
+                userId,
+                "牛奶",
+                new BigDecimal("2"),
+                "盒",
+                today.plusDays(3)
+        );
+        jdbcTemplate.update(
+                "INSERT INTO user_pantry_items (user_id, ingredient_name, quantity, unit, expire_date) VALUES (?, ?, ?, ?, ?)",
+                userId,
+                "鸡蛋",
+                BigDecimal.ZERO,
+                "个",
+                today.minusDays(1)
+        );
+        jdbcTemplate.update(
+                "INSERT INTO user_pantry_items (user_id, ingredient_name, quantity, unit, expire_date) VALUES (?, ?, ?, ?, ?)",
+                userId,
+                "大米",
+                new BigDecimal("1"),
+                "袋",
+                today.plusDays(8)
+        );
+
+        var summary = service.expirySummary(userId);
+
+        assertThat(summary.expiredItems()).extracting(PantryItemResponse::ingredientName)
+                .containsExactly("西兰花");
+        assertThat(summary.expiringSoonItems()).extracting(PantryItemResponse::ingredientName)
+                .containsExactly("牛奶");
     }
 }

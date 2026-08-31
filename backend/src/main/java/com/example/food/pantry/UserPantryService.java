@@ -2,25 +2,39 @@ package com.example.food.pantry;
 
 import com.example.food.pantry.dto.PantryItemRequest;
 import com.example.food.pantry.dto.PantryItemResponse;
+import com.example.food.pantry.dto.PantryExpirySummaryResponse;
 import com.example.food.stats.IngredientNormalizer;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
 public class UserPantryService {
 
+    public static final int EXPIRY_WARNING_DAYS = 7;
+
     private final UserPantryItemMapper mapper;
     private final IngredientNormalizer ingredientNormalizer;
+    private final Clock clock;
 
+    @Autowired
     public UserPantryService(UserPantryItemMapper mapper, IngredientNormalizer ingredientNormalizer) {
+        this(mapper, ingredientNormalizer, Clock.systemDefaultZone());
+    }
+
+    UserPantryService(UserPantryItemMapper mapper, IngredientNormalizer ingredientNormalizer, Clock clock) {
         this.mapper = mapper;
         this.ingredientNormalizer = ingredientNormalizer;
+        this.clock = clock;
     }
 
     public List<PantryItemResponse> list(Long userId) {
@@ -32,6 +46,30 @@ public class UserPantryService {
                 .map(UserPantryItem::getIngredientName)
                 .distinct()
                 .toList();
+    }
+
+    public PantryExpirySummaryResponse expirySummary(Long userId) {
+        LocalDate today = LocalDate.now(clock);
+        LocalDate warningUntil = today.plusDays(EXPIRY_WARNING_DAYS);
+        List<UserPantryItem> alerts = mapper.findExpiryAlertsByUserId(userId, warningUntil);
+        List<PantryItemResponse> expiredItems = new ArrayList<>();
+        List<PantryItemResponse> expiringSoonItems = new ArrayList<>();
+
+        for (UserPantryItem item : alerts) {
+            PantryItemResponse response = toResponse(item);
+            if (item.getExpireDate().isBefore(today)) {
+                expiredItems.add(response);
+            } else {
+                expiringSoonItems.add(response);
+            }
+        }
+
+        return new PantryExpirySummaryResponse(
+                today,
+                EXPIRY_WARNING_DAYS,
+                List.copyOf(expiredItems),
+                List.copyOf(expiringSoonItems)
+        );
     }
 
     @Transactional

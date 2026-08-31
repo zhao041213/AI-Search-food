@@ -4,6 +4,10 @@ export function getPantryItems() {
   return http.get('/users/me/pantry')
 }
 
+export function getPantryExpiryAlerts() {
+  return http.get('/users/me/pantry/expiry-alerts')
+}
+
 export function createPantryItem(payload) {
   return http.post('/users/me/pantry', payload)
 }

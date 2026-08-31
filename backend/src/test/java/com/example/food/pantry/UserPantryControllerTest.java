@@ -2,6 +2,7 @@ package com.example.food.pantry;
 
 import com.example.food.common.GlobalExceptionHandler;
 import com.example.food.pantry.dto.PantryItemResponse;
+import com.example.food.pantry.dto.PantryExpirySummaryResponse;
 import com.example.food.security.AppRole;
 import com.example.food.security.AuthPrincipal;
 import com.example.food.security.JwtService;
@@ -52,6 +53,30 @@ class UserPantryControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].ingredientName").value("番茄"))
                 .andExpect(jsonPath("$.data[0].quantity").value(2));
+    }
+
+    @Test
+    void userCanReadPantryExpiryAlerts() throws Exception {
+        authenticateUser();
+        when(service.expirySummary(7L)).thenReturn(new PantryExpirySummaryResponse(
+                LocalDate.of(2026, 8, 31),
+                7,
+                List.of(new PantryItemResponse(
+                        3L, "西兰花", "蔬菜", new BigDecimal("1"), "棵", LocalDate.of(2026, 8, 30), null
+                )),
+                List.of(new PantryItemResponse(
+                        4L, "牛奶", "乳品", new BigDecimal("2"), "盒", LocalDate.of(2026, 9, 2), null
+                ))
+        ));
+
+        mockMvc.perform(get("/api/users/me/pantry/expiry-alerts")
+                        .header("Authorization", "Bearer user-token"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.warningDays").value(7))
+                .andExpect(jsonPath("$.data.expiredItems[0].ingredientName").value("西兰花"))
+                .andExpect(jsonPath("$.data.expiringSoonItems[0].ingredientName").value("牛奶"));
+
+        verify(service).expirySummary(7L);
     }
 
     @Test
