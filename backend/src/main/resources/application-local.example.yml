@@ -6,6 +6,15 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
 
 app:
+  sms:
+    provider: ${SMS_PROVIDER:mock}
+    pnvs:
+      access-key-id: ${ALIBABA_CLOUD_ACCESS_KEY_ID:}
+      access-key-secret: ${ALIBABA_CLOUD_ACCESS_KEY_SECRET:}
+      sign-name: ${ALIYUN_PNVS_SIGN_NAME:恒创联众}
+      template-code: ${ALIYUN_PNVS_TEMPLATE_CODE:100001}
+      endpoint: ${ALIYUN_PNVS_ENDPOINT:dypnsapi.aliyuncs.com}
+      scheme-name: ${ALIYUN_PNVS_SCHEME_NAME:}
   ai:
     qwen:
       api-key: your-dashscope-api-key

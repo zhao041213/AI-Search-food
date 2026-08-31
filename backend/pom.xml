@@ -22,6 +22,7 @@
         <mybatis-plus.version>3.5.7</mybatis-plus.version>
         <jjwt.version>0.12.6</jjwt.version>
         <aliyun.sms.version>4.6.0</aliyun.sms.version>
+        <aliyun.pnvs.version>2.0.0</aliyun.pnvs.version>
     </properties>
 
     <dependencies>
@@ -76,6 +77,11 @@
             <groupId>com.aliyun</groupId>
             <artifactId>dysmsapi20170525</artifactId>
             <version>${aliyun.sms.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.aliyun</groupId>
+            <artifactId>dypnsapi20170525</artifactId>
+            <version>${aliyun.pnvs.version}</version>
         </dependency>
         <dependency>
             <groupId>com.h2database</groupId>

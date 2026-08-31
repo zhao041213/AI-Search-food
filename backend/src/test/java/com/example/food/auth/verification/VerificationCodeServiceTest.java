@@ -66,6 +66,40 @@ class VerificationCodeServiceTest {
     }
 
     @Test
+    void remoteProviderVerifiesCodeAndLocalRecordRemainsOneTime() {
+        String phone = "13900001011";
+        when(smsCodeSender.supportsRemoteVerification()).thenReturn(true);
+        when(smsCodeSender.send(anyString(), anyString()))
+                .thenReturn(new SmsSendResult(null, 0));
+
+        assertThat(service.issue(phone, VerificationCodePurpose.REGISTER).code()).isNull();
+
+        service.verify(phone, VerificationCodePurpose.REGISTER, "123456");
+
+        verify(smsCodeSender).verify(phone, "123456");
+        assertThatThrownBy(() -> service.verify(phone, VerificationCodePurpose.REGISTER, "123456"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Verification code already used");
+    }
+
+    @Test
+    void remoteProviderFailureDoesNotConsumeLocalRecord() {
+        String phone = "13900001012";
+        when(smsCodeSender.supportsRemoteVerification()).thenReturn(true);
+        when(smsCodeSender.send(anyString(), anyString()))
+                .thenReturn(new SmsSendResult(null, 0));
+        service.issue(phone, VerificationCodePurpose.REGISTER);
+        org.mockito.Mockito.doThrow(new VerificationCodeException("Verification code invalid"))
+                .when(smsCodeSender)
+                .verify(phone, "000000");
+
+        assertThatThrownBy(() -> service.verify(phone, VerificationCodePurpose.REGISTER, "000000"))
+                .isInstanceOf(VerificationCodeException.class)
+                .hasMessage("Verification code invalid");
+        assertThat(latest(phone, VerificationCodePurpose.REGISTER).getConsumedAt()).isNull();
+    }
+
+    @Test
     void wrongPurposeCannotConsumeCode() {
         String code = service.issue("13900001002", VerificationCodePurpose.REGISTER).code();
 
