@@ -1,6 +1,7 @@
 package com.example.food.pantry;
 
 import com.example.food.common.ApiResponse;
+import com.example.food.pantry.dto.ConsumePantryItemRequest;
 import com.example.food.pantry.dto.PantryItemRequest;
 import com.example.food.pantry.dto.PantryItemResponse;
 import com.example.food.security.AuthPrincipal;
@@ -49,6 +50,15 @@ public class UserPantryController {
             @Valid @RequestBody PantryItemRequest request
     ) {
         return ApiResponse.ok(service.update(principal.id(), id, request));
+    }
+
+    @PostMapping("/{id}/consume")
+    public ApiResponse<PantryItemResponse> consume(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @PathVariable Long id,
+            @Valid @RequestBody ConsumePantryItemRequest request
+    ) {
+        return ApiResponse.ok(service.consume(principal.id(), id, request.quantity()));
     }
 
     @DeleteMapping("/{id}")
