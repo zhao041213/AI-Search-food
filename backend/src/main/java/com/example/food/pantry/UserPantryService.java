@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -55,6 +56,21 @@ public class UserPantryService {
     }
 
     @Transactional
+    public PantryItemResponse consume(Long userId, Long itemId, BigDecimal quantity) {
+        validateConsumeQuantity(quantity);
+        UserPantryItem item = findOwned(userId, itemId);
+        if (item.getQuantity() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "当前库存数量为空，无法消耗");
+        }
+
+        int updatedRows = mapper.consumeByUserIdAndId(userId, itemId, quantity);
+        if (updatedRows == 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "库存数量不足");
+        }
+        return toResponse(mapper.selectById(itemId));
+    }
+
+    @Transactional
     public void delete(Long userId, Long itemId) {
         UserPantryItem item = findOwned(userId, itemId);
         mapper.deleteById(item.getId());
@@ -66,6 +82,15 @@ public class UserPantryService {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "食材不存在");
         }
         return item;
+    }
+
+    private void validateConsumeQuantity(BigDecimal quantity) {
+        if (quantity == null || quantity.signum() <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "消耗数量必须大于 0");
+        }
+        if (quantity.scale() > 2 || quantity.precision() - quantity.scale() > 8) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "消耗数量最多支持 8 位整数和 2 位小数");
+        }
     }
 
     private void applyRequest(UserPantryItem item, PantryItemRequest request) {

@@ -126,6 +126,23 @@ public class FinishedDishReviewService {
                 .toList();
     }
 
+    @Transactional
+    public void delete(Long userId, Long reviewId) {
+        FinishedDishReviewRecord review = reviewMapper.selectById(reviewId);
+        if (review == null || !userId.equals(review.getUserId())) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "成品评价不存在");
+        }
+
+        UploadedFile file = findOwnedReviewFile(userId, review.getUploadedFileId());
+        reviewMapper.deleteById(review.getId());
+        if (file == null) {
+            return;
+        }
+
+        uploadedFileMapper.deleteById(file.getId());
+        fileStorage.deleteQuietly(file.getStoredName());
+    }
+
     public ReviewImage loadOwnedImage(Long userId, Long reviewId) {
         FinishedDishReviewRecord review = reviewMapper.selectById(reviewId);
         if (review == null || !userId.equals(review.getUserId())) {
@@ -136,6 +153,17 @@ public class FinishedDishReviewService {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "成品图文件不存在");
         }
         return new ReviewImage(fileStorage.load(file.getStoredName()), file.getContentType(), file.getOriginalName());
+    }
+
+    private UploadedFile findOwnedReviewFile(Long userId, Long uploadedFileId) {
+        if (uploadedFileId == null) {
+            return null;
+        }
+        UploadedFile file = uploadedFileMapper.selectById(uploadedFileId);
+        if (file == null || !userId.equals(file.getUserId()) || !FILE_PURPOSE.equals(file.getPurpose())) {
+            return null;
+        }
+        return file;
     }
 
     private FinishedDishReviewResult toResult(

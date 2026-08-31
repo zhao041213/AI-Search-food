@@ -25,8 +25,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -152,6 +154,84 @@ class FinishedDishReviewServiceTest {
             assertThat(item.id()).isEqualTo(61L);
             assertThat(item.result().recipeTitle()).isEqualTo("番茄炒蛋");
         });
+    }
+
+    @Test
+    void deletesOwnedReviewAndItsFinishedDishFileAfterDatabaseRecords() {
+        FinishedDishReviewRecord review = review(51L, 7L, 41L);
+        UploadedFile file = uploadedFile(41L, 7L, "saved.jpg", "finished_dish_review");
+        when(reviewMapper.selectById(51L)).thenReturn(review);
+        when(uploadedFileMapper.selectById(41L)).thenReturn(file);
+
+        service.delete(7L, 51L);
+
+        var order = inOrder(reviewMapper, uploadedFileMapper, fileStorage);
+        order.verify(reviewMapper).deleteById((java.io.Serializable) 51L);
+        order.verify(uploadedFileMapper).deleteById((java.io.Serializable) 41L);
+        order.verify(fileStorage).deleteQuietly("saved.jpg");
+    }
+
+    @Test
+    void deletesReviewWithoutAnAssociatedFile() {
+        when(reviewMapper.selectById(51L)).thenReturn(review(51L, 7L, null));
+
+        service.delete(7L, 51L);
+
+        verify(reviewMapper).deleteById((java.io.Serializable) 51L);
+        verify(uploadedFileMapper, never()).selectById(any());
+        verify(uploadedFileMapper, never()).deleteById((java.io.Serializable) 41L);
+        verifyNoInteractions(fileStorage);
+    }
+
+    @Test
+    void preservesFileRecordAndDiskFileWhenAssociatedFileIsNotAReviewFile() {
+        when(reviewMapper.selectById(51L)).thenReturn(review(51L, 7L, 41L));
+        when(uploadedFileMapper.selectById(41L))
+                .thenReturn(uploadedFile(41L, 7L, "ingredient.jpg", "ingredient_recognition"));
+
+        service.delete(7L, 51L);
+
+        verify(reviewMapper).deleteById((java.io.Serializable) 51L);
+        verify(uploadedFileMapper, never()).deleteById((java.io.Serializable) 41L);
+        verifyNoInteractions(fileStorage);
+    }
+
+    @Test
+    void treatsMissingAndAnotherUsersReviewAsNotFound() {
+        when(reviewMapper.selectById(51L)).thenReturn(null, review(51L, 8L, 41L));
+
+        assertThatThrownBy(() -> service.delete(7L, 51L))
+                .isInstanceOf(ResponseStatusException.class)
+                .satisfies(exception -> {
+                    ResponseStatusException error = (ResponseStatusException) exception;
+                    assertThat(error.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+                    assertThat(error.getReason()).isEqualTo("成品评价不存在");
+                });
+        assertThatThrownBy(() -> service.delete(7L, 51L))
+                .isInstanceOf(ResponseStatusException.class)
+                .satisfies(exception -> {
+                    ResponseStatusException error = (ResponseStatusException) exception;
+                    assertThat(error.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+                    assertThat(error.getReason()).isEqualTo("成品评价不存在");
+                });
+        verify(reviewMapper, never()).deleteById((java.io.Serializable) 51L);
+    }
+
+    private FinishedDishReviewRecord review(Long id, Long userId, Long uploadedFileId) {
+        FinishedDishReviewRecord review = new FinishedDishReviewRecord();
+        review.setId(id);
+        review.setUserId(userId);
+        review.setUploadedFileId(uploadedFileId);
+        return review;
+    }
+
+    private UploadedFile uploadedFile(Long id, Long userId, String storedName, String purpose) {
+        UploadedFile file = new UploadedFile();
+        file.setId(id);
+        file.setUserId(userId);
+        file.setStoredName(storedName);
+        file.setPurpose(purpose);
+        return file;
     }
 
     private FinishedDishReviewRequest request(Long recipeId) {

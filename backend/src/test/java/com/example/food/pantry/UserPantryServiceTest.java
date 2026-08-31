@@ -103,6 +103,66 @@ class UserPantryServiceTest {
                 .hasMessageContaining("食材不存在");
     }
 
+    @Test
+    void consumesOwnedPantryItemAtomically() {
+        UserPantryItem existing = item(5L, 7L, "鸡蛋");
+        existing.setQuantity(new BigDecimal("2.50"));
+        UserPantryItem updated = item(5L, 7L, "鸡蛋");
+        updated.setQuantity(new BigDecimal("1.25"));
+        when(mapper.selectById(5L)).thenReturn(existing, updated);
+        when(mapper.consumeByUserIdAndId(7L, 5L, new BigDecimal("1.25"))).thenReturn(1);
+
+        PantryItemResponse response = service.consume(7L, 5L, new BigDecimal("1.25"));
+
+        verify(mapper).consumeByUserIdAndId(7L, 5L, new BigDecimal("1.25"));
+        assertThat(response.quantity()).isEqualByComparingTo("1.25");
+    }
+
+    @Test
+    void rejectsConsumptionWhenInventoryIsInsufficient() {
+        UserPantryItem existing = item(5L, 7L, "鸡蛋");
+        existing.setQuantity(new BigDecimal("1.00"));
+        when(mapper.selectById(5L)).thenReturn(existing);
+        when(mapper.consumeByUserIdAndId(7L, 5L, new BigDecimal("1.01"))).thenReturn(0);
+
+        assertThatThrownBy(() -> service.consume(7L, 5L, new BigDecimal("1.01")))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("库存数量不足");
+    }
+
+    @Test
+    void rejectsConsumptionWhenInventoryQuantityIsNull() {
+        UserPantryItem existing = item(5L, 7L, "鸡蛋");
+        when(mapper.selectById(5L)).thenReturn(existing);
+
+        assertThatThrownBy(() -> service.consume(7L, 5L, new BigDecimal("1")))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("当前库存数量为空");
+    }
+
+    @Test
+    void rejectsConsumptionForMissingOrAnotherUsersItem() {
+        when(mapper.selectById(5L)).thenReturn(null);
+        assertThatThrownBy(() -> service.consume(7L, 5L, new BigDecimal("1")))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("食材不存在");
+
+        when(mapper.selectById(6L)).thenReturn(item(6L, 8L, "鸡蛋"));
+        assertThatThrownBy(() -> service.consume(7L, 6L, new BigDecimal("1")))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("食材不存在");
+    }
+
+    @Test
+    void rejectsInvalidConsumptionQuantity() {
+        assertThatThrownBy(() -> service.consume(7L, 5L, BigDecimal.ZERO))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("必须大于 0");
+        assertThatThrownBy(() -> service.consume(7L, 5L, new BigDecimal("1.001")))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("最多支持");
+    }
+
     private UserPantryItem item(Long id, Long userId, String ingredientName) {
         UserPantryItem item = new UserPantryItem();
         item.setId(id);
