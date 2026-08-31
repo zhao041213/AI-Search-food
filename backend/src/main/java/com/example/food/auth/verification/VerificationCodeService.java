@@ -109,6 +109,11 @@ public class VerificationCodeService {
     }
 
     public void verify(String phone, VerificationCodePurpose purpose, String submittedCode) {
+        if (smsCodeSender.supportsRemoteVerification()) {
+            verifyWithRemoteProvider(phone, purpose, submittedCode);
+            return;
+        }
+
         VerificationResult result = transactionTemplate.execute(status ->
                 verifyInTransaction(phone, purpose, submittedCode));
         if (result == null) {
@@ -117,6 +122,36 @@ public class VerificationCodeService {
         if (result.errorMessage() != null) {
             throw new VerificationCodeException(result.errorMessage());
         }
+    }
+
+    private void verifyWithRemoteProvider(
+            String phone,
+            VerificationCodePurpose purpose,
+            String submittedCode
+    ) {
+        PhoneVerificationCode verificationCode = latest(phone, purpose);
+        LocalDateTime now = LocalDateTime.now();
+        String currentError = validationError(verificationCode, now);
+        if (currentError != null) {
+            throw new VerificationCodeException(currentError);
+        }
+
+        smsCodeSender.verify(phone, submittedCode);
+        int updatedRows = transactionTemplate.execute(status -> mapper.update(null,
+                new UpdateWrapper<PhoneVerificationCode>()
+                        .eq("id", verificationCode.getId())
+                        .isNull("consumed_at")
+                        .gt("expires_at", now)
+                        .set("consumed_at", now)));
+        if (updatedRows == 1) {
+            return;
+        }
+
+        PhoneVerificationCode refreshed = mapper.selectById(verificationCode.getId());
+        String refreshedError = validationError(refreshed, now);
+        throw new VerificationCodeException(
+                refreshedError == null ? "Verification code invalid" : refreshedError
+        );
     }
 
     private VerificationResult verifyInTransaction(

@@ -26,14 +26,14 @@ class MockSmsCodeSenderTest {
     }
 
     @Test
-    void productionProfileDefaultsToAliyunAndDisablesMockSender() {
+    void productionProfileDefaultsToAliyunPnvsAndDisablesMockSender() {
         new ApplicationContextRunner()
                 .withInitializer(new ConfigDataApplicationContextInitializer())
                 .withPropertyValues("spring.profiles.active=prod")
                 .withUserConfiguration(MockSmsCodeSender.class)
                 .run(context -> {
                     assertThat(context.getEnvironment().getProperty("app.sms.provider"))
-                            .isEqualTo("aliyun");
+                            .isEqualTo("aliyun-pnvs");
                     assertThat(context).doesNotHaveBean(SmsCodeSender.class);
                 });
     }

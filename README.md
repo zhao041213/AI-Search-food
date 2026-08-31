@@ -33,20 +33,21 @@ DASHSCOPE_VISION_MODEL=qwen-vl-plus
 
 短信验证码默认使用 `mock` 模式：后端随机生成 6 位验证码并在接口响应中返回，前端会自动填入，仅用于本地开发。验证码有效期为 5 分钟，60 秒内不能重复获取，连续输错 5 次后失效。注册和登录使用不同用途的验证码，验证码使用后立即失效。
 
-接入阿里云短信时，将 `SMS_PROVIDER` 改为 `aliyun`，并配置以下环境变量。AccessKey、签名和模板必须全部有效，且短信模板参数名应为 `code`：
+如果没有企业短信资质，建议使用阿里云号码认证服务的短信认证模式。将 `SMS_PROVIDER` 改为 `aliyun-pnvs`，并配置号码认证服务控制台提供的系统签名和系统验证码模板：
 
 ```env
-SMS_PROVIDER=aliyun
+SMS_PROVIDER=aliyun-pnvs
 ALIBABA_CLOUD_ACCESS_KEY_ID=你的 AccessKey ID
 ALIBABA_CLOUD_ACCESS_KEY_SECRET=你的 AccessKey Secret
-ALIYUN_SMS_SIGN_NAME=审核通过的短信签名
-ALIYUN_SMS_TEMPLATE_CODE=审核通过的模板代码
-ALIYUN_SMS_ENDPOINT=dysmsapi.aliyuncs.com
+ALIYUN_PNVS_SIGN_NAME=恒创联众
+ALIYUN_PNVS_TEMPLATE_CODE=100001
+ALIYUN_PNVS_ENDPOINT=dypnsapi.aliyuncs.com
+ALIYUN_PNVS_SCHEME_NAME=可选的方案名称
 ```
 
-真实短信模式不会在接口响应或日志中回显验证码。以上敏感配置只应放在 IDEA 环境变量、系统环境变量或未提交的本地配置中。
+PNVS 模式使用 `SendSmsVerifyCode` 发送验证码，并使用 `CheckSmsVerifyCode` 校验验证码。系统签名必须和系统模板配套使用，不能与普通短信服务的自定义签名或模板混用。真实短信模式不会在接口响应或日志中回显验证码。以上敏感配置只应放在 IDEA 环境变量、系统环境变量或未提交的本地配置中。
 
-生产部署必须同时启用 `prod` profile，例如 `SPRING_PROFILES_ACTIVE=mysql,prod`。该 profile 会禁用模拟发送器并默认选择阿里云；缺少真实短信配置时应用将拒绝启动，避免公共接口回显有效验证码。
+生产部署必须同时启用 `prod` profile，例如 `SPRING_PROFILES_ACTIVE=mysql,prod`。该 profile 会禁用模拟发送器并默认选择 PNVS；缺少真实短信配置时应用将拒绝启动，避免公共接口回显有效验证码。
 
 如果希望本地每次启动都自动带千问 Key，可以复制示例文件：
 
@@ -118,7 +119,7 @@ npm run stop
 
 ## 登录说明
 
-新手机号需要先在“用户注册”页面获取验证码并完成注册，之后才能使用“手机号登录”。模拟短信模式会自动填入本次随机验证码；阿里云短信模式需要输入手机收到的验证码。
+新手机号需要先在“用户注册”页面获取验证码并完成注册，之后才能使用“手机号登录”。模拟短信模式会自动填入本次随机验证码；PNVS 真实短信模式需要输入手机收到的验证码。
 
 管理员登录：
 

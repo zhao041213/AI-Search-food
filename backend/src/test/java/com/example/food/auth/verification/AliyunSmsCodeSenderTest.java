@@ -19,7 +19,8 @@ class AliyunSmsCodeSenderTest {
                 config -> config.setAccessKeyId(""),
                 config -> config.setAccessKeySecret(""),
                 config -> config.setSignName(""),
-                config -> config.setTemplateCode("")
+                config -> config.setTemplateCode(""),
+                config -> config.setEndpoint("")
         );
 
         for (Consumer<SmsProperties.Aliyun> removeRequiredValue : missingConfigurations) {

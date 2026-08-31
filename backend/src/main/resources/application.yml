@@ -43,6 +43,13 @@ app:
       sign-name: ${ALIYUN_SMS_SIGN_NAME:}
       template-code: ${ALIYUN_SMS_TEMPLATE_CODE:}
       endpoint: ${ALIYUN_SMS_ENDPOINT:dysmsapi.aliyuncs.com}
+    pnvs:
+      access-key-id: ${ALIBABA_CLOUD_ACCESS_KEY_ID:}
+      access-key-secret: ${ALIBABA_CLOUD_ACCESS_KEY_SECRET:}
+      sign-name: ${ALIYUN_PNVS_SIGN_NAME:}
+      template-code: ${ALIYUN_PNVS_TEMPLATE_CODE:}
+      endpoint: ${ALIYUN_PNVS_ENDPOINT:dypnsapi.aliyuncs.com}
+      scheme-name: ${ALIYUN_PNVS_SCHEME_NAME:}
   ai:
     qwen:
       api-key: ${DASHSCOPE_API_KEY:}

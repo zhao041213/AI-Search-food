@@ -14,6 +14,7 @@ public class SmsProperties {
     private Duration resendInterval = Duration.ofSeconds(60);
     private int maxAttempts = 5;
     private Aliyun aliyun = new Aliyun();
+    private Pnvs pnvs = new Pnvs();
 
     public String getProvider() {
         return provider;
@@ -53,6 +54,14 @@ public class SmsProperties {
 
     public void setAliyun(Aliyun aliyun) {
         this.aliyun = aliyun;
+    }
+
+    public Pnvs getPnvs() {
+        return pnvs;
+    }
+
+    public void setPnvs(Pnvs pnvs) {
+        this.pnvs = pnvs;
     }
 
     public static class Aliyun {
@@ -101,6 +110,64 @@ public class SmsProperties {
 
         public void setEndpoint(String endpoint) {
             this.endpoint = endpoint;
+        }
+    }
+
+    public static class Pnvs {
+
+        private String accessKeyId = "";
+        private String accessKeySecret = "";
+        private String signName = "";
+        private String templateCode = "";
+        private String endpoint = "dypnsapi.aliyuncs.com";
+        private String schemeName = "";
+
+        public String getAccessKeyId() {
+            return accessKeyId;
+        }
+
+        public void setAccessKeyId(String accessKeyId) {
+            this.accessKeyId = accessKeyId;
+        }
+
+        public String getAccessKeySecret() {
+            return accessKeySecret;
+        }
+
+        public void setAccessKeySecret(String accessKeySecret) {
+            this.accessKeySecret = accessKeySecret;
+        }
+
+        public String getSignName() {
+            return signName;
+        }
+
+        public void setSignName(String signName) {
+            this.signName = signName;
+        }
+
+        public String getTemplateCode() {
+            return templateCode;
+        }
+
+        public void setTemplateCode(String templateCode) {
+            this.templateCode = templateCode;
+        }
+
+        public String getEndpoint() {
+            return endpoint;
+        }
+
+        public void setEndpoint(String endpoint) {
+            this.endpoint = endpoint;
+        }
+
+        public String getSchemeName() {
+            return schemeName;
+        }
+
+        public void setSchemeName(String schemeName) {
+            this.schemeName = schemeName;
         }
     }
 }
