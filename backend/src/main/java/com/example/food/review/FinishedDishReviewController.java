@@ -11,6 +11,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -49,6 +50,15 @@ public class FinishedDishReviewController {
             @RequestParam(defaultValue = "10") int limit
     ) {
         return ApiResponse.ok(reviewService.list(principal.id(), recipeId, limit));
+    }
+
+    @DeleteMapping("/api/finished-dish-reviews/{id}")
+    public ApiResponse<Void> delete(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @PathVariable Long id
+    ) {
+        reviewService.delete(principal.id(), id);
+        return ApiResponse.ok(null);
     }
 
     @GetMapping("/api/finished-dish-reviews/{id}/image")

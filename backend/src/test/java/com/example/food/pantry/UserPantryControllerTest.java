@@ -105,6 +105,40 @@ class UserPantryControllerTest {
         verify(service).delete(7L, 3L);
     }
 
+    @Test
+    void userCanConsumeOwnPantryItem() throws Exception {
+        authenticateUser();
+        when(service.consume(7L, 3L, new BigDecimal("0.5"))).thenReturn(new PantryItemResponse(
+                3L, "番茄", "蔬菜", new BigDecimal("1.5"), "个", LocalDate.of(2026, 8, 31), null
+        ));
+
+        mockMvc.perform(post("/api/users/me/pantry/{id}/consume", 3L)
+                        .header("Authorization", "Bearer user-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"quantity": 0.5}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(3))
+                .andExpect(jsonPath("$.data.quantity").value(1.5));
+
+        verify(service).consume(7L, 3L, new BigDecimal("0.5"));
+    }
+
+    @Test
+    void invalidConsumptionQuantityReturnsParameterError() throws Exception {
+        authenticateUser();
+
+        mockMvc.perform(post("/api/users/me/pantry/{id}/consume", 3L)
+                        .header("Authorization", "Bearer user-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"quantity": 0}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Invalid request parameters"));
+    }
+
     private void authenticateUser() {
         when(jwtService.parseToken("user-token"))
                 .thenReturn(new AuthPrincipal(7L, "13800138000", AppRole.USER));

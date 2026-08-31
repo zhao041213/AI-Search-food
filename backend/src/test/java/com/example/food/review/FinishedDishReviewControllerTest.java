@@ -26,6 +26,7 @@ import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -100,6 +101,36 @@ class FinishedDishReviewControllerTest {
                 .andExpect(jsonPath("$.data[0].result.recipeTitle").value("番茄炒蛋"));
 
         verify(reviewService).list(7L, 21L, 10);
+    }
+
+    @Test
+    void userCanDeleteOwnReview() throws Exception {
+        String token = jwtService.generateToken(new AuthPrincipal(7L, "13800138000", AppRole.USER));
+
+        mockMvc.perform(delete("/api/finished-dish-reviews/41")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data").doesNotExist());
+
+        verify(reviewService).delete(7L, 41L);
+    }
+
+    @Test
+    void deletingReviewRequiresUserAuthentication() throws Exception {
+        mockMvc.perform(delete("/api/finished-dish-reviews/41"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(401));
+    }
+
+    @Test
+    void adminCannotDeleteUserReview() throws Exception {
+        String token = jwtService.generateToken(new AuthPrincipal(1L, "admin", AppRole.ADMIN));
+
+        mockMvc.perform(delete("/api/finished-dish-reviews/41")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403));
     }
 
     private FinishedDishReviewResponse response(boolean saved) {
