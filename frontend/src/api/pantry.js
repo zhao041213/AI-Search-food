@@ -12,6 +12,10 @@ export function updatePantryItem(id, payload) {
   return http.put(`/users/me/pantry/${id}`, payload)
 }
 
+export function consumePantryItem(id, quantity) {
+  return http.post(`/users/me/pantry/${id}/consume`, { quantity })
+}
+
 export function deletePantryItem(id) {
   return http.delete(`/users/me/pantry/${id}`)
 }

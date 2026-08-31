@@ -151,21 +151,40 @@
                 <span>本次评价完成后会自动保存到这里。</span>
               </div>
               <template v-else>
-                <button
+                <article
                   v-for="item in history"
                   :key="item.id"
                   class="history-review-item"
                   :class="{ active: item.id === selectedHistoryId }"
-                  type="button"
-                  @click="selectHistoryReview(item)"
                 >
-                  <span class="history-review-score">{{ item.result?.overallScore ?? 0 }}</span>
-                  <span class="history-review-copy">
-                    <strong>{{ item.result?.summary || '成品图评价' }}</strong>
-                    <small>{{ formatDate(item.createdAt) }}</small>
-                  </span>
-                  <ChevronRight :size="17" aria-hidden="true" />
-                </button>
+                  <button
+                    class="history-review-select"
+                    type="button"
+                    :disabled="historyImageLoading || Boolean(deletingReviewId)"
+                    @click="selectHistoryReview(item)"
+                  >
+                    <span class="history-review-score">{{ item.result?.overallScore ?? 0 }}</span>
+                    <span class="history-review-copy">
+                      <strong>{{ item.result?.summary || '成品图评价' }}</strong>
+                      <small>{{ formatDate(item.createdAt) }}</small>
+                    </span>
+                    <ChevronRight :size="17" aria-hidden="true" />
+                  </button>
+                  <el-tooltip content="删除评价" placement="top">
+                    <el-button
+                      class="history-review-delete"
+                      type="danger"
+                      text
+                      circle
+                      :loading="deletingReviewId === item.id"
+                      :disabled="historyImageLoading || Boolean(deletingReviewId)"
+                      :aria-label="`删除 ${item.result?.summary || '成品图评价'}`"
+                      @click.stop="confirmDeleteHistoryReview(item)"
+                    >
+                      <Trash2 v-if="deletingReviewId !== item.id" :size="16" aria-hidden="true" />
+                    </el-button>
+                  </el-tooltip>
+                </article>
               </template>
             </section>
             <div v-else class="review-tab-empty">
@@ -203,7 +222,7 @@
 
 <script setup>
 import { computed, markRaw, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   AlertTriangle,
   Camera,
@@ -216,10 +235,12 @@ import {
   Palette,
   PanelsTopLeft,
   Sparkles,
+  Trash2,
   Upload
 } from 'lucide-vue-next'
 import {
   createFinishedDishReview,
+  deleteFinishedDishReview,
   getFinishedDishReviewImage,
   getFinishedDishReviews
 } from '../api/finishedDishReviews'
@@ -248,6 +269,7 @@ const reviewLoading = ref(false)
 const historyLoading = ref(false)
 const historyImageLoading = ref(false)
 const selectedHistoryId = ref(null)
+const deletingReviewId = ref(null)
 const cameraCaptureVisible = ref(false)
 
 const recipeTitle = computed(() => props.recipe?.title?.trim() || '当前菜谱')
@@ -275,6 +297,7 @@ function handleClosed() {
   clearPreview()
   selectedImageFile.value = null
   selectedHistoryId.value = null
+  deletingReviewId.value = null
   currentReview.value = null
   activeTab.value = 'summary'
 }
@@ -395,6 +418,47 @@ async function selectHistoryReview(item) {
     ElMessage.error(getHistoryErrorMessage(error))
   } finally {
     historyImageLoading.value = false
+  }
+}
+
+async function confirmDeleteHistoryReview(item) {
+  if (!item?.id || deletingReviewId.value || historyImageLoading.value) {
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      '删除后将同时移除这条评价和对应的成品图，且无法恢复。',
+      '确认删除评价',
+      {
+        confirmButtonText: '删除评价',
+        cancelButtonText: '取消',
+        confirmButtonClass: 'review-delete-confirm-button',
+        type: 'warning'
+      }
+    )
+  } catch {
+    return
+  }
+
+  deletingReviewId.value = item.id
+  try {
+    await deleteFinishedDishReview(item.id)
+    history.value = history.value.filter((historyItem) => historyItem.id !== item.id)
+
+    if (selectedHistoryId.value === item.id) {
+      clearPreview()
+      selectedImageFile.value = null
+      selectedHistoryId.value = null
+      currentReview.value = null
+      activeTab.value = 'history'
+    }
+
+    ElMessage.success('评价和成品图已删除')
+  } catch (error) {
+    ElMessage.error(getHistoryErrorMessage(error))
+  } finally {
+    deletingReviewId.value = null
   }
 }
 
@@ -553,7 +617,8 @@ function getHistoryErrorMessage(error) {
 .review-recipe-context,
 .review-dialog-footer,
 .review-image-actions,
-.history-review-item {
+.history-review-item,
+.history-review-select {
   display: flex;
   align-items: center;
 }
@@ -924,23 +989,32 @@ function getHistoryErrorMessage(error) {
 }
 
 .history-review-item {
+  min-width: 0;
+  gap: 4px;
+  padding: 2px 0;
+  border-bottom: 1px solid var(--app-line);
+}
+
+.history-review-select {
+  flex: 1 1 auto;
+  min-width: 0;
   width: 100%;
   gap: 10px;
   padding: 10px 4px;
   border: 0;
-  border-bottom: 1px solid var(--app-line);
   color: var(--app-text);
   background: transparent;
   cursor: pointer;
   text-align: left;
 }
 
-.history-review-item:hover,
-.history-review-item.active {
+.history-review-item.active,
+.history-review-select:hover {
   background: var(--app-surface-soft);
 }
 
-.history-review-item:focus-visible,
+.history-review-select:focus-visible,
+.history-review-delete:focus-visible,
 .review-image-actions :deep(.el-button:focus-visible),
 .review-dialog-footer :deep(.el-button:focus-visible) {
   outline: 2px solid var(--app-accent);
@@ -985,9 +1059,24 @@ function getHistoryErrorMessage(error) {
   font-size: 11px;
 }
 
-.history-review-item > svg {
+.history-review-select > svg {
   flex: 0 0 auto;
   color: var(--app-text-muted);
+}
+
+.history-review-delete {
+  flex: 0 0 auto;
+}
+
+:global(.review-delete-confirm-button) {
+  border-color: #b63c3c !important;
+  background: #b63c3c !important;
+}
+
+:global(.review-delete-confirm-button:hover),
+:global(.review-delete-confirm-button:focus-visible) {
+  border-color: #963131 !important;
+  background: #963131 !important;
 }
 
 .review-dialog-footer {
@@ -1071,6 +1160,11 @@ function getHistoryErrorMessage(error) {
   .review-dialog-footer :deep(.el-button) {
     flex: 1 1 0;
     margin-left: 0;
+  }
+
+  .history-review-delete {
+    min-width: 44px;
+    min-height: 44px;
   }
 }
 </style>

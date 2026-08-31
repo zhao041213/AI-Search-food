@@ -54,9 +54,19 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="132" fixed="right">
+          <el-table-column label="操作" width="172" fixed="right">
             <template #default="scope">
               <div class="row-actions">
+                <el-tooltip content="消耗库存" placement="top">
+                  <button
+                    class="icon-button consume"
+                    type="button"
+                    :aria-label="`消耗${scope.row.ingredientName}的库存`"
+                    @click="openConsumeDialog(scope.row)"
+                  >
+                    <Minus :size="16" aria-hidden="true" />
+                  </button>
+                </el-tooltip>
                 <el-tooltip content="编辑食材" placement="top">
                   <button
                     class="icon-button"
@@ -105,6 +115,16 @@
               </div>
             </dl>
             <div class="row-actions mobile-row-actions">
+              <el-tooltip content="消耗库存" placement="top">
+                <button
+                  class="icon-button consume"
+                  type="button"
+                  :aria-label="`消耗${item.ingredientName}的库存`"
+                  @click="openConsumeDialog(item)"
+                >
+                  <Minus :size="16" aria-hidden="true" />
+                </button>
+              </el-tooltip>
               <el-tooltip content="编辑食材" placement="top">
                 <button
                   class="icon-button"
@@ -180,13 +200,55 @@
       <el-button type="primary" :loading="saving" @click="saveItem">保存</el-button>
     </template>
   </el-dialog>
+
+  <el-dialog
+    v-model="consumeDialogVisible"
+    title="消耗库存"
+    width="min(420px, calc(100vw - 32px))"
+    :close-on-click-modal="!consuming"
+    :close-on-press-escape="!consuming"
+    :show-close="!consuming"
+    @closed="resetConsumeForm"
+  >
+    <template v-if="consumingItem">
+      <div class="consume-item-summary">
+        <span>食材</span>
+        <strong>{{ consumingItem.ingredientName }}</strong>
+        <span>当前库存</span>
+        <strong>{{ formatQuantity(consumingItem) }}</strong>
+      </div>
+      <el-form ref="consumeFormRef" :model="consumeForm" :rules="consumeRules" label-position="top" @submit.prevent="consumeItem">
+        <el-form-item label="消耗数量" prop="quantity">
+          <el-input-number
+            v-model="consumeForm.quantity"
+            :min="0.01"
+            :max="availableQuantity"
+            :precision="2"
+            :step="0.1"
+            controls-position="right"
+            :disabled="consuming"
+            aria-describedby="consume-quantity-hint consume-quantity-feedback"
+          />
+          <p id="consume-quantity-hint" class="consume-form-hint">最多消耗 {{ formatNumber(availableQuantity) }}{{ consumingItem.unit || '' }}</p>
+          <p id="consume-quantity-feedback" class="consume-remaining" aria-live="polite">
+            消耗后剩余：{{ formatNumber(remainingQuantity) }}{{ consumingItem.unit || '' }}
+          </p>
+        </el-form-item>
+      </el-form>
+    </template>
+    <template #footer>
+      <el-button :disabled="consuming" @click="consumeDialogVisible = false">取消</el-button>
+      <el-button type="primary" :loading="consuming" :disabled="consuming" @click="consumeItem">确认消耗</el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <script setup>
-import { reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Pencil, Plus, Trash2 } from 'lucide-vue-next'
+import { ArrowLeft, Minus, Pencil, Plus, Trash2 } from 'lucide-vue-next'
 import {
+  consumePantryItem,
   createPantryItem,
   deletePantryItem,
   getPantryItems,
@@ -201,10 +263,30 @@ const dialogVisible = ref(false)
 const editingId = ref(null)
 const formRef = ref(null)
 const form = reactive(emptyForm())
+const consumeDialogVisible = ref(false)
+const consumeFormRef = ref(null)
+const consumingItem = ref(null)
+const consuming = ref(false)
+const consumeForm = reactive({ quantity: null })
+
+const availableQuantity = computed(() => Number(consumingItem.value?.quantity || 0))
+const remainingQuantity = computed(() => {
+  const quantity = Number(consumeForm.quantity || 0)
+  return Math.max(0, availableQuantity.value - quantity)
+})
 
 const rules = {
   ingredientName: [
     { required: true, message: '请输入食材名称', trigger: 'blur' }
+  ]
+}
+
+const consumeRules = {
+  quantity: [
+    {
+      validator: validateConsumeQuantity,
+      trigger: ['blur', 'change']
+    }
   ]
 }
 
@@ -238,6 +320,43 @@ function openEditDialog(item) {
     expireDate: item.expireDate || ''
   })
   dialogVisible.value = true
+}
+
+function openConsumeDialog(item) {
+  const quantity = Number(item.quantity || 0)
+  if (!Number.isFinite(quantity) || quantity <= 0) {
+    ElMessage.warning(`“${item.ingredientName}”当前没有可消耗的库存，请先补充数量。`)
+    return
+  }
+
+  consumingItem.value = item
+  consumeForm.quantity = null
+  consumeDialogVisible.value = true
+}
+
+async function consumeItem() {
+  if (consuming.value || !consumingItem.value) {
+    return
+  }
+
+  try {
+    await consumeFormRef.value?.validate()
+  } catch {
+    return
+  }
+
+  consuming.value = true
+  try {
+    const response = await consumePantryItem(consumingItem.value.id, consumeForm.quantity)
+    const updatedItem = response.data.data
+    items.value = items.value.map((item) => (item.id === updatedItem.id ? updatedItem : item))
+    ElMessage.success(`已消耗${consumeForm.quantity}${consumingItem.value.unit || ''}“${consumingItem.value.ingredientName}”`)
+    consumeDialogVisible.value = false
+  } catch (error) {
+    ElMessage.error(getErrorMessage(error, '库存消耗失败'))
+  } finally {
+    consuming.value = false
+  }
 }
 
 async function saveItem() {
@@ -324,11 +443,38 @@ function resetForm() {
   editingId.value = null
 }
 
+function resetConsumeForm() {
+  consumeForm.quantity = null
+  consumeFormRef.value?.clearValidate()
+  consumingItem.value = null
+}
+
+function validateConsumeQuantity(rule, value, callback) {
+  const quantity = Number(value)
+  if (!Number.isFinite(quantity) || quantity <= 0) {
+    callback(new Error('请输入大于 0 的消耗数量'))
+    return
+  }
+  if (Math.abs(quantity * 100 - Math.round(quantity * 100)) > 1e-8) {
+    callback(new Error('消耗数量最多保留 2 位小数'))
+    return
+  }
+  if (quantity > availableQuantity.value) {
+    callback(new Error('消耗数量不能超过当前库存'))
+    return
+  }
+  callback()
+}
+
 function formatQuantity(item) {
   if (item.quantity === null || item.quantity === undefined) {
     return '未填写'
   }
   return `${item.quantity}${item.unit || ''}`
+}
+
+function formatNumber(value) {
+  return Number(value || 0).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')
 }
 
 function expiryLabel(value) {
@@ -510,6 +656,13 @@ function getErrorMessage(error, fallback) {
   background: #fff1f0;
 }
 
+.icon-button.consume:hover,
+.icon-button.consume:focus-visible {
+  border-color: var(--app-accent);
+  color: var(--app-text);
+  background: var(--app-accent-soft);
+}
+
 .icon-button:disabled {
   cursor: wait;
   opacity: 0.45;
@@ -558,6 +711,41 @@ function getErrorMessage(error, fallback) {
 .form-grid :deep(.el-date-editor),
 .form-grid :deep(.el-input-number) {
   width: 100%;
+}
+
+.consume-item-summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px 16px;
+  margin-bottom: 18px;
+  padding: 12px;
+  border: 1px solid var(--app-line);
+  border-radius: 6px;
+  background: var(--app-surface-soft);
+  color: var(--app-text-muted);
+  font-size: 13px;
+}
+
+.consume-item-summary strong {
+  min-width: 0;
+  color: var(--app-text);
+  overflow-wrap: anywhere;
+}
+
+.consume-form-hint,
+.consume-remaining {
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.consume-form-hint {
+  color: var(--app-text-muted);
+}
+
+.consume-remaining {
+  color: var(--app-text-soft);
+  font-weight: 800;
 }
 
 @media (max-width: 720px) {
@@ -658,6 +846,11 @@ function getErrorMessage(error, fallback) {
 
   .mobile-row-actions {
     justify-content: flex-end;
+  }
+
+  .icon-button {
+    width: 44px;
+    height: 44px;
   }
 
   .form-grid {

@@ -27,3 +27,7 @@ export function getFinishedDishReviewImage(id) {
     responseType: 'blob'
   })
 }
+
+export function deleteFinishedDishReview(id) {
+  return http.delete(`/finished-dish-reviews/${id}`)
+}
