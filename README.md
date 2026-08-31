@@ -6,7 +6,7 @@
 
 ```text
 backend/   Spring Boot 3 后端服务
-frontend/  Vue 3 + Vite 前端应用
+frontend/  Vue 3 构建应用与 Nginx 静态托管配置
 docs/      需求设计与阶段计划
 ```
 
@@ -77,6 +77,9 @@ MYSQL_PASSWORD=你的 MySQL 密码
 
 - `POST /api/ai/recipes/generate`：根据文字食材生成菜谱。
 - `POST /api/ai/ingredients/recognize`：上传 JPG、PNG 或 WebP 图片识别食材，最大 5MB。
+- `GET/PUT /api/users/me/weekly-menu`：读取或保存当前用户的一周菜单。
+- `POST /api/users/me/weekly-menu/auto-generate`：结合用户已保存菜谱、健康档案、饮食偏好和已有食材，调用 AI 自动安排一周 21 个餐次；覆盖已有菜单时传入 `overwrite=true`。
+- `PUT /api/users/me/weekly-menu/shopping-status`：更新本周采购清单中的食材状态。
 
 PowerShell 临时配置千问 Key：
 
@@ -92,19 +95,29 @@ $env:DASHSCOPE_API_KEY="你的千问 API Key"
 mvn "-Dmaven.repo.local=D:\AI-Search-food\.m2" -f backend/pom.xml spring-boot:run
 ```
 
-前端：
+前端默认使用 Nginx 启动：
 
 ```powershell
 cd frontend
 npm install
-npm run dev
+npm start
 ```
+
+可使用 `winget install -e --id nginxinc.nginx` 安装官方 Windows 版 Nginx；启动脚本会自动识别 WinGet、`C:\nginx` 或 `NGINX_HOME` 指向的安装目录。`npm start` 会先执行构建，再由 Nginx 托管 `dist` 并将 `/api` 反向代理到后端 `7068` 端口。
 
 默认访问：
 
 ```text
 http://localhost:5173
 ```
+
+停止本项目启动的 Nginx：
+
+```powershell
+npm run stop
+```
+
+`npm run dev` 仅保留给前端源码开发时的热更新调试；正式本地演示和部署使用 `npm start`。
 
 ## 登录说明
 

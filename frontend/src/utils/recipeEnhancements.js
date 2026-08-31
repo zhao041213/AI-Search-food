@@ -8,6 +8,13 @@ const INGREDIENT_ALIASES = new Map([
 
 const INGREDIENT_SEPARATOR = /[,，、;；\r\n]+/
 const HARMLESS_LEADING_MODIFIERS = /^(?:(?:新鲜|有机|小|大|嫩|老))+/u
+const SHOPPING_STATUS_VALUES = new Set([
+  'PENDING',
+  'PURCHASING',
+  'PURCHASED',
+  'READY',
+  'SKIPPED'
+])
 
 function normalizeIngredientName(name) {
   const trimmedName = String(name ?? '').trim()
@@ -106,4 +113,32 @@ export function buildShoppingList(recipeIngredients, ownedIngredients) {
       alreadyOwned: ownedNames.some((ownedName) => isIngredientOwned(name, ownedName)),
       purchaseLinks: buildPurchaseLinks(name)
     }))
+}
+
+export function shoppingChecklistKey(name) {
+  return ingredientKey(parseIngredientNames([name])[0])
+}
+
+export function normalizeShoppingStatus(value, fallback = 'PENDING') {
+  const fallbackStatus = typeof fallback === 'boolean'
+    ? (fallback ? 'READY' : 'PENDING')
+    : String(fallback || 'PENDING').trim().toUpperCase()
+  if (typeof value === 'boolean') {
+    return value ? 'READY' : 'PENDING'
+  }
+  const normalized = String(value || '').trim().toUpperCase()
+  return SHOPPING_STATUS_VALUES.has(normalized) ? normalized : fallbackStatus
+}
+
+export function getShoppingItemStatus(item, overrides = {}) {
+  const key = shoppingChecklistKey(item?.name)
+  const fallback = item?.alreadyOwned ? 'READY' : 'PENDING'
+  if (key && Object.prototype.hasOwnProperty.call(overrides, key)) {
+    return normalizeShoppingStatus(overrides[key], fallback)
+  }
+  return normalizeShoppingStatus(item?.status, fallback)
+}
+
+export function isShoppingItemChecked(item, overrides = {}) {
+  return getShoppingItemStatus(item, overrides) === 'READY'
 }

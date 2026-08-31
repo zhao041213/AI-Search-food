@@ -3,7 +3,11 @@ package com.example.food.ai.recipe;
 import com.example.food.ai.qwen.QwenRecipeClient;
 import com.example.food.ai.recipe.dto.RecipeGenerateRequest;
 import com.example.food.ai.recipe.dto.RecipeGenerateResponse;
+import com.example.food.pantry.UserPantryService;
 import com.example.food.recipe.SearchLogService;
+import com.example.food.security.AppRole;
+import com.example.food.security.AuthPrincipal;
+import com.example.food.user.health.UserHealthProfileService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -11,6 +15,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -29,6 +34,12 @@ class RecipeRecommendationServiceTest {
 
     @Mock
     private SearchLogService searchLogService;
+
+    @Mock
+    private UserPantryService userPantryService;
+
+    @Mock
+    private UserHealthProfileService userHealthProfileService;
 
     @InjectMocks
     private RecipeRecommendationService recipeRecommendationService;
@@ -115,6 +126,55 @@ class RecipeRecommendationServiceTest {
     }
 
     @Test
+    void generationPromptIncludesLoggedInUsersPantryIngredients() {
+        RecipeGenerateRequest request = new RecipeGenerateRequest("番茄", "dinner", "balanced", "text");
+        AuthPrincipal principal = new AuthPrincipal(7L, "13800138000", AppRole.USER);
+        when(userPantryService.listIngredientNames(7L)).thenReturn(List.of("鸡蛋", "土豆"));
+        when(qwenRecipeClient.generateRecipe(anyString())).thenReturn(recipeResponse());
+
+        recipeRecommendationService.generate(request, principal, null);
+
+        ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(qwenRecipeClient).generateRecipe(promptCaptor.capture());
+        assertThat(promptCaptor.getValue())
+                .contains("本次指定食材：番茄")
+                .contains("用户库存食材：鸡蛋、土豆")
+                .contains("将“本次指定食材”和“用户库存食材”都视为用户可用的已有食材");
+        verify(userPantryService).listIngredientNames(7L);
+    }
+
+    @Test
+    void generationPromptIncludesLoggedInUsersHealthProfileWithoutMedicalClaims() {
+        RecipeGenerateRequest request = new RecipeGenerateRequest("番茄", "dinner", "fat_loss", "text");
+        AuthPrincipal principal = new AuthPrincipal(7L, "13800138000", AppRole.USER);
+        when(userHealthProfileService.getRecommendationContext(7L)).thenReturn(
+                new UserHealthProfileService.RecommendationContext(
+                        "AGE_30_44",
+                        new BigDecimal("172.0"),
+                        new BigDecimal("64.0"),
+                        "MODERATE",
+                        new BigDecimal("21.6")
+                )
+        );
+        when(qwenRecipeClient.generateRecipe(anyString())).thenReturn(recipeResponse());
+
+        recipeRecommendationService.generate(request, principal, null);
+
+        ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(qwenRecipeClient).generateRecipe(promptCaptor.capture());
+        assertThat(promptCaptor.getValue())
+                .contains("用户健康档案")
+                .contains("年龄段：30-44 岁")
+                .contains("身高：172 厘米")
+                .contains("体重：64 千克")
+                .contains("BMI，仅作一般参考）：21.6")
+                .contains("日常活动量：中等")
+                .contains("不得输出疾病诊断、治疗方案、处方")
+                .doesNotContain("化验指标解读：");
+        verify(userHealthProfileService).getRecommendationContext(7L);
+    }
+
+    @Test
     void dietPreferenceCollectionsAreLengthLimitedBeforeAddingToPrompt() {
         List<String> avoidIngredients = new ArrayList<>();
         for (int index = 1; index <= 21; index++) {
@@ -180,7 +240,8 @@ class RecipeRecommendationServiceTest {
         verify(qwenRecipeClient).generateRecipe(promptCaptor.capture());
         String prompt = promptCaptor.getValue();
         assertThat(prompt)
-                .contains("用户已有食材：番茄")
+                .contains("本次指定食材：番茄")
+                .contains("用户库存食材：未指定")
                 .contains("上一版菜名：番茄炒蛋")
                 .contains("调整方向：减少用油并缩短烹饪时间")
                 .contains("口味偏好：酸辣")

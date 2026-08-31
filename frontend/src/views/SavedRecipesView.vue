@@ -178,41 +178,14 @@
                   </el-table-column>
                 </el-table>
 
-                <el-table v-else-if="activePage === 'shopping'" :data="shoppingList" size="large">
-                  <el-table-column prop="name" label="全部食材" min-width="110" />
-                  <el-table-column prop="amount" label="用量" min-width="90" />
-                  <el-table-column label="状态" min-width="82">
-                    <template #default="scope">
-                      <span class="ingredient-state" :class="scope.row.alreadyOwned ? 'owned' : 'missing'">
-                        {{ scope.row.alreadyOwned ? '已有' : '待购' }}
-                      </span>
-                    </template>
-                  </el-table-column>
-                  <el-table-column label="购买链接" min-width="160">
-                    <template #default="scope">
-                      <div class="purchase-links">
-                        <a
-                          :href="scope.row.purchaseLinks.dingdong"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          @click="preparePlatformSearch(scope.row.name)"
-                        >
-                          叮咚买菜
-                          <ExternalLink :size="13" aria-hidden="true" />
-                        </a>
-                        <a
-                          :href="scope.row.purchaseLinks.hema"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          @click="preparePlatformSearch(scope.row.name)"
-                        >
-                          盒马鲜生
-                          <ExternalLink :size="13" aria-hidden="true" />
-                        </a>
-                      </div>
-                    </template>
-                  </el-table-column>
-                </el-table>
+                <ShoppingChecklistTable
+                  v-else-if="activePage === 'shopping'"
+                  :items="shoppingList"
+                  :overrides="shoppingCheckOverrides"
+                  :saving-key="shoppingCheckSavingKey"
+                  @status-change="toggleShoppingItem"
+                  @purchase-search="preparePlatformSearch"
+                />
 
                 <div v-else-if="activePage === 'explanation'" class="explanation-grid">
                   <article v-for="item in explanationItems" :key="item.key" class="explanation-item">
@@ -288,15 +261,20 @@ import {
   Video
 } from 'lucide-vue-next'
 import { deleteSavedRecipe, getSavedRecipe, getSavedRecipes } from '../api/recipes'
+import { getPantryItems } from '../api/pantry'
+import { getShoppingItemChecks, saveShoppingItemCheck } from '../api/shoppingChecks'
 import CookingModeDialog from '../components/CookingModeDialog.vue'
 import FinishedDishReviewDialog from '../components/FinishedDishReviewDialog.vue'
+import ShoppingChecklistTable from '../components/ShoppingChecklistTable.vue'
 import {
   buildPurchaseLinks,
   buildBilibiliSearchLink,
   buildShoppingList,
   copyIngredientName,
   filterVideoKeywords,
-  parseIngredientNames
+  normalizeShoppingStatus,
+  parseIngredientNames,
+  shoppingChecklistKey
 } from '../utils/recipeEnhancements'
 
 const recipes = ref([])
@@ -313,20 +291,26 @@ const mealType = ref('')
 const goal = ref('')
 const limit = 50
 const offset = ref(0)
+const pantryItems = ref([])
+const shoppingCheckOverrides = ref({})
+const shoppingCheckSavingKey = ref('')
 let listRequestId = 0
 let detailRequestId = 0
 
+const ownedIngredients = computed(() => [
+  selected.value?.searchIngredients || '',
+  ...pantryItems.value.map((item) => item.ingredientName)
+])
 const shoppingList = computed(() => buildRecipeShoppingList(
   selected.value?.recipe,
-  selected.value?.searchIngredients
+  ownedIngredients.value
 ))
 const ingredientAnalysisRows = computed(() => shoppingList.value.map((item) => {
   const missing = findMissingIngredient(selected.value?.recipe?.missingIngredients, item.name)
   return {
     ...item,
-    alreadyOwned: missing ? false : item.alreadyOwned,
-    substitutesText: formatSubstitutes(missing?.substitutes),
-    reason: missing?.reason || ''
+    substitutesText: item.alreadyOwned ? '' : formatSubstitutes(missing?.substitutes),
+    reason: item.alreadyOwned ? '可直接使用现有食材' : missing?.reason || ''
   }
 }))
 const explanationItems = computed(() => {
@@ -357,7 +341,10 @@ const recipePages = computed(() => {
   ].filter(Boolean)
 })
 
-onMounted(loadRecipes)
+onMounted(() => {
+  loadPantryItems()
+  loadRecipes()
+})
 
 async function loadRecipes(preferredId = null) {
   const requestId = ++listRequestId
@@ -415,6 +402,7 @@ async function openRecipe(id) {
     }
     selected.value = response.data.data
     activePage.value = recipePages.value[0]?.key || 'ingredients'
+    await loadShoppingChecks()
   } catch (error) {
     if (requestId === detailRequestId) {
       ElMessage.error(getErrorMessage(error))
@@ -465,11 +453,93 @@ function buildRecipeShoppingList(recipe, ownedIngredients) {
 
   return buildShoppingList(recipe.ingredients, parseIngredientNames(ownedIngredients)).map((item) => ({
     ...item,
-    alreadyOwned: findMissingIngredient(recipe.missingIngredients, item.name)
-      ? false
-      : item.alreadyOwned,
     purchaseLinks: item.purchaseLinks || buildPurchaseLinks(item.name)
   }))
+}
+
+async function loadPantryItems() {
+  try {
+    const response = await getPantryItems()
+    pantryItems.value = response.data.data || []
+  } catch (error) {
+    pantryItems.value = []
+    ElMessage.warning(getErrorMessage(error))
+  }
+}
+
+async function loadShoppingChecks() {
+  const searchLogId = selected.value?.searchLogId
+  if (!searchLogId) {
+    shoppingCheckOverrides.value = {}
+    return
+  }
+
+  shoppingCheckOverrides.value = {}
+  try {
+    const response = await getShoppingItemChecks(searchLogId)
+    if (selected.value?.searchLogId !== searchLogId) {
+      return
+    }
+    shoppingCheckOverrides.value = (response.data.data || []).reduce((overrides, item) => {
+      const key = shoppingChecklistKey(item.ingredientName)
+      if (key) {
+        overrides[key] = normalizeShoppingStatus(item.status, item.checked)
+      }
+      return overrides
+    }, {})
+  } catch (error) {
+    if (error?.response?.status !== 403 && error?.response?.status !== 404) {
+      ElMessage.warning('采购清单状态加载失败，可继续手动更新状态')
+    }
+  }
+}
+
+async function toggleShoppingItem({ item, status }) {
+  const key = shoppingChecklistKey(item?.name)
+  if (!key || !status || shoppingCheckSavingKey.value) {
+    return
+  }
+
+  const previousExists = Object.prototype.hasOwnProperty.call(shoppingCheckOverrides.value, key)
+  const previousValue = shoppingCheckOverrides.value[key]
+  shoppingCheckOverrides.value = {
+    ...shoppingCheckOverrides.value,
+    [key]: status
+  }
+
+  const searchLogId = selected.value?.searchLogId
+  if (!searchLogId) {
+    return
+  }
+
+  shoppingCheckSavingKey.value = key
+
+  try {
+    const response = await saveShoppingItemCheck({
+      searchLogId,
+      ingredientName: item.name,
+      status
+    })
+    if (selected.value?.searchLogId === searchLogId) {
+      shoppingCheckOverrides.value = {
+        ...shoppingCheckOverrides.value,
+        [key]: normalizeShoppingStatus(response.data.data?.status, status)
+      }
+    }
+  } catch (error) {
+    const restored = { ...shoppingCheckOverrides.value }
+    if (previousExists) {
+      restored[key] = previousValue
+    } else {
+      delete restored[key]
+    }
+    shoppingCheckOverrides.value = restored
+    ElMessage.error('采购清单状态保存失败，请重试')
+  } finally {
+    if (shoppingCheckSavingKey.value === key) {
+      shoppingCheckSavingKey.value = ''
+    }
+  }
 }
 
 function findMissingIngredient(missingIngredients, ingredientName) {

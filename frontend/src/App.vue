@@ -77,15 +77,24 @@
           <Bookmark :size="17" aria-hidden="true" />
           <span>我的菜谱</span>
         </RouterLink>
+        <RouterLink v-if="auth.isUser" class="sidebar-link" to="/pantry">
+          <Package :size="17" aria-hidden="true" />
+          <span>我的食材</span>
+        </RouterLink>
+        <RouterLink v-if="auth.isUser" class="sidebar-link" to="/health-profile">
+          <HeartPulse :size="17" aria-hidden="true" />
+          <span>健康档案</span>
+        </RouterLink>
 
         <div class="sidebar-caption sidebar-caption-spaced">功能扩展</div>
         <RouterLink class="sidebar-link" :to="hotIngredientNavigation.to">
           <Flame :size="17" aria-hidden="true" />
           <span>{{ hotIngredientNavigation.label }}</span>
         </RouterLink>
-        <button class="sidebar-placeholder" type="button" disabled title="功能暂未开放">
-          <Circle :size="17" aria-hidden="true" />
-        </button>
+        <RouterLink v-if="auth.isUser" class="sidebar-link" to="/weekly-menu">
+          <CalendarDays :size="17" aria-hidden="true" />
+          <span>一周菜单</span>
+        </RouterLink>
         <button class="sidebar-placeholder" type="button" disabled title="功能暂未开放">
           <Circle :size="17" aria-hidden="true" />
         </button>
@@ -105,7 +114,7 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { Bookmark, Circle, Flame, Home, LogIn, LogOut, Palette, ShieldCheck, Utensils } from 'lucide-vue-next'
+import { Bookmark, CalendarDays, Circle, Flame, HeartPulse, Home, LogIn, LogOut, Package, Palette, ShieldCheck, Utensils } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from './stores/auth'
 import { getHotIngredientNavigation, shouldShowSavedRecipesNavigation } from './utils/hotIngredientNavigation'
@@ -578,6 +587,10 @@ function applyTheme(theme) {
 }
 
 .header-button {
+  --el-button-text-color: #000000;
+  --el-button-hover-text-color: #000000;
+  --el-button-active-text-color: #000000;
+  color: #000000 !important;
   font-weight: 700;
 }
 

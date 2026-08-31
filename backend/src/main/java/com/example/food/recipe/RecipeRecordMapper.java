@@ -47,4 +47,17 @@ public interface RecipeRecordMapper extends BaseMapper<RecipeRecord> {
 
     @Delete("DELETE FROM recipe_records WHERE id = #{recipeId} AND user_id = #{userId}")
     int deleteOwnedRecipe(@Param("recipeId") Long recipeId, @Param("userId") Long userId);
+
+    @Select("""
+            SELECT EXISTS(
+                SELECT 1
+                FROM recipe_records
+                WHERE user_id = #{userId}
+                  AND search_log_id = #{searchLogId}
+            )
+            """)
+    boolean existsByUserIdAndSearchLogId(
+            @Param("userId") Long userId,
+            @Param("searchLogId") Long searchLogId
+    );
 }

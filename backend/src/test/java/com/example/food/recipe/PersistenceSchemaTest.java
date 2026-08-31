@@ -56,6 +56,28 @@ class PersistenceSchemaTest {
     }
 
     @Test
+    void shoppingItemCheckTableIsCreatedByFlyway() {
+        assertThat(tableExists("shopping_item_checks")).isTrue();
+        assertThat(columnExists("shopping_item_checks", "user_id")).isTrue();
+        assertThat(columnExists("shopping_item_checks", "search_log_id")).isTrue();
+        assertThat(columnExists("shopping_item_checks", "ingredient_name")).isTrue();
+        assertThat(columnExists("shopping_item_checks", "status")).isTrue();
+        assertThat(columnExists("shopping_item_checks", "checked")).isTrue();
+    }
+
+    @Test
+    void healthProfileTableIsCreatedByFlyway() {
+        assertThat(tableExists("user_health_profiles")).isTrue();
+        assertThat(columnExists("user_health_profiles", "user_id")).isTrue();
+        assertThat(columnExists("user_health_profiles", "age_range")).isTrue();
+        assertThat(columnExists("user_health_profiles", "height_cm")).isTrue();
+        assertThat(columnExists("user_health_profiles", "weight_kg")).isTrue();
+        assertThat(columnExists("user_health_profiles", "activity_level")).isTrue();
+        assertThat(columnExists("user_health_profiles", "created_at")).isTrue();
+        assertThat(columnExists("user_health_profiles", "updated_at")).isTrue();
+    }
+
+    @Test
     void dietPreferenceIsDeletedWithItsUser() {
         jdbcTemplate.update("""
                 INSERT INTO users (phone, nickname)
@@ -80,6 +102,48 @@ class PersistenceSchemaTest {
                 userId
         );
         assertThat(count).isZero();
+    }
+
+    @Test
+    void healthProfileIsDeletedWithItsUser() {
+        jdbcTemplate.update("""
+                INSERT INTO users (phone, nickname)
+                VALUES (?, ?)
+                """, "13800138002", "health-profile-test");
+        Long userId = jdbcTemplate.queryForObject(
+                "SELECT id FROM users WHERE phone = ?",
+                Long.class,
+                "13800138002"
+        );
+        jdbcTemplate.update("""
+                INSERT INTO user_health_profiles (
+                    user_id, age_range, height_cm, weight_kg, activity_level
+                ) VALUES (?, ?, ?, ?, ?)
+                """, userId, "AGE_30_44", 172.0, 64.0, "MODERATE");
+
+        jdbcTemplate.update("DELETE FROM users WHERE id = ?", userId);
+
+        Integer count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM user_health_profiles WHERE user_id = ?",
+                Integer.class,
+                userId
+        );
+        assertThat(count).isZero();
+    }
+
+    @Test
+    void weeklyMenuTablesAreCreatedByFlyway() {
+        assertThat(tableExists("weekly_menu_plans")).isTrue();
+        assertThat(columnExists("weekly_menu_plans", "user_id")).isTrue();
+        assertThat(columnExists("weekly_menu_plans", "week_start_date")).isTrue();
+        assertThat(tableExists("weekly_menu_items")).isTrue();
+        assertThat(columnExists("weekly_menu_items", "plan_id")).isTrue();
+        assertThat(columnExists("weekly_menu_items", "menu_date")).isTrue();
+        assertThat(columnExists("weekly_menu_items", "meal_type")).isTrue();
+        assertThat(columnExists("weekly_menu_items", "recipe_id")).isTrue();
+        assertThat(tableExists("weekly_menu_shopping_checks")).isTrue();
+        assertThat(columnExists("weekly_menu_shopping_checks", "ingredient_name")).isTrue();
+        assertThat(columnExists("weekly_menu_shopping_checks", "status")).isTrue();
     }
 
     private boolean tableExists(String tableName) {

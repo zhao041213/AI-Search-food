@@ -3,8 +3,11 @@ package com.example.food.ai.recipe;
 import com.example.food.ai.qwen.QwenRecipeClient;
 import com.example.food.ai.recipe.dto.RecipeGenerateRequest;
 import com.example.food.ai.recipe.dto.RecipeGenerateResponse;
+import com.example.food.pantry.UserPantryService;
 import com.example.food.recipe.SearchLogService;
+import com.example.food.security.AppRole;
 import com.example.food.security.AuthPrincipal;
+import com.example.food.user.health.UserHealthProfileService;
 import org.springframework.stereotype.Service;
 
 import java.util.LinkedHashSet;
@@ -19,10 +22,19 @@ public class RecipeRecommendationService {
 
     private final QwenRecipeClient qwenRecipeClient;
     private final SearchLogService searchLogService;
+    private final UserPantryService userPantryService;
+    private final UserHealthProfileService userHealthProfileService;
 
-    public RecipeRecommendationService(QwenRecipeClient qwenRecipeClient, SearchLogService searchLogService) {
+    public RecipeRecommendationService(
+            QwenRecipeClient qwenRecipeClient,
+            SearchLogService searchLogService,
+            UserPantryService userPantryService,
+            UserHealthProfileService userHealthProfileService
+    ) {
         this.qwenRecipeClient = qwenRecipeClient;
         this.searchLogService = searchLogService;
+        this.userPantryService = userPantryService;
+        this.userHealthProfileService = userHealthProfileService;
     }
 
     public RecipeGenerateResponse generate(RecipeGenerateRequest request) {
@@ -32,18 +44,26 @@ public class RecipeRecommendationService {
     public RecipeGenerateResponse generate(
             RecipeGenerateRequest request,
             AuthPrincipal principal,
-            String anonymousId
+        String anonymousId
     ) {
-        RecipeGenerateResponse response = qwenRecipeClient.generateRecipe(buildPrompt(request));
+        UserHealthProfileService.RecommendationContext healthProfile = healthProfile(principal);
+        RecipeGenerateResponse response = qwenRecipeClient.generateRecipe(
+                buildPrompt(request, pantryIngredients(principal), healthProfile)
+        );
         Long searchLogId = searchLogService.record(request, response, principal, anonymousId);
         return response.withSearchLogId(searchLogId);
     }
 
-    private String buildPrompt(RecipeGenerateRequest request) {
+    private String buildPrompt(
+            RecipeGenerateRequest request,
+            List<String> pantryIngredients,
+            UserHealthProfileService.RecommendationContext healthProfile
+    ) {
         return """
                 请根据以下信息生成一份适合家庭烹饪的中文菜谱。
 
-                用户已有食材：%s
+                本次指定食材：%s
+                用户库存食材：%s
                 餐次：%s
                 饮食目标：%s
                 输入方式：%s
@@ -73,17 +93,32 @@ public class RecipeRecommendationService {
                 }
 
                 ingredients 必须列出完成菜谱所需的全部食材。
-                将“用户已有食材”视为用户已经提供的食材，并按常见别名和语义判断是否已有。
+                将“本次指定食材”和“用户库存食材”都视为用户可用的已有食材，并按常见别名和语义判断是否已有。
                 仅将用户没有提供、但菜谱需要的食材放入 missingIngredients；没有缺失食材时返回空数组。
                 只为 missingIngredients 中的缺失食材提供 substitutes，不要为已有食材提供替代建议。
                 effects 与 explanation 只能提供一般饮食和烹饪信息，不得作出疾病治疗、预防或疗效保证等医疗承诺。
                 """.formatted(
                 safeText(request.ingredients()),
+                safeIngredients(pantryIngredients),
                 safeText(request.mealType()),
                 safeText(resolveGoal(request)),
                 safeText(request.searchMode()),
-                requestContext(request)
+                requestContext(request, healthProfile)
         );
+    }
+
+    private List<String> pantryIngredients(AuthPrincipal principal) {
+        if (principal == null || principal.role() != AppRole.USER) {
+            return List.of();
+        }
+        return userPantryService.listIngredientNames(principal.id());
+    }
+
+    private UserHealthProfileService.RecommendationContext healthProfile(AuthPrincipal principal) {
+        if (principal == null || principal.role() != AppRole.USER) {
+            return null;
+        }
+        return userHealthProfileService.getRecommendationContext(principal.id());
     }
 
     private String resolveGoal(RecipeGenerateRequest request) {
@@ -96,13 +131,21 @@ public class RecipeRecommendationService {
         return normalizeText(request.dietPreference().defaultGoal(), MAX_PREFERENCE_TEXT_LENGTH);
     }
 
-    private String requestContext(RecipeGenerateRequest request) {
+    private String requestContext(
+            RecipeGenerateRequest request,
+            UserHealthProfileService.RecommendationContext healthProfile
+    ) {
         String regenerationContext = regenerationContext(request);
         String dietPreferenceContext = dietPreferenceContext(request.dietPreference());
-        if (!hasText(dietPreferenceContext)) {
-            return regenerationContext;
+        String context = regenerationContext;
+        if (hasText(dietPreferenceContext)) {
+            context += "\n" + dietPreferenceContext;
         }
-        return regenerationContext + "\n" + dietPreferenceContext;
+        String healthProfileContext = healthProfileContext(healthProfile);
+        if (hasText(healthProfileContext)) {
+            context += "\n" + healthProfileContext;
+        }
+        return context;
     }
 
     private String regenerationContext(RecipeGenerateRequest request) {
@@ -143,6 +186,50 @@ public class RecipeRecommendationService {
                 safeIngredients(avoidIngredients),
                 safeIngredients(allergenIngredients)
         ).strip();
+    }
+
+    private String healthProfileContext(UserHealthProfileService.RecommendationContext healthProfile) {
+        if (healthProfile == null) {
+            return "";
+        }
+        return """
+                用户健康档案（仅用于一般健康饮食推荐，不得作为医疗诊断或治疗依据）：
+                年龄段：%s
+                身高：%s 厘米
+                体重：%s 千克
+                身体质量指数（BMI，仅作一般参考）：%s
+                日常活动量：%s
+                请结合上述信息和饮食目标调整食材搭配、烹饪方式与分量建议；不得输出疾病诊断、治疗方案、处方、化验指标解读、绝对热量承诺或疗效保证。
+                """.formatted(
+                ageRangeLabel(healthProfile.ageRange()),
+                formatNumber(healthProfile.heightCm()),
+                formatNumber(healthProfile.weightKg()),
+                formatNumber(healthProfile.bmi()),
+                activityLevelLabel(healthProfile.activityLevel())
+        ).strip();
+    }
+
+    private String ageRangeLabel(String ageRange) {
+        return switch (ageRange) {
+            case "AGE_18_29" -> "18-29 岁";
+            case "AGE_30_44" -> "30-44 岁";
+            case "AGE_45_59" -> "45-59 岁";
+            case "AGE_60_PLUS" -> "60 岁及以上";
+            default -> "未指定";
+        };
+    }
+
+    private String activityLevelLabel(String activityLevel) {
+        return switch (activityLevel) {
+            case "LOW" -> "低";
+            case "MODERATE" -> "中等";
+            case "HIGH" -> "高";
+            default -> "未指定";
+        };
+    }
+
+    private String formatNumber(java.math.BigDecimal value) {
+        return value == null ? "未指定" : value.stripTrailingZeros().toPlainString();
     }
 
     private List<String> normalizeIngredients(List<String> ingredients) {
