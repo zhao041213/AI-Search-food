@@ -190,6 +190,22 @@
     </section>
   </main>
 
+  <section class="operations-panel" aria-label="库存变动记录">
+    <div class="panel-heading">
+      <div><span class="panel-kicker">库存变动记录</span><h2>最近操作</h2></div>
+      <el-button link type="primary" :loading="operationsLoading" @click="loadOperations">刷新</el-button>
+    </div>
+    <el-empty v-if="!operationsLoading && !operations.length" description="暂无库存变动记录" />
+    <el-skeleton v-else-if="operationsLoading" :rows="3" animated />
+    <div v-else class="operations-list">
+      <article v-for="operation in operations" :key="operation.id" class="operation-row">
+        <div><strong>{{ operationLabel(operation) }}</strong><span>{{ operationSummary(operation) }}</span><span>{{ formatOperationTime(operation.createdAt) }}</span></div>
+        <span class="operation-status">{{ operation.status === 'REVERSED' ? '已撤销' : '已完成' }}</span>
+        <el-button v-if="operation.undoable" link type="primary" :loading="undoingId === operation.id" :disabled="undoingId !== null" @click="undoOperation(operation)">撤销</el-button>
+      </article>
+    </div>
+  </section>
+
   <el-dialog
     v-model="dialogVisible"
     :title="editingId === null ? '添加食材' : '编辑食材'"
@@ -289,6 +305,8 @@ import {
   createPantryItem,
   deletePantryItem,
   getPantryItems,
+  getPantryOperations,
+  undoPantryOperation,
   updatePantryItem
 } from '../api/pantry'
 import {
@@ -315,6 +333,9 @@ const consumeFormRef = ref(null)
 const consumingItem = ref(null)
 const consuming = ref(false)
 const consumeForm = reactive({ quantity: null })
+const operations = ref([])
+const operationsLoading = ref(false)
+const undoingId = ref(null)
 
 const expirySummary = computed(() => summarizePantryExpiry(items.value))
 const expiryNoticeText = computed(() => {
@@ -387,6 +408,7 @@ const consumeRules = {
 }
 
 loadItems()
+loadOperations()
 
 async function loadItems() {
   loading.value = true
@@ -398,6 +420,53 @@ async function loadItems() {
   } finally {
     loading.value = false
   }
+}
+
+async function loadOperations() {
+  operationsLoading.value = true
+  try {
+    const response = await getPantryOperations(20)
+    operations.value = response.data.data || []
+  } catch {
+    operations.value = []
+  } finally {
+    operationsLoading.value = false
+  }
+}
+
+async function undoOperation(operation) {
+  if (!operation?.id || undoingId.value !== null) return
+  try {
+    await ElMessageBox.confirm('撤销后会生成反向库存变动，且不会覆盖后续操作。确定继续吗？', '撤销库存变动', { confirmButtonText: '确认撤销', cancelButtonText: '取消', type: 'warning' })
+  } catch {
+    return
+  }
+  undoingId.value = operation.id
+  try {
+    await undoPantryOperation(operation.id)
+    ElMessage.success('库存变动已撤销')
+    await Promise.all([loadItems(), loadOperations()])
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.message || '撤销失败，请稍后重试')
+  } finally {
+    undoingId.value = null
+  }
+}
+
+function operationLabel(operation) {
+  return ({ STOCK_IN: '采购入库', COOKING_CONSUME: '烹饪扣减', REVERSAL: '撤销变动' })[operation?.operationType] || '库存操作'
+}
+
+function operationSummary(operation) {
+  const items = operation?.items || []
+  if (!items.length) return '未记录具体食材'
+  return items.slice(0, 3).map((item) => `${item.ingredientName} ${item.quantity}${item.unit}`).join('、')
+    + (items.length > 3 ? ` 等 ${items.length} 项` : '')
+}
+
+function formatOperationTime(value) {
+  if (!value) return '刚刚'
+  return new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(value))
 }
 
 function openCreateDialog() {
@@ -591,6 +660,15 @@ function getErrorMessage(error, fallback) {
   padding: clamp(20px, 3vw, 36px);
   color: var(--app-text);
 }
+
+.operations-panel { width: min(1180px, 100%); margin: 14px auto 0; padding: 16px; border: 1px solid var(--app-line); border-radius: 8px; background: var(--app-surface); box-shadow: var(--app-panel-shadow); }
+.operations-list { display: grid; gap: 6px; }
+.operation-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--app-line); border-radius: 6px; }
+.operation-row > div { display: grid; gap: 3px; min-width: 0; }
+.operation-row strong { color: var(--app-text); font-size: 13px; }
+.operation-row span { color: var(--app-text-muted); font-size: 12px; }
+.operation-status { white-space: nowrap; }
+@media (max-width: 560px) { .operations-panel { padding: 12px; } .operation-row { grid-template-columns: minmax(0, 1fr) auto; } .operation-status { grid-column: 1; } }
 
 .pantry-heading,
 .panel-heading,

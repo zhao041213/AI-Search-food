@@ -206,13 +206,23 @@
             :items="shoppingItems"
             :overrides="shoppingOverrides"
             :saving-key="shoppingSavingKey"
+            source-type="WEEKLY_MENU"
+            :source-id="planId"
+            :stock-in-key="stockInKey"
             @status-change="handleShoppingStatusChange"
             @purchase-search="preparePlatformSearch"
+            @stock-in="handleStockIn"
           />
         </el-tab-pane>
       </el-tabs>
     </section>
   </main>
+  <StockInDialog
+    v-model="stockInDialogVisible"
+    :item="stockInItem"
+    :loading="Boolean(stockInKey)"
+    @confirm="handleStockInConfirm"
+  />
 </template>
 
 <script setup>
@@ -230,6 +240,7 @@ import {
   X
 } from 'lucide-vue-next'
 import { getSavedRecipes } from '../api/recipes'
+import { stockInPantry } from '../api/pantry'
 import {
   autoGenerateWeeklyMenu,
   deleteWeeklyMenu,
@@ -238,6 +249,7 @@ import {
   saveWeeklyShoppingStatus
 } from '../api/weeklyMenu'
 import ShoppingChecklistTable from '../components/ShoppingChecklistTable.vue'
+import StockInDialog from '../components/StockInDialog.vue'
 import {
   formatNutritionValue,
   normalizeNutritionSummary,
@@ -273,6 +285,9 @@ const persistedPlanId = ref(null)
 const shoppingItems = ref([])
 const shoppingOverrides = ref({})
 const shoppingSavingKey = ref('')
+const stockInKey = ref('')
+const stockInDialogVisible = ref(false)
+const stockInItem = ref(null)
 const nutritionSummary = ref(normalizeNutritionSummary())
 const slotSelections = reactive({})
 let requestId = 0
@@ -452,6 +467,34 @@ async function handleShoppingStatusChange({ item, status }) {
       shoppingSavingKey.value = ''
     }
   }
+}
+
+function handleStockIn(item) {
+  const key = shoppingChecklistKey(item?.name)
+  if (!key || stockInKey.value || !planId.value) return
+  stockInItem.value = item
+  stockInDialogVisible.value = true
+}
+
+async function handleStockInConfirm(payload) {
+  const item = stockInItem.value
+  const key = shoppingChecklistKey(item?.name)
+  if (!key || stockInKey.value || !planId.value) return
+  stockInKey.value = key
+  try {
+    await stockInPantry({ sourceType: 'WEEKLY_MENU', sourceId: planId.value, idempotencyKey: createClientKey(), ingredientName: item.name, quantity: payload.quantity, unit: payload.unit, category: payload.category, expireDate: payload.expireDate })
+    shoppingOverrides.value = { ...shoppingOverrides.value, [key]: 'READY' }
+    stockInDialogVisible.value = false
+    ElMessage.success(`${item.name} 已加入库存`)
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.message || '入库失败，请稍后重试')
+  } finally {
+    stockInKey.value = ''
+  }
+}
+
+function createClientKey() {
+  return globalThis.crypto?.randomUUID?.() || `stock-in-${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
 
 function applyWeeklyMenu(value) {

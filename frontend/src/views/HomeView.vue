@@ -382,8 +382,12 @@
                     :items="shoppingList"
                     :overrides="shoppingCheckOverrides"
                     :saving-key="shoppingCheckSavingKey"
+                    source-type="RECIPE"
+                    :source-id="savedRecipeId"
+                    :stock-in-key="stockInKey"
                     @status-change="toggleShoppingItem"
                     @purchase-search="preparePlatformSearch"
+                    @stock-in="handleStockIn"
                   />
 
                   <div v-else-if="activeRecipePage.key === 'explanation'" class="explanation-grid">
@@ -456,6 +460,13 @@
     v-model="cookingModeVisible"
     :recipe="recipe"
     :storage-key="cookingStorageKey"
+    :recipe-id="savedRecipeId"
+  />
+  <StockInDialog
+    v-model="stockInDialogVisible"
+    :item="stockInItem"
+    :loading="Boolean(stockInKey)"
+    @confirm="handleStockInConfirm"
   />
   <FinishedDishReviewDialog
     v-if="recipe"
@@ -467,7 +478,7 @@
 
 <script setup>
 import { computed, markRaw, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Camera,
   Bookmark,
@@ -493,7 +504,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { generateRecipe, recognizeIngredients, saveRecipe } from '../api/recipes'
 import { getRecentSearches } from '../api/searchHistory'
 import { getDietPreference, saveDietPreference } from '../api/userPreferences'
-import { getPantryExpiryAlerts, getPantryItems } from '../api/pantry'
+import { getPantryExpiryAlerts, getPantryItems, stockInPantry } from '../api/pantry'
 import { getShoppingItemChecks, saveShoppingItemCheck } from '../api/shoppingChecks'
 import CameraIngredientCapture from '../components/CameraIngredientCapture.vue'
 import CookingModeDialog from '../components/CookingModeDialog.vue'
@@ -502,6 +513,7 @@ import FinishedDishReviewDialog from '../components/FinishedDishReviewDialog.vue
 import RecentSearchPopover from '../components/RecentSearchPopover.vue'
 import ShoppingChecklistTable from '../components/ShoppingChecklistTable.vue'
 import NutritionEstimateCard from '../components/NutritionEstimateCard.vue'
+import StockInDialog from '../components/StockInDialog.vue'
 import { useAuthStore } from '../stores/auth'
 import {
   buildRecipeDietPreference,
@@ -556,6 +568,9 @@ const pantryLoading = ref(false)
 const pantryExpirySummary = ref(emptyPantryExpirySummary())
 const shoppingCheckOverrides = ref({})
 const shoppingCheckSavingKey = ref('')
+const stockInKey = ref('')
+const stockInDialogVisible = ref(false)
+const stockInItem = ref(null)
 const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
@@ -1162,6 +1177,34 @@ async function toggleShoppingItem({ item, status }) {
     }
   }
 }
+
+function handleStockIn(item) {
+  if (!savedRecipeId.value || stockInKey.value) {
+    ElMessage.info('请先保存菜谱，再将采购食材加入库存')
+    return
+  }
+  const key = shoppingChecklistKey(item?.name)
+  if (!key) return
+  stockInItem.value = item
+  stockInDialogVisible.value = true
+}
+
+async function handleStockInConfirm(payload) {
+  const item = stockInItem.value
+  if (!savedRecipeId.value || stockInKey.value) return
+  const key = shoppingChecklistKey(item?.name)
+  if (!key) return
+  stockInKey.value = key
+  try {
+    await stockInPantry({ sourceType: 'RECIPE', sourceId: savedRecipeId.value, idempotencyKey: createClientKey(), ingredientName: item.name, quantity: payload.quantity, unit: payload.unit, category: payload.category, expireDate: payload.expireDate })
+    shoppingCheckOverrides.value = { ...shoppingCheckOverrides.value, [key]: 'READY' }
+    stockInDialogVisible.value = false
+    ElMessage.success(`${item.name} 已加入库存`)
+  } catch (error) { ElMessage.error(error?.response?.data?.message || '入库失败，请稍后重试') }
+  finally { stockInKey.value = '' }
+}
+
+function createClientKey() { return globalThis.crypto?.randomUUID?.() || `stock-in-${Date.now()}-${Math.random().toString(16).slice(2)}` }
 
 function openImagePicker() {
   imageInput.value?.click()

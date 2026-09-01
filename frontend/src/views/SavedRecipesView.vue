@@ -185,8 +185,12 @@
                   :items="shoppingList"
                   :overrides="shoppingCheckOverrides"
                   :saving-key="shoppingCheckSavingKey"
+                  source-type="RECIPE"
+                  :source-id="selected?.id"
+                  :stock-in-key="stockInKey"
                   @status-change="toggleShoppingItem"
                   @purchase-search="preparePlatformSearch"
+                  @stock-in="handleStockIn"
                 />
 
                 <div v-else-if="activePage === 'explanation'" class="explanation-grid">
@@ -238,6 +242,13 @@
     v-model="cookingModeVisible"
     :recipe="selected.recipe"
     :storage-key="cookingStorageKey"
+    :recipe-id="selected.id"
+  />
+  <StockInDialog
+    v-model="stockInDialogVisible"
+    :item="stockInItem"
+    :loading="Boolean(stockInKey)"
+    @confirm="handleStockInConfirm"
   />
   <FinishedDishReviewDialog
     v-if="selected?.recipe"
@@ -263,11 +274,12 @@ import {
   Video
 } from 'lucide-vue-next'
 import { deleteSavedRecipe, getSavedRecipe, getSavedRecipes } from '../api/recipes'
-import { getPantryItems } from '../api/pantry'
+import { getPantryItems, stockInPantry } from '../api/pantry'
 import { getShoppingItemChecks, saveShoppingItemCheck } from '../api/shoppingChecks'
 import CookingModeDialog from '../components/CookingModeDialog.vue'
 import FinishedDishReviewDialog from '../components/FinishedDishReviewDialog.vue'
 import ShoppingChecklistTable from '../components/ShoppingChecklistTable.vue'
+import StockInDialog from '../components/StockInDialog.vue'
 import NutritionEstimateCard from '../components/NutritionEstimateCard.vue'
 import {
   buildPurchaseLinks,
@@ -297,6 +309,9 @@ const offset = ref(0)
 const pantryItems = ref([])
 const shoppingCheckOverrides = ref({})
 const shoppingCheckSavingKey = ref('')
+const stockInKey = ref('')
+const stockInDialogVisible = ref(false)
+const stockInItem = ref(null)
 let listRequestId = 0
 let detailRequestId = 0
 
@@ -543,6 +558,43 @@ async function toggleShoppingItem({ item, status }) {
       shoppingCheckSavingKey.value = ''
     }
   }
+}
+
+function handleStockIn(item) {
+  const key = shoppingChecklistKey(item?.name)
+  if (!key || stockInKey.value || !selected.value?.id) return
+  stockInItem.value = item
+  stockInDialogVisible.value = true
+}
+
+async function handleStockInConfirm(payload) {
+  const item = stockInItem.value
+  const key = shoppingChecklistKey(item?.name)
+  if (!key || stockInKey.value || !selected.value?.id) return
+  stockInKey.value = key
+  try {
+    await stockInPantry({
+      sourceType: 'RECIPE',
+      sourceId: selected.value.id,
+      idempotencyKey: createClientKey(),
+      ingredientName: item.name,
+      quantity: payload.quantity,
+      unit: payload.unit,
+      category: payload.category,
+      expireDate: payload.expireDate
+    })
+    shoppingCheckOverrides.value = { ...shoppingCheckOverrides.value, [key]: 'READY' }
+    stockInDialogVisible.value = false
+    ElMessage.success(`${item.name} 已加入库存`)
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.message || '入库失败，请稍后重试')
+  } finally {
+    stockInKey.value = ''
+  }
+}
+
+function createClientKey() {
+  return globalThis.crypto?.randomUUID?.() || `stock-in-${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
 
 function findMissingIngredient(missingIngredients, ingredientName) {

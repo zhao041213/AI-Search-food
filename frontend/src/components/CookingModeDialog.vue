@@ -156,11 +156,48 @@
       </div>
     </template>
   </el-dialog>
+
+  <el-dialog v-model="finishConfirmVisible" title="完成烹饪前确认库存" width="min(620px, calc(100vw - 32px))" :close-on-click-modal="false">
+    <section v-if="recipeId && inventoryLoading" class="finish-inventory-summary" aria-live="polite">
+      <p>正在核对可用库存，请稍候。</p>
+      <el-skeleton :rows="4" animated />
+    </section>
+    <section v-else-if="recipeId && inventoryPreview" class="finish-inventory-summary" aria-live="polite">
+      <div class="servings-control">
+        <span>本次份数</span>
+        <el-input-number v-model="actualServings" :min="1" :max="20" :precision="0" controls-position="right" size="small" aria-label="本次烹饪份数" :disabled="inventoryLoading" @change="reloadPreviewForServings" />
+        <small>默认按菜谱份数，可按实际烹饪量调整</small>
+      </div>
+      <p>本次按 {{ inventoryPreview.actualServings }} 份处理。库存不足或用量待确认的食材不会被默认扣减。</p>
+      <div class="finish-inventory-list">
+        <div v-for="item in consumptionItems" :key="item.ingredientName" class="finish-inventory-item">
+          <el-checkbox v-model="item.selected" :disabled="!item.expectedQuantity || !item.expectedUnit" :aria-label="`选择扣减${item.ingredientName}`">
+            <strong>{{ item.ingredientName }}</strong>
+          </el-checkbox>
+          <span v-if="item.selected && item.expectedQuantity" class="consumption-quantity">
+            <el-input-number v-model="item.quantity" :min="0.01" :precision="2" :controls="false" size="small" :aria-label="`${item.ingredientName}扣减数量`" />
+            <em>{{ item.expectedUnit }}</em>
+          </span>
+          <span v-else>{{ item.expectedQuantity || item.rawAmount || '用量待确认' }}{{ item.expectedUnit || '' }}</span>
+          <span :class="['inventory-badge', `inventory-${String(item.status || '').toLowerCase()}`]">{{ inventoryLabel(item.status) }}</span>
+        </div>
+      </div>
+    </section>
+    <p v-else-if="!recipeId" class="finish-inventory-empty">当前菜谱未保存到个人菜谱，仅标记本地烹饪完成，不会修改服务器库存。</p>
+    <p v-else class="finish-inventory-empty">库存预览暂时不可用，请稍后重试；也可以选择“仅标记完成”。</p>
+    <template #footer>
+      <el-button :disabled="consuming" @click="finishAsCompleted">返回烹饪</el-button>
+      <el-button :disabled="consuming" @click="finishWithoutConsumption">仅标记完成</el-button>
+      <el-button type="primary" :loading="consuming" @click="finishAndConsume">完成并扣减库存</el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <script setup>
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { Check, ChefHat, ChevronLeft, ChevronRight, Clock, Pause, Play, RotateCcw } from 'lucide-vue-next'
+import { ElMessage } from 'element-plus'
+import { getCookingPreview, submitCookingConsumption } from '../api/pantry'
 import {
   createCookingSession,
   formatCookingDuration,
@@ -175,7 +212,8 @@ import {
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
   recipe: { type: Object, default: () => ({}) },
-  storageKey: { type: String, default: '' }
+  storageKey: { type: String, default: '' },
+  recipeId: { type: [Number, String], default: null }
 })
 
 const emit = defineEmits(['update:modelValue', 'finished'])
@@ -186,6 +224,12 @@ const totalSeconds = computed(() => totalMinutes.value * 60)
 const session = reactive(createCookingSession())
 const sessionInitialized = ref(false)
 const timerId = ref(null)
+const inventoryPreview = ref(null)
+const consumptionItems = ref([])
+const inventoryLoading = ref(false)
+const finishConfirmVisible = ref(false)
+const consuming = ref(false)
+const actualServings = ref(1)
 
 const recipeTitle = computed(() => String(props.recipe?.title || 'AI 智能菜谱').trim() || 'AI 智能菜谱')
 const currentStep = computed(() => steps.value[session.currentStepIndex] || null)
@@ -226,11 +270,36 @@ function restoreSession() {
   stopTimer()
   Object.assign(session, restoreCookingSession(props.storageKey, getSessionOptions()))
   sessionInitialized.value = true
+  actualServings.value = validServings(props.recipe?.servings) ? Number(props.recipe.servings) : 1
 
   // Reloading a page must not restart a timer without an explicit user action.
   if (session.timerRunning) {
     session.timerRunning = false
     persistSession()
+  }
+  loadInventoryPreview()
+}
+
+async function loadInventoryPreview() {
+  if (!props.recipeId) {
+    inventoryPreview.value = null
+    consumptionItems.value = []
+    return
+  }
+  inventoryLoading.value = true
+  try {
+    const response = await getCookingPreview(props.recipeId, actualServings.value)
+    inventoryPreview.value = response.data.data || null
+    consumptionItems.value = (inventoryPreview.value?.items || []).map((item) => ({
+      ...item,
+      selected: item.status === 'ENOUGH',
+      quantity: item.expectedQuantity
+    }))
+  } catch {
+    inventoryPreview.value = null
+    consumptionItems.value = []
+  } finally {
+    inventoryLoading.value = false
   }
 }
 
@@ -285,16 +354,77 @@ function finishCooking() {
     return
   }
 
+  if (props.recipeId) {
+    finishConfirmVisible.value = true
+    loadInventoryPreview()
+    return
+  }
+  completeCooking('LOCAL_ONLY')
+}
+
+function validServings(value) {
+  return Number.isInteger(Number(value)) && Number(value) >= 1 && Number(value) <= 20
+}
+
+function reloadPreviewForServings(value) {
+  if (validServings(value)) actualServings.value = Number(value)
+  if (props.recipeId) loadInventoryPreview()
+}
+
+function finishAsCompleted() {
+  finishConfirmVisible.value = false
+}
+
+function finishWithoutConsumption() {
+  finishConfirmVisible.value = false
+  completeCooking('MARK_ONLY')
+}
+
+async function finishAndConsume() {
+  if (!props.recipeId || consuming.value) return
+  consuming.value = true
+  try {
+    if (!inventoryPreview.value) {
+      await loadInventoryPreview()
+    }
+    const preview = inventoryPreview.value
+    if (!preview) throw new Error('库存预览失败，请刷新后重试')
+    const items = consumptionItems.value.filter((item) => item.selected).map((item) => ({
+      ingredientName: item.ingredientName,
+      quantity: item.quantity,
+      unit: item.expectedUnit,
+      selected: true
+    }))
+    await submitCookingConsumption({
+      recipeId: props.recipeId,
+      actualServings: preview?.actualServings || props.recipe?.servings,
+      idempotencyKey: createClientKey(),
+      items
+    })
+    finishConfirmVisible.value = false
+    completeCooking('COOKING_CONSUME')
+    ElMessage.success('烹饪完成，已扣减选中的库存')
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.message || '库存扣减失败，请刷新后重试')
+  } finally {
+    consuming.value = false
+  }
+}
+
+function completeCooking(mode) {
   session.currentStepIndex = steps.value.length - 1
   session.finished = true
   stopTimer()
   persistSession()
-  emit('finished', {
-    recipe: props.recipe,
-    storageKey: props.storageKey,
-    currentStepIndex: session.currentStepIndex,
-    remainingSeconds: session.remainingSeconds
-  })
+  emit('finished', { recipe: props.recipe, recipeId: props.recipeId, storageKey: props.storageKey, mode, currentStepIndex: session.currentStepIndex, remainingSeconds: session.remainingSeconds })
+}
+
+function createClientKey() {
+  return globalThis.crypto?.randomUUID?.() || `cooking-${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
+function inventoryLabel(status) {
+  return ({ ENOUGH: '库存充足', PARTIAL: '库存不足', MISSING: '缺少库存', UNQUANTIFIED: '用量待确认', INVALID: '用量无法解析', UNIT_MISMATCH: '单位不匹配', EXPIRED_ONLY: '仅有过期库存' })[status] || '待检查'
 }
 
 function toggleTimer() {
@@ -728,6 +858,22 @@ function handleKeyboardNavigation(event) {
 .footer-actions {
   gap: 8px;
 }
+
+.finish-inventory-summary { display: grid; gap: 12px; }
+.finish-inventory-summary p, .finish-inventory-empty { margin: 0; color: var(--app-text-soft); line-height: 1.6; }
+.servings-control { display: flex; align-items: center; gap: 10px; color: var(--app-text); font-weight: 700; }
+.servings-control small { color: var(--app-text-muted); font-size: 12px; font-weight: 400; }
+.finish-inventory-list { display: grid; gap: 6px; max-height: 280px; overflow: auto; }
+.finish-inventory-item { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 10px; padding: 9px 10px; border: 1px solid var(--app-line); border-radius: 6px; }
+.finish-inventory-item strong { min-width: 0; overflow: hidden; color: var(--app-text); text-overflow: ellipsis; white-space: nowrap; }
+.finish-inventory-item span { color: var(--app-text-muted); font-size: 12px; }
+.consumption-quantity { display: inline-flex; align-items: center; gap: 5px; }
+.consumption-quantity em { font-style: normal; white-space: nowrap; }
+.consumption-quantity :deep(.el-input-number) { width: 94px; }
+.inventory-badge { display: inline-flex; min-height: 24px; align-items: center; padding: 0 7px; border: 1px solid var(--app-line-strong); border-radius: 4px; font-size: 11px !important; font-weight: 800; }
+.inventory-enough { border-color: var(--el-color-success); color: var(--el-color-success) !important; }
+.inventory-partial, .inventory-expired_only { border-color: var(--el-color-warning); color: var(--el-color-warning) !important; }
+@media (max-width: 560px) { .finish-inventory-item { grid-template-columns: 1fr auto; } .finish-inventory-item span:nth-child(2) { grid-column: 1; } .finish-inventory-item .inventory-badge { grid-column: 2; grid-row: 1 / span 2; } }
 
 @media (max-width: 720px) {
   :deep(.cooking-mode-dialog) {
