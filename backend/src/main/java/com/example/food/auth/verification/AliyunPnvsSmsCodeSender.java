@@ -87,14 +87,15 @@ public class AliyunPnvsSmsCodeSender implements SmsCodeSender {
                         maskPhone(phone), response.getBody().getRequestId());
                 return new SmsSendResult(null, intervalSeconds());
             }
-            log.warn("Aliyun PNVS rejected SMS, phone={}, code={}, message={}, requestId={}",
-                    maskPhone(phone), response.getBody().getCode(), response.getBody().getMessage(),
+            log.warn("Aliyun PNVS rejected SMS, phone={}, code={}, requestId={}",
+                    maskPhone(phone), response.getBody().getCode(),
                     response.getBody().getRequestId());
             throw sendFailed();
         } catch (ResponseStatusException exception) {
             throw exception;
         } catch (Exception exception) {
-            log.error("Aliyun PNVS SMS request failed, phone={}", maskPhone(phone), exception);
+            log.error("Aliyun PNVS SMS request failed, phone={}, exceptionType={}",
+                    maskPhone(phone), exception.getClass().getSimpleName());
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, SEND_FAILED, exception);
         }
     }
@@ -128,9 +129,8 @@ public class AliyunPnvsSmsCodeSender implements SmsCodeSender {
                 log.info("Aliyun PNVS verified SMS code, phone={}", maskPhone(phone));
                 return;
             }
-            log.warn("Aliyun PNVS rejected SMS code, phone={}, code={}, verifyResult={}, message={}",
-                    maskPhone(phone), response.getBody().getCode(), verifyResult,
-                    response.getBody().getMessage());
+            log.warn("Aliyun PNVS rejected SMS code, phone={}, code={}, verifyResult={}",
+                    maskPhone(phone), response.getBody().getCode(), verifyResult);
             if ("isv.ValidateFail".equals(response.getBody().getCode())
                     || ("OK".equals(response.getBody().getCode()) && "UNKNOWN".equals(verifyResult))) {
                 throw new VerificationCodeException(VERIFICATION_INVALID);
@@ -139,7 +139,8 @@ public class AliyunPnvsSmsCodeSender implements SmsCodeSender {
         } catch (VerificationCodeException | ResponseStatusException exception) {
             throw exception;
         } catch (Exception exception) {
-            log.error("Aliyun PNVS verify request failed, phone={}", maskPhone(phone), exception);
+            log.error("Aliyun PNVS verify request failed, phone={}, exceptionType={}",
+                    maskPhone(phone), exception.getClass().getSimpleName());
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, VERIFY_UNAVAILABLE, exception);
         }
     }
@@ -148,8 +149,19 @@ public class AliyunPnvsSmsCodeSender implements SmsCodeSender {
         Config config = new Config()
                 .setAccessKeyId(properties.getAccessKeyId())
                 .setAccessKeySecret(properties.getAccessKeySecret())
-                .setEndpoint(properties.getEndpoint());
+                .setProtocol("HTTPS")
+                .setEndpoint(properties.getEndpoint())
+                .setConnectTimeout(timeoutMillis(properties.getConnectTimeout(), 5_000))
+                .setReadTimeout(timeoutMillis(properties.getReadTimeout(), 10_000));
         return new Client(config);
+    }
+
+    private static int timeoutMillis(Duration timeout, int fallbackMillis) {
+        if (timeout == null) {
+            return fallbackMillis;
+        }
+        long millis = timeout.toMillis();
+        return (int) Math.max(1, Math.min(Integer.MAX_VALUE, millis));
     }
 
     private String templateParam() throws Exception {
@@ -189,6 +201,9 @@ public class AliyunPnvsSmsCodeSender implements SmsCodeSender {
                 || !StringUtils.hasText(properties.getTemplateCode())
                 || !StringUtils.hasText(properties.getEndpoint())) {
             throw new IllegalArgumentException(CONFIGURATION_INCOMPLETE);
+        }
+        if (properties.getEndpoint().toLowerCase(java.util.Locale.ROOT).startsWith("http://")) {
+            throw new IllegalArgumentException("Aliyun PNVS endpoint must use HTTPS");
         }
         if (StringUtils.hasText(properties.getSchemeName()) && properties.getSchemeName().length() > 20) {
             throw new IllegalArgumentException("Aliyun PNVS scheme name cannot exceed 20 characters");

@@ -25,7 +25,7 @@ public class JwtService {
             @Value("${app.jwt.expiration-minutes}") long expirationMinutes
     ) {
         if (secret.getBytes(StandardCharsets.UTF_8).length < 32) {
-            throw new IllegalArgumentException("JWT secret must be at least 32 bytes");
+            throw new IllegalArgumentException("JWT_SECRET must be at least 32 bytes");
         }
         this.secretKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
         this.expirationMinutes = expirationMinutes;

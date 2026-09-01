@@ -100,6 +100,43 @@ class VerificationCodeServiceTest {
     }
 
     @Test
+    void remoteProviderInvalidCodeCountsTowardLocalAttemptLimit() {
+        String phone = "13900001013";
+        when(smsCodeSender.supportsRemoteVerification()).thenReturn(true);
+        when(smsCodeSender.send(anyString(), anyString()))
+                .thenReturn(new SmsSendResult(null, 0));
+        service.issue(phone, VerificationCodePurpose.REGISTER);
+        org.mockito.Mockito.doThrow(new VerificationCodeException("Verification code invalid"))
+                .when(smsCodeSender)
+                .verify(phone, "000000");
+
+        for (int attempt = 0; attempt < 4; attempt++) {
+            assertThatThrownBy(() -> service.verify(phone, VerificationCodePurpose.REGISTER, "000000"))
+                    .isInstanceOf(VerificationCodeException.class)
+                    .hasMessage("Verification code invalid");
+        }
+        assertThatThrownBy(() -> service.verify(phone, VerificationCodePurpose.REGISTER, "000000"))
+                .isInstanceOf(VerificationCodeException.class)
+                .hasMessage("Too many verification attempts");
+        assertThat(latest(phone, VerificationCodePurpose.REGISTER).getAttemptCount()).isEqualTo(5);
+    }
+
+    @Test
+    void remoteSendFailureRetainsLocalCooldownMarker() {
+        String phone = "13900001014";
+        when(smsCodeSender.supportsRemoteVerification()).thenReturn(true);
+        when(smsCodeSender.send(anyString(), anyString()))
+                .thenThrow(new IllegalStateException("send uncertain"));
+
+        assertThatThrownBy(() -> service.issue(phone, VerificationCodePurpose.REGISTER))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("send uncertain");
+        PhoneVerificationCode failedIssue = latest(phone, VerificationCodePurpose.REGISTER);
+        assertThat(failedIssue).isNotNull();
+        assertThat(failedIssue.getConsumedAt()).isNotNull();
+    }
+
+    @Test
     void wrongPurposeCannotConsumeCode() {
         String code = service.issue("13900001002", VerificationCodePurpose.REGISTER).code();
 
