@@ -89,6 +89,10 @@ rollback the last modification made by the agent:
 
 - Before adding a feature, fixing a bug, adding or changing tests, or making other implementation changes, create and work on a dedicated branch. Do not make these changes directly on `main`.
 - Use concise, descriptive branch names that make the purpose clear. Use a type prefix and lowercase hyphen-separated words, such as `feature/ingredient-image-cache`, `fix/eggplant-image`, or `test/recipe-search-coverage`.
+- A separate Git worktree is optional; writing code does not require creating one. Code may be written in the current dedicated branch/worktree, but never directly on `main`.
+- If a new worktree is created for any task, use a sibling directory such as `git worktree add ..\\AI-Search-food-<short-name> -b <type>/<short-name>` and track its path and branch.
+- After every successful `git push` from a newly created worktree, automatically switch to another worktree (for example, the `main` worktree), remove the created directory with `git worktree remove ..\\AI-Search-food-<short-name>`, and run `git worktree prune`; do not wait for a separate cleanup request. If the push fails or the worktree still contains uncommitted changes, keep the directory and report it instead of using `--force`. Never remove the current worktree from inside itself.
+- Non-code activities, including downloading or installing skills, reading documentation, repository inspection, and other setup work, may use the current worktree without creating a new one.
 - Do not commit unless the user explicitly approves.
 - Do not push to GitHub unless the user explicitly approves.
 - Do not merge branches unless the user explicitly approves.
