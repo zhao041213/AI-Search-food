@@ -8,6 +8,9 @@ import com.example.food.recipe.SearchLogService;
 import com.example.food.security.AppRole;
 import com.example.food.security.AuthPrincipal;
 import com.example.food.user.health.UserHealthProfileService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.LinkedHashSet;
@@ -15,6 +18,8 @@ import java.util.List;
 
 @Service
 public class RecipeRecommendationService {
+
+    private static final Logger log = LoggerFactory.getLogger(RecipeRecommendationService.class);
 
     private static final int MAX_PREFERENCE_TEXT_LENGTH = 80;
     private static final int MAX_PREFERENCE_ITEM_COUNT = 20;
@@ -24,6 +29,22 @@ public class RecipeRecommendationService {
     private final SearchLogService searchLogService;
     private final UserPantryService userPantryService;
     private final UserHealthProfileService userHealthProfileService;
+    private final com.example.food.recipe.RecommendationFeedbackService recommendationFeedbackService;
+
+    @Autowired
+    public RecipeRecommendationService(
+            QwenRecipeClient qwenRecipeClient,
+            SearchLogService searchLogService,
+            UserPantryService userPantryService,
+            UserHealthProfileService userHealthProfileService,
+            com.example.food.recipe.RecommendationFeedbackService recommendationFeedbackService
+    ) {
+        this.qwenRecipeClient = qwenRecipeClient;
+        this.searchLogService = searchLogService;
+        this.userPantryService = userPantryService;
+        this.userHealthProfileService = userHealthProfileService;
+        this.recommendationFeedbackService = recommendationFeedbackService;
+    }
 
     public RecipeRecommendationService(
             QwenRecipeClient qwenRecipeClient,
@@ -31,10 +52,7 @@ public class RecipeRecommendationService {
             UserPantryService userPantryService,
             UserHealthProfileService userHealthProfileService
     ) {
-        this.qwenRecipeClient = qwenRecipeClient;
-        this.searchLogService = searchLogService;
-        this.userPantryService = userPantryService;
-        this.userHealthProfileService = userHealthProfileService;
+        this(qwenRecipeClient, searchLogService, userPantryService, userHealthProfileService, null);
     }
 
     public RecipeGenerateResponse generate(RecipeGenerateRequest request) {
@@ -47,8 +65,9 @@ public class RecipeRecommendationService {
         String anonymousId
     ) {
         UserHealthProfileService.RecommendationContext healthProfile = healthProfile(principal);
+        String feedbackContext = feedbackContext(principal);
         RecipeGenerateResponse response = qwenRecipeClient.generateRecipe(
-                buildPrompt(request, pantryIngredients(principal), healthProfile)
+                buildPrompt(request, pantryIngredients(principal), healthProfile, feedbackContext)
         );
         Long searchLogId = searchLogService.record(request, response, principal, anonymousId);
         return response.withSearchLogId(searchLogId);
@@ -57,7 +76,8 @@ public class RecipeRecommendationService {
     private String buildPrompt(
             RecipeGenerateRequest request,
             List<String> pantryIngredients,
-            UserHealthProfileService.RecommendationContext healthProfile
+            UserHealthProfileService.RecommendationContext healthProfile,
+            String feedbackContext
     ) {
         return """
                 请根据以下信息生成一份适合家庭烹饪的中文菜谱。
@@ -67,6 +87,7 @@ public class RecipeRecommendationService {
                 餐次：%s
                 饮食目标：%s
                 输入方式：%s
+                %s
                 %s
 
                 必须只返回 JSON，不要返回 Markdown、代码块或额外说明。
@@ -112,8 +133,25 @@ public class RecipeRecommendationService {
                 safeText(request.mealType()),
                 safeText(resolveGoal(request)),
                 safeText(request.searchMode()),
-                requestContext(request, healthProfile)
+                requestContext(request, healthProfile),
+                hasText(feedbackContext) ? feedbackContext : ""
         );
+    }
+
+    private String feedbackContext(AuthPrincipal principal) {
+        if (recommendationFeedbackService == null
+                || principal == null
+                || principal.role() != AppRole.USER) {
+            return "";
+        }
+        try {
+            com.example.food.recipe.RecommendationFeedbackService.FeedbackContext context =
+                    recommendationFeedbackService.context(principal.id());
+            return context == null ? "" : context.promptSection();
+        } catch (RuntimeException exception) {
+            log.warn("读取推荐反馈失败，继续使用原推荐流程，userId={}", principal.id(), exception);
+            return "";
+        }
     }
 
     private List<String> pantryIngredients(AuthPrincipal principal) {

@@ -60,4 +60,17 @@ public interface RecipeRecordMapper extends BaseMapper<RecipeRecord> {
             @Param("userId") Long userId,
             @Param("searchLogId") Long searchLogId
     );
+
+    @Select("""
+            SELECT *
+            FROM recipe_records
+            WHERE user_id = #{userId}
+              AND search_log_id = #{searchLogId}
+            ORDER BY id DESC
+            LIMIT 1
+            """)
+    RecipeRecord findByUserIdAndSearchLogId(
+            @Param("userId") Long userId,
+            @Param("searchLogId") Long searchLogId
+    );
 }

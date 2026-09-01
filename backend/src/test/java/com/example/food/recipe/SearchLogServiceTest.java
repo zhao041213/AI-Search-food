@@ -71,6 +71,8 @@ class SearchLogServiceTest {
         assertThat(saved.getAnonymousId()).isEqualTo("browser-12345678");
         assertThat(saved.getQueryText()).isEqualTo("番茄, 鸡蛋");
         assertThat(saved.getInputType()).isEqualTo("text");
+        assertThat(saved.getResultTitle()).isEqualTo("番茄炒蛋");
+        assertThat(saved.getResultIngredients()).isEqualTo("[\"番茄\"]");
         assertThat(saved.getMealType()).isEqualTo("dinner");
         assertThat(saved.getGoal()).isEqualTo("balanced");
         assertThat(saved.getAiModel()).isEqualTo("qwen:qwen-plus");

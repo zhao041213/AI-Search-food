@@ -39,3 +39,19 @@ export function getSavedRecipe(id) {
 export function deleteSavedRecipe(id) {
   return http.delete(`/recipes/saved/${id}`)
 }
+
+export function getRecommendationFeedback(searchLogId) {
+  return http.get(`/recommendation-feedbacks/${searchLogId}`)
+}
+
+export function setRecommendationReaction(searchLogId, reaction) {
+  return http.put(`/recommendation-feedbacks/${searchLogId}/reaction`, { reaction })
+}
+
+export function clearRecommendationReaction(searchLogId) {
+  return http.delete(`/recommendation-feedbacks/${searchLogId}/reaction`)
+}
+
+export function markRecommendationCooked(searchLogId) {
+  return http.put(`/recommendation-feedbacks/${searchLogId}/cooked`)
+}
