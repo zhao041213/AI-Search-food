@@ -99,6 +99,8 @@ class RecipePersistenceIntegrationTest {
         assertThat(detail.recipe().title()).isEqualTo("番茄炒鸡蛋");
         assertThat(detail.recipe().ingredients()).hasSize(2);
         assertThat(detail.recipe().steps()).hasSize(2);
+        assertThat(detail.recipe().nutritionEstimate()).isNotNull();
+        assertThat(detail.recipe().nutritionEstimate().caloriesKcal()).isEqualByComparingTo("420");
         assertThat(detail.recipe().missingIngredients()).singleElement().satisfies(item -> {
             assertThat(item.name()).isEqualTo("鸡蛋");
             assertThat(item.substitutes()).containsExactly("嫩豆腐");
@@ -241,6 +243,7 @@ class RecipePersistenceIntegrationTest {
                 recipe.tips(),
                 recipe.videoKeywords(),
                 recipe.explanation(),
+                recipe.nutritionEstimate(),
                 recipe.provider(),
                 recipe.model()
         );
@@ -271,6 +274,14 @@ class RecipePersistenceIntegrationTest {
                         "番茄的酸甜与鸡蛋的鲜香互补",
                         "包含蛋白质与维生素",
                         "分开炒制能保持嫩度"
+                ),
+                new RecipeGenerateResponse.NutritionEstimate(
+                        2,
+                        new java.math.BigDecimal("420"),
+                        new java.math.BigDecimal("24"),
+                        new java.math.BigDecimal("16"),
+                        new java.math.BigDecimal("42"),
+                        RecipeGenerateResponse.NutritionEstimate.AI_ESTIMATE
                 ),
                 "qwen",
                 "qwen-plus",

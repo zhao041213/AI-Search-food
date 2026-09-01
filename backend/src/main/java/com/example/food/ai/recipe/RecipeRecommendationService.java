@@ -89,6 +89,14 @@ public class RecipeRecommendationService {
                     "pairingLogic": "食材搭配逻辑",
                     "nutrition": "客观、克制的营养说明",
                     "cookingPrinciple": "关键烹饪原理"
+                  },
+                  "nutritionEstimate": {
+                    "servings": 2,
+                    "caloriesKcal": 420,
+                    "proteinG": 24,
+                    "fatG": 16,
+                    "carbohydrateG": 42,
+                    "source": "AI_ESTIMATE"
                   }
                 }
 
@@ -96,6 +104,7 @@ public class RecipeRecommendationService {
                 将“本次指定食材”和“用户库存食材”都视为用户可用的已有食材，并按常见别名和语义判断是否已有。
                 仅将用户没有提供、但菜谱需要的食材放入 missingIngredients；没有缺失食材时返回空数组。
                 只为 missingIngredients 中的缺失食材提供 substitutes，不要为已有食材提供替代建议。
+                nutritionEstimate 必须是每份估算，servings 范围 1-20，caloriesKcal 范围 1-3000，proteinG 和 fatG 范围 0-300，carbohydrateG 范围 0-500，source 固定为 AI_ESTIMATE。若无法同时给出全部合法数值，则 nutritionEstimate 返回 null。所有营养内容必须标记为 AI 估算，仅供一般饮食参考，不得作出达标、超标或医疗判断。
                 effects 与 explanation 只能提供一般饮食和烹饪信息，不得作出疾病治疗、预防或疗效保证等医疗承诺。
                 """.formatted(
                 safeText(request.ingredients()),

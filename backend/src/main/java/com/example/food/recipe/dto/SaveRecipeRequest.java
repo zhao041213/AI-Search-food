@@ -25,6 +25,7 @@ public record SaveRecipeRequest(
         List<String> tips,
         List<String> videoKeywords,
         RecipeGenerateResponse.Explanation explanation,
+        RecipeGenerateResponse.NutritionEstimate nutritionEstimate,
         @NotBlank
         @Size(max = 64)
         String provider,
@@ -32,6 +33,24 @@ public record SaveRecipeRequest(
         @Size(max = 128)
         String model
 ) {
+    public SaveRecipeRequest(
+            Long searchLogId,
+            String title,
+            String summary,
+            List<String> effects,
+            List<RecipeGenerateResponse.Ingredient> ingredients,
+            List<RecipeGenerateResponse.MissingIngredient> missingIngredients,
+            List<RecipeGenerateResponse.Step> steps,
+            List<String> tips,
+            List<String> videoKeywords,
+            RecipeGenerateResponse.Explanation explanation,
+            String provider,
+            String model
+    ) {
+        this(searchLogId, title, summary, effects, ingredients, missingIngredients, steps, tips,
+                videoKeywords, explanation, null, provider, model);
+    }
+
     public SaveRecipeRequest {
         effects = effects == null ? List.of() : List.copyOf(effects);
         ingredients = ingredients == null ? List.of() : List.copyOf(ingredients);
@@ -65,6 +84,7 @@ public record SaveRecipeRequest(
                 tips,
                 videoKeywords,
                 RecipeGenerateResponse.Explanation.empty(),
+                null,
                 provider,
                 model
         );

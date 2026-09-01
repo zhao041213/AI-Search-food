@@ -145,8 +145,9 @@ public class QwenRecipeClient {
                 payload.missingIngredients(),
                 payload.steps(),
                 payload.tips(),
-                payload.videoKeywords(),
-                payload.explanation(),
+            payload.videoKeywords(),
+            payload.explanation(),
+                RecipeGenerateResponse.NutritionEstimate.from(payload.nutritionEstimate()),
                 runtimeConfig.provider(),
                 runtimeConfig.modelName()
         );
@@ -165,7 +166,7 @@ public class QwenRecipeClient {
 
     private RecipePayload readPayload(String content) {
         try {
-            return objectMapper.readValue(stripJsonFence(content), RecipePayload.class);
+            return objectMapper.treeToValue(objectMapper.readTree(stripJsonFence(content)), RecipePayload.class);
         } catch (IOException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "千问返回内容不是有效菜谱 JSON", exception);
         }
@@ -220,7 +221,8 @@ public class QwenRecipeClient {
             List<RecipeGenerateResponse.Step> steps,
             List<String> tips,
             List<String> videoKeywords,
-            RecipeGenerateResponse.Explanation explanation
+            RecipeGenerateResponse.Explanation explanation,
+            com.fasterxml.jackson.databind.JsonNode nutritionEstimate
     ) {
     }
 

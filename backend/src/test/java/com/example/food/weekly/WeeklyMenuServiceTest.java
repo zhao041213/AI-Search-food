@@ -104,6 +104,37 @@ class WeeklyMenuServiceTest {
     }
 
     @Test
+    void summarizesEachAssignedMealAndSkipsRecipesWithoutValidNutrition() {
+        LocalDate monday = LocalDate.of(2026, 8, 31);
+        WeeklyMenuPlan plan = plan(99L, 7L, monday);
+        RecipeRecord recipe = recipe(1L, "营养菜");
+        recipe.setServings(2);
+        recipe.setCaloriesKcal(new java.math.BigDecimal("420"));
+        recipe.setProteinG(new java.math.BigDecimal("24"));
+        recipe.setFatG(new java.math.BigDecimal("16"));
+        recipe.setCarbohydrateG(new java.math.BigDecimal("42"));
+        recipe.setNutritionSource("AI_ESTIMATE");
+        when(planMapper.findByUserIdAndWeekStart(7L, monday)).thenReturn(plan);
+        when(itemMapper.findByPlanId(99L)).thenReturn(List.of(
+                item(11L, 99L, monday, "BREAKFAST", 1L),
+                item(12L, 99L, monday, "DINNER", 1L)
+        ));
+        when(recipeRecordMapper.selectList(any(QueryWrapper.class))).thenReturn(List.of(recipe));
+        when(recipeIngredientMapper.selectList(any(QueryWrapper.class))).thenReturn(List.of());
+        when(userPantryService.listIngredientNames(7L)).thenReturn(List.of());
+        when(shoppingCheckMapper.findByUserIdAndPlanId(7L, 99L)).thenReturn(List.of());
+
+        WeeklyMenuResponse response = service.get(7L, monday);
+
+        assertThat(response.nutritionSummary().assignedMealCount()).isEqualTo(2);
+        assertThat(response.nutritionSummary().validEstimateMealCount()).isEqualTo(2);
+        assertThat(response.nutritionSummary().weekly().caloriesKcal()).isEqualByComparingTo("840");
+        assertThat(response.nutritionSummary().daily()).hasSize(7);
+        assertThat(response.nutritionSummary().daily().get(0).totals().proteinG())
+                .isEqualByComparingTo("48");
+    }
+
+    @Test
     void autoGeneratesAFullWeekFromSavedRecipesAndIncludesUserContext() {
         LocalDate monday = LocalDate.of(2026, 8, 31);
         WeeklyMenuPlan plan = plan(99L, 7L, monday);

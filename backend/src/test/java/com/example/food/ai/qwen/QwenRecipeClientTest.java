@@ -26,6 +26,35 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 class QwenRecipeClientTest {
 
     @Test
+    void keepsRecipeWhenNutritionEstimateContainsInvalidValues() throws Exception {
+        RestTemplate restTemplate = new RestTemplateBuilder().build();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restTemplate).build();
+        QwenProperties properties = new QwenProperties(
+                "test-api-key",
+                "qwen-plus",
+                "https://dashscope.test/compatible-mode/v1/chat/completions"
+        );
+        QwenRecipeClient client = new QwenRecipeClient(restTemplate, new ObjectMapper(), properties);
+
+        String recipeJson = "{\"title\":\"测试菜\",\"ingredients\":[],\"steps\":[],"
+                + "\"nutritionEstimate\":{\"servings\":2,\"caloriesKcal\":\"not-a-number\","
+                + "\"proteinG\":20,\"fatG\":10,\"carbohydrateG\":30,\"source\":\"AI_ESTIMATE\"}}";
+        String qwenResponse = new ObjectMapper().writeValueAsString(java.util.Map.of(
+                "choices", java.util.List.of(java.util.Map.of(
+                        "message", java.util.Map.of("content", recipeJson)
+                ))
+        ));
+        server.expect(once(), requestTo(properties.endpoint()))
+                .andRespond(withSuccess(qwenResponse, MediaType.APPLICATION_JSON));
+
+        RecipeGenerateResponse response = client.generateRecipe("测试");
+
+        assertThat(response.title()).isEqualTo("测试菜");
+        assertThat(response.nutritionEstimate()).isNull();
+        server.verify();
+    }
+
+    @Test
     void generateRecipeCallsQwenAndParsesStructuredContent() {
         RestTemplate restTemplate = new RestTemplateBuilder().build();
         MockRestServiceServer server = MockRestServiceServer.bindTo(restTemplate).build();
@@ -48,7 +77,7 @@ class QwenRecipeClientTest {
                           "choices": [
                             {
                               "message": {
-                                "content": "{\\"title\\":\\"番茄炒蛋\\",\\"summary\\":\\"家常快手菜\\",\\"effects\\":[\\"补充蛋白质\\"],\\"ingredients\\":[{\\"name\\":\\"番茄\\",\\"amount\\":\\"2个\\"},{\\"name\\":\\"鸡蛋\\",\\"amount\\":\\"2个\\"}],\\"missingIngredients\\":[{\\"name\\":\\"鸡蛋\\",\\"amount\\":\\"2个\\",\\"substitutes\\":[\\"嫩豆腐\\"],\\"reason\\":\\"用户已有食材中没有鸡蛋\\"}],\\"steps\\":[{\\"order\\":1,\\"title\\":\\"备菜\\",\\"description\\":\\"番茄切块。\\",\\"durationMinutes\\":5}],\\"tips\\":[\\"先炒鸡蛋\\"],\\"videoKeywords\\":[\\"番茄炒蛋 做法\\"],\\"explanation\\":{\\"pairingLogic\\":\\"酸甜与鲜香搭配\\",\\"nutrition\\":\\"包含蛋白质和维生素\\",\\"cookingPrinciple\\":\\"分开炒制有利于保持口感\\"}}"
+                                "content": "{\\"title\\":\\"番茄炒蛋\\",\\"summary\\":\\"家常快手菜\\",\\"effects\\":[\\"补充蛋白质\\"],\\"ingredients\\":[{\\"name\\":\\"番茄\\",\\"amount\\":\\"2个\\"},{\\"name\\":\\"鸡蛋\\",\\"amount\\":\\"2个\\"}],\\"missingIngredients\\":[{\\"name\\":\\"鸡蛋\\",\\"amount\\":\\"2个\\",\\"substitutes\\":[\\"嫩豆腐\\"],\\"reason\\":\\"用户已有食材中没有鸡蛋\\"}],\\"steps\\":[{\\"order\\":1,\\"title\\":\\"备菜\\",\\"description\\":\\"番茄切块。\\",\\"durationMinutes\\":5}],\\"tips\\":[\\"先炒鸡蛋\\"],\\"videoKeywords\\":[\\"番茄炒蛋 做法\\"],\\"explanation\\":{\\"pairingLogic\\":\\"酸甜与鲜香搭配\\",\\"nutrition\\":\\"包含蛋白质和维生素\\",\\"cookingPrinciple\\":\\"分开炒制有利于保持口感\\"},\\"nutritionEstimate\\":{\\"servings\\":2,\\"caloriesKcal\\":420,\\"proteinG\\":24,\\"fatG\\":16,\\"carbohydrateG\\":42,\\"source\\":\\"AI_ESTIMATE\\"}}"
                               }
                             }
                           ]
@@ -67,6 +96,8 @@ class QwenRecipeClientTest {
         assertThat(response.explanation().pairingLogic()).isEqualTo("酸甜与鲜香搭配");
         assertThat(response.explanation().nutrition()).isEqualTo("包含蛋白质和维生素");
         assertThat(response.explanation().cookingPrinciple()).isEqualTo("分开炒制有利于保持口感");
+        assertThat(response.nutritionEstimate()).isNotNull();
+        assertThat(response.nutritionEstimate().caloriesKcal()).isEqualByComparingTo("420");
         assertThat(response.steps()).extracting(RecipeGenerateResponse.Step::title).containsExactly("备菜");
         assertThat(response.provider()).isEqualTo("qwen");
         assertThat(response.model()).isEqualTo("qwen-plus");

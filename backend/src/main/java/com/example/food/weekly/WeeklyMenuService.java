@@ -2,6 +2,7 @@ package com.example.food.weekly;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.example.food.ai.qwen.QwenRecipeClient;
+import com.example.food.ai.recipe.dto.RecipeGenerateResponse;
 import com.example.food.pantry.UserPantryService;
 import com.example.food.recipe.RecipeIngredient;
 import com.example.food.recipe.RecipeIngredientMapper;
@@ -497,7 +498,8 @@ public class WeeklyMenuService {
                 plan.getWeekStartDate(),
                 plan.getWeekStartDate().plusDays(6),
                 itemResponses,
-                shoppingItems(userId, plan, menuItems)
+                shoppingItems(userId, plan, menuItems),
+                nutritionSummary(plan.getWeekStartDate(), menuItems, recipes)
         );
     }
 
@@ -581,7 +583,91 @@ public class WeeklyMenuService {
     }
 
     private WeeklyMenuResponse emptyResponse(LocalDate weekStart) {
-        return new WeeklyMenuResponse(null, weekStart, weekStart.plusDays(6), List.of(), List.of());
+        return new WeeklyMenuResponse(
+                null,
+                weekStart,
+                weekStart.plusDays(6),
+                List.of(),
+                List.of(),
+                nutritionSummary(weekStart, List.of(), Map.of())
+        );
+    }
+
+    private WeeklyMenuResponse.NutritionSummary nutritionSummary(
+            LocalDate weekStart,
+            List<WeeklyMenuItem> menuItems,
+            Map<Long, RecipeRecord> recipes
+    ) {
+        List<LocalDate> dates = java.util.stream.IntStream.range(0, 7)
+                .mapToObj(weekStart::plusDays)
+                .toList();
+        Map<LocalDate, NutritionAccumulator> daily = new LinkedHashMap<>();
+        dates.forEach(date -> daily.put(date, new NutritionAccumulator()));
+        NutritionAccumulator weekly = new NutritionAccumulator();
+        for (WeeklyMenuItem item : menuItems) {
+            NutritionAccumulator accumulator = daily.computeIfAbsent(item.getMenuDate(), ignored -> new NutritionAccumulator());
+            accumulator.assignedMealCount++;
+            RecipeRecord recipe = recipes.get(item.getRecipeId());
+            RecipeGenerateResponse.NutritionEstimate nutrition = recipe == null ? null : nutritionFromRecord(recipe);
+            if (nutrition != null) {
+                accumulator.add(nutrition);
+                weekly.add(nutrition);
+            }
+        }
+        List<WeeklyMenuResponse.DailyNutritionSummary> dailySummaries = daily.entrySet().stream()
+                .map(entry -> new WeeklyMenuResponse.DailyNutritionSummary(
+                        entry.getKey(),
+                        entry.getValue().assignedMealCount,
+                        entry.getValue().validEstimateMealCount,
+                        entry.getValue().totals()
+                ))
+                .toList();
+        return new WeeklyMenuResponse.NutritionSummary(
+                menuItems.size(),
+                weekly.validEstimateMealCount,
+                dailySummaries,
+                weekly.totals()
+        );
+    }
+
+    private RecipeGenerateResponse.NutritionEstimate nutritionFromRecord(RecipeRecord record) {
+        RecipeGenerateResponse.NutritionEstimate estimate = new RecipeGenerateResponse.NutritionEstimate(
+                record.getServings(),
+                record.getCaloriesKcal(),
+                record.getProteinG(),
+                record.getFatG(),
+                record.getCarbohydrateG(),
+                record.getNutritionSource()
+        );
+        return estimate.isValid() ? estimate : null;
+    }
+
+    private static final class NutritionAccumulator {
+        private int assignedMealCount;
+        private int validEstimateMealCount;
+        private BigDecimal caloriesKcal = BigDecimal.ZERO;
+        private BigDecimal proteinG = BigDecimal.ZERO;
+        private BigDecimal fatG = BigDecimal.ZERO;
+        private BigDecimal carbohydrateG = BigDecimal.ZERO;
+
+        private void add(RecipeGenerateResponse.NutritionEstimate nutrition) {
+            validEstimateMealCount++;
+            caloriesKcal = caloriesKcal.add(nutrition.caloriesKcal());
+            proteinG = proteinG.add(nutrition.proteinG());
+            fatG = fatG.add(nutrition.fatG());
+            carbohydrateG = carbohydrateG.add(nutrition.carbohydrateG());
+        }
+
+        private WeeklyMenuResponse.NutritionTotals totals() {
+            return validEstimateMealCount == 0
+                    ? null
+                    : new WeeklyMenuResponse.NutritionTotals(
+                            caloriesKcal,
+                            proteinG,
+                            fatG,
+                            carbohydrateG
+                    );
+        }
     }
 
     private LocalDate normalizeWeekStart(LocalDate date) {

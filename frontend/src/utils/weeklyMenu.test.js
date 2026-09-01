@@ -53,13 +53,15 @@ test('服务端周菜单响应会过滤无效餐次并补齐周范围', () => {
       { id: 1, menuDate: '2026-08-31', mealType: 'DINNER', recipeId: 7, recipeTitle: '番茄炒蛋' },
       { id: 2, menuDate: '2026-09-01', mealType: 'SNACK', recipeId: 8 }
     ],
-    shoppingItems: [{ ingredientName: '鸡蛋', status: 'PENDING' }]
+    shoppingItems: [{ ingredientName: '鸡蛋', status: 'PENDING' }],
+    nutritionSummary: { assignedMealCount: 1, validEstimateMealCount: 1 }
   })
 
   assert.equal(normalized.weekStart, '2026-08-31')
   assert.equal(normalized.weekEnd, '2026-09-06')
   assert.equal(normalized.items.length, 1)
   assert.equal(normalized.shoppingItems.length, 1)
+  assert.equal(normalized.nutritionSummary.assignedMealCount, 1)
   assert.equal(mealLabel('DINNER'), '晚餐')
   assert.equal(toDateString(addDays('2026-08-31', 6)), '2026-09-06')
 })

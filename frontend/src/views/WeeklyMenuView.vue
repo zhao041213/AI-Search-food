@@ -142,6 +142,46 @@
           </div>
         </el-tab-pane>
 
+        <el-tab-pane label="营养总览" name="nutrition">
+          <section class="nutrition-overview" aria-label="本周营养总览">
+            <header class="nutrition-overview-heading">
+              <div>
+                <p class="panel-kicker">每周营养参考</p>
+                <h3>本周营养总览</h3>
+                <p>已统计 {{ nutritionSummary.validEstimateMealCount }} / {{ nutritionSummary.assignedMealCount }} 个餐次</p>
+              </div>
+              <p class="nutrition-disclosure">{{ NUTRITION_DISCLOSURE }}</p>
+            </header>
+
+            <div class="weekly-nutrition-total">
+              <span>整周合计</span>
+              <div v-if="nutritionSummary.weekly" class="nutrition-total-metrics">
+                <span>热量<strong>{{ formatNutritionValue(nutritionSummary.weekly.caloriesKcal) }} 千卡</strong></span>
+                <span>蛋白质<strong>{{ formatNutritionValue(nutritionSummary.weekly.proteinG) }} 克</strong></span>
+                <span>脂肪<strong>{{ formatNutritionValue(nutritionSummary.weekly.fatG) }} 克</strong></span>
+                <span>碳水<strong>{{ formatNutritionValue(nutritionSummary.weekly.carbohydrateG) }} 克</strong></span>
+              </div>
+              <p v-else class="nutrition-empty">暂无营养估算</p>
+            </div>
+
+            <div class="daily-nutrition-grid">
+              <article v-for="day in nutritionSummary.daily" :key="day.date" class="daily-nutrition-card">
+                <header>
+                  <strong>{{ formatNutritionDate(day.date) }}</strong>
+                  <span>已统计 {{ day.validEstimateMealCount }} / {{ day.assignedMealCount }} 个餐次</span>
+                </header>
+                <div v-if="day.totals" class="daily-nutrition-values">
+                  <span>热量<strong>{{ formatNutritionValue(day.totals.caloriesKcal) }} 千卡</strong></span>
+                  <span>蛋白质<strong>{{ formatNutritionValue(day.totals.proteinG) }} 克</strong></span>
+                  <span>脂肪<strong>{{ formatNutritionValue(day.totals.fatG) }} 克</strong></span>
+                  <span>碳水<strong>{{ formatNutritionValue(day.totals.carbohydrateG) }} 克</strong></span>
+                </div>
+                <p v-else class="nutrition-empty">暂无营养估算</p>
+              </article>
+            </div>
+          </section>
+        </el-tab-pane>
+
         <el-tab-pane label="采购清单" name="shopping">
           <div v-if="!menuSaved" class="shopping-empty">
             <ClipboardList :size="30" aria-hidden="true" />
@@ -199,6 +239,11 @@ import {
 } from '../api/weeklyMenu'
 import ShoppingChecklistTable from '../components/ShoppingChecklistTable.vue'
 import {
+  formatNutritionValue,
+  normalizeNutritionSummary,
+  NUTRITION_DISCLOSURE
+} from '../utils/nutrition'
+import {
   buildPurchaseLinks,
   copyIngredientName,
   normalizeShoppingStatus,
@@ -228,6 +273,7 @@ const persistedPlanId = ref(null)
 const shoppingItems = ref([])
 const shoppingOverrides = ref({})
 const shoppingSavingKey = ref('')
+const nutritionSummary = ref(normalizeNutritionSummary())
 const slotSelections = reactive({})
 let requestId = 0
 
@@ -241,6 +287,16 @@ const weekRangeLabel = computed(() => {
   const formatter = new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' })
   return `${formatter.format(start)} - ${formatter.format(end)}`
 })
+
+function formatNutritionDate(value) {
+  if (!value) {
+    return '未设置日期'
+  }
+  const date = new Date(`${value}T00:00:00`)
+  return Number.isNaN(date.getTime())
+    ? value
+    : new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric', weekday: 'short' }).format(date)
+}
 
 onMounted(() => {
   loadRecipes()
@@ -404,6 +460,7 @@ function applyWeeklyMenu(value) {
   weekPickerValue.value = normalized.weekStart
   planId.value = normalized.id
   persistedPlanId.value = normalized.id
+  nutritionSummary.value = normalizeNutritionSummary(normalized.nutritionSummary)
   Object.keys(slotSelections).forEach((key) => delete slotSelections[key])
   normalized.items.forEach((item) => {
     slotSelections[weeklySlotKey(item.menuDate, item.mealType)] = String(item.recipeId)
@@ -469,6 +526,7 @@ function clearLoadedShoppingState() {
   persistedPlanId.value = null
   shoppingItems.value = []
   shoppingOverrides.value = {}
+  nutritionSummary.value = normalizeNutritionSummary()
   Object.keys(slotSelections).forEach((key) => delete slotSelections[key])
 }
 
@@ -686,6 +744,100 @@ function getErrorMessage(error, fallback) {
   line-height: 1.65;
 }
 
+.nutrition-overview {
+  display: grid;
+  gap: 14px;
+}
+
+.nutrition-overview-heading,
+.weekly-nutrition-total,
+.daily-nutrition-card {
+  border: 1px solid var(--app-line);
+  border-radius: 8px;
+  background: var(--app-surface-soft);
+}
+
+.nutrition-overview-heading,
+.weekly-nutrition-total {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+}
+
+.nutrition-overview-heading h3 {
+  margin: 0;
+  color: var(--app-text);
+  font-size: 20px;
+}
+
+.nutrition-overview-heading p:not(.panel-kicker),
+.nutrition-disclosure,
+.nutrition-empty {
+  margin: 6px 0 0;
+  color: var(--app-text-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.weekly-nutrition-total {
+  align-items: center;
+  color: var(--app-text);
+  font-weight: 900;
+}
+
+.nutrition-total-metrics,
+.daily-nutrition-values {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  width: min(760px, 100%);
+}
+
+.nutrition-total-metrics span,
+.daily-nutrition-values span {
+  display: grid;
+  gap: 4px;
+  color: var(--app-text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.nutrition-total-metrics strong,
+.daily-nutrition-values strong {
+  color: var(--app-text);
+  font-size: 16px;
+}
+
+.daily-nutrition-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.daily-nutrition-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.daily-nutrition-card header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.daily-nutrition-card header strong {
+  color: var(--app-text);
+}
+
+.daily-nutrition-card header span {
+  color: var(--app-text-muted);
+  font-size: 12px;
+}
+
 .empty-action {
   display: inline-flex;
   align-items: center;
@@ -738,6 +890,16 @@ function getErrorMessage(error, fallback) {
   .summary-actions :deep(.el-button) {
     flex: 1 1 150px;
   }
+
+  .nutrition-overview-heading,
+  .weekly-nutrition-total {
+    flex-direction: column;
+  }
+
+  .nutrition-total-metrics,
+  .daily-nutrition-values {
+    width: 100%;
+  }
 }
 
 @media (max-width: 480px) {
@@ -747,6 +909,15 @@ function getErrorMessage(error, fallback) {
 
   .menu-grid {
     grid-template-columns: 1fr;
+  }
+
+  .daily-nutrition-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .nutrition-total-metrics,
+  .daily-nutrition-values {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 </style>

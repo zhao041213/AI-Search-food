@@ -88,6 +88,43 @@ class SavedRecipeServiceTest {
     }
 
     @Test
+    void persistsStructuredNutritionAlongsideRecipeRecord() {
+        stubRecipeInsert();
+        when(searchLogMapper.selectById(10L)).thenReturn(searchLog(10L, 7L, null));
+        RecipeGenerateResponse.NutritionEstimate nutrition = new RecipeGenerateResponse.NutritionEstimate(
+                2,
+                new java.math.BigDecimal("420"),
+                new java.math.BigDecimal("24"),
+                new java.math.BigDecimal("16"),
+                new java.math.BigDecimal("42"),
+                RecipeGenerateResponse.NutritionEstimate.AI_ESTIMATE
+        );
+        SaveRecipeRequest request = new SaveRecipeRequest(
+                10L,
+                "番茄炒蛋",
+                "家常快手菜",
+                List.of(),
+                List.of(new RecipeGenerateResponse.Ingredient("番茄", "2个")),
+                List.of(),
+                List.of(new RecipeGenerateResponse.Step(1, "备菜", "番茄切块", 5)),
+                List.of(),
+                List.of(),
+                RecipeGenerateResponse.Explanation.empty(),
+                nutrition,
+                "qwen",
+                "qwen-plus"
+        );
+
+        savedRecipeService.save(request, new AuthPrincipal(7L, "13800138000", AppRole.USER), null);
+
+        ArgumentCaptor<RecipeRecord> recordCaptor = ArgumentCaptor.forClass(RecipeRecord.class);
+        verify(recipeRecordMapper).insert(recordCaptor.capture());
+        assertThat(recordCaptor.getValue().getServings()).isEqualTo(2);
+        assertThat(recordCaptor.getValue().getCaloriesKcal()).isEqualByComparingTo("420");
+        assertThat(recordCaptor.getValue().getNutritionSource()).isEqualTo("AI_ESTIMATE");
+    }
+
+    @Test
     void rejectsSearchLogOwnedByAnotherUser() {
         when(searchLogMapper.selectById(10L)).thenReturn(searchLog(10L, 8L, null));
 

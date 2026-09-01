@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 
 import java.time.LocalDateTime;
+import java.math.BigDecimal;
 
 @TableName("recipe_records")
 public class RecipeRecord {
@@ -15,6 +16,12 @@ public class RecipeRecord {
     private Long searchLogId;
     private Long parentRecipeId;
     private String title;
+    private Integer servings;
+    private BigDecimal caloriesKcal;
+    private BigDecimal proteinG;
+    private BigDecimal fatG;
+    private BigDecimal carbohydrateG;
+    private String nutritionSource;
     private String summary;
     private String effects;
     private String tips;
@@ -61,6 +68,54 @@ public class RecipeRecord {
 
     public void setTitle(String title) {
         this.title = title;
+    }
+
+    public Integer getServings() {
+        return servings;
+    }
+
+    public void setServings(Integer servings) {
+        this.servings = servings;
+    }
+
+    public BigDecimal getCaloriesKcal() {
+        return caloriesKcal;
+    }
+
+    public void setCaloriesKcal(BigDecimal caloriesKcal) {
+        this.caloriesKcal = caloriesKcal;
+    }
+
+    public BigDecimal getProteinG() {
+        return proteinG;
+    }
+
+    public void setProteinG(BigDecimal proteinG) {
+        this.proteinG = proteinG;
+    }
+
+    public BigDecimal getFatG() {
+        return fatG;
+    }
+
+    public void setFatG(BigDecimal fatG) {
+        this.fatG = fatG;
+    }
+
+    public BigDecimal getCarbohydrateG() {
+        return carbohydrateG;
+    }
+
+    public void setCarbohydrateG(BigDecimal carbohydrateG) {
+        this.carbohydrateG = carbohydrateG;
+    }
+
+    public String getNutritionSource() {
+        return nutritionSource;
+    }
+
+    public void setNutritionSource(String nutritionSource) {
+        this.nutritionSource = nutritionSource;
     }
 
     public String getSummary() {

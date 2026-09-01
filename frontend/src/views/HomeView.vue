@@ -296,6 +296,8 @@
                 </div>
               </div>
 
+              <NutritionEstimateCard :nutrition="recipe.nutritionEstimate" />
+
               <div class="recipe-pages" aria-label="菜谱详情分页">
                 <div class="page-toolbar">
                   <button
@@ -499,6 +501,7 @@ import DietPreferenceDialog from '../components/DietPreferenceDialog.vue'
 import FinishedDishReviewDialog from '../components/FinishedDishReviewDialog.vue'
 import RecentSearchPopover from '../components/RecentSearchPopover.vue'
 import ShoppingChecklistTable from '../components/ShoppingChecklistTable.vue'
+import NutritionEstimateCard from '../components/NutritionEstimateCard.vue'
 import { useAuthStore } from '../stores/auth'
 import {
   buildRecipeDietPreference,
@@ -814,6 +817,7 @@ async function saveCurrentRecipe() {
       videoKeywords: recipe.value.videoKeywords,
       missingIngredients: recipe.value.missingIngredients,
       explanation: recipe.value.explanation,
+      nutritionEstimate: recipe.value.nutritionEstimate,
       provider: recipe.value.provider,
       model: recipe.value.model
     })

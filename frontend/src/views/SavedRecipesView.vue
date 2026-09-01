@@ -134,6 +134,8 @@
               </span>
             </div>
 
+            <NutritionEstimateCard :nutrition="selected.recipe.nutritionEstimate" />
+
             <div class="recipe-pages">
               <div class="page-tabs" role="tablist" aria-label="菜谱详情分页">
                 <button
@@ -266,6 +268,7 @@ import { getShoppingItemChecks, saveShoppingItemCheck } from '../api/shoppingChe
 import CookingModeDialog from '../components/CookingModeDialog.vue'
 import FinishedDishReviewDialog from '../components/FinishedDishReviewDialog.vue'
 import ShoppingChecklistTable from '../components/ShoppingChecklistTable.vue'
+import NutritionEstimateCard from '../components/NutritionEstimateCard.vue'
 import {
   buildPurchaseLinks,
   buildBilibiliSearchLink,

@@ -102,7 +102,8 @@ export function normalizeWeeklyMenu(value = {}) {
     weekStart,
     weekEnd: toDateString(value?.weekEnd) || toDateString(addDays(weekStart, 6)),
     items,
-    shoppingItems: Array.isArray(value?.shoppingItems) ? value.shoppingItems : []
+    shoppingItems: Array.isArray(value?.shoppingItems) ? value.shoppingItems : [],
+    nutritionSummary: value?.nutritionSummary || null
   }
 }
 

@@ -56,10 +56,19 @@ public class SavedRecipeService {
         verifySearchLogOwnership(searchLog, principal, anonymousId);
 
         RecipeGenerateResponse recipe = recipeFromRequest(request);
+        RecipeGenerateResponse.NutritionEstimate nutrition = validNutrition(request.nutritionEstimate());
         RecipeRecord record = new RecipeRecord();
         record.setUserId(principal.id());
         record.setSearchLogId(request.searchLogId());
         record.setTitle(request.title().trim());
+        if (nutrition != null) {
+            record.setServings(nutrition.servings());
+            record.setCaloriesKcal(nutrition.caloriesKcal());
+            record.setProteinG(nutrition.proteinG());
+            record.setFatG(nutrition.fatG());
+            record.setCarbohydrateG(nutrition.carbohydrateG());
+            record.setNutritionSource(RecipeGenerateResponse.NutritionEstimate.AI_ESTIMATE);
+        }
         record.setSummary(request.summary());
         record.setEffects(toJson(request.effects()));
         record.setTips(toJson(request.tips()));
@@ -194,6 +203,7 @@ public class SavedRecipeService {
                 request.tips(),
                 request.videoKeywords(),
                 request.explanation(),
+                validNutrition(request.nutritionEstimate()),
                 request.provider(),
                 request.model(),
                 request.searchLogId()
@@ -206,7 +216,11 @@ public class SavedRecipeService {
         }
         try {
             RecipeGenerateResponse stored = objectMapper.readValue(record.getRawResponse(), RecipeGenerateResponse.class);
-            return stored.withSearchLogId(record.getSearchLogId());
+            RecipeGenerateResponse.NutritionEstimate persistedNutrition = nutritionFromRecord(record);
+            return stored.withSearchLogId(record.getSearchLogId())
+                    .withNutritionEstimate(persistedNutrition != null
+                            ? persistedNutrition
+                            : validNutrition(stored.nutritionEstimate()));
         } catch (JsonProcessingException exception) {
             return null;
         }
@@ -233,9 +247,12 @@ public class SavedRecipeService {
                 record.getSummary(),
                 readList(record.getEffects()),
                 recipeIngredients,
+                List.of(),
                 recipeSteps,
                 readList(record.getTips()),
                 readList(record.getVideoKeywords()),
+                RecipeGenerateResponse.Explanation.empty(),
+                nutritionFromRecord(record),
                 provider(record.getAiModel()),
                 model(record.getAiModel()),
                 record.getSearchLogId()
@@ -319,5 +336,23 @@ public class SavedRecipeService {
             throw new IllegalArgumentException(message);
         }
         return value.trim();
+    }
+
+    private RecipeGenerateResponse.NutritionEstimate validNutrition(
+            RecipeGenerateResponse.NutritionEstimate estimate
+    ) {
+        return estimate != null && estimate.isValid() ? estimate : null;
+    }
+
+    private RecipeGenerateResponse.NutritionEstimate nutritionFromRecord(RecipeRecord record) {
+        RecipeGenerateResponse.NutritionEstimate estimate = new RecipeGenerateResponse.NutritionEstimate(
+                record.getServings(),
+                record.getCaloriesKcal(),
+                record.getProteinG(),
+                record.getFatG(),
+                record.getCarbohydrateG(),
+                record.getNutritionSource()
+        );
+        return estimate.isValid() ? estimate : null;
     }
 }
