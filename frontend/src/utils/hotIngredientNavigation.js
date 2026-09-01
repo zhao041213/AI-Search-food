@@ -1,3 +1,4 @@
+const OVERVIEW_PANEL = 'overview'
 const HOT_INGREDIENT_PANEL = 'hot-ingredients'
 const SETTINGS_PANEL = 'settings'
 
@@ -20,15 +21,18 @@ export function getHotIngredientNavigation(isAdmin) {
 
 export function resolveAdminPanel(panel) {
   const value = Array.isArray(panel) ? panel[0] : panel
-  return value === HOT_INGREDIENT_PANEL ? HOT_INGREDIENT_PANEL : SETTINGS_PANEL
+  return [OVERVIEW_PANEL, SETTINGS_PANEL, HOT_INGREDIENT_PANEL].includes(value)
+    ? value
+    : OVERVIEW_PANEL
 }
 
 export function buildAdminPanelQuery(currentQuery, panel) {
   const query = { ...currentQuery }
-  if (resolveAdminPanel(panel) === HOT_INGREDIENT_PANEL) {
-    query.panel = HOT_INGREDIENT_PANEL
-  } else {
+  const resolvedPanel = resolveAdminPanel(panel)
+  if (resolvedPanel === OVERVIEW_PANEL) {
     delete query.panel
+  } else {
+    query.panel = resolvedPanel
   }
   return query
 }

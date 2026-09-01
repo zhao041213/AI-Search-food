@@ -8,6 +8,7 @@
         </div>
         <div class="admin-header-actions">
           <el-radio-group v-model="activePanel" size="small" aria-label="后台功能">
+            <el-radio-button value="overview">运营概览</el-radio-button>
             <el-radio-button value="settings">系统设置</el-radio-button>
             <el-radio-button value="hot-ingredients">热门分析</el-radio-button>
           </el-radio-group>
@@ -18,7 +19,9 @@
         </div>
       </header>
 
-      <div v-if="activePanel === 'settings'" class="admin-grid">
+      <AdminOperationsOverview v-if="activePanel === 'overview'" />
+
+      <div v-else-if="activePanel === 'settings'" class="admin-grid">
         <section class="summary-grid" aria-label="系统概览">
           <article class="summary-card">
             <span class="card-label">当前账号</span>
@@ -97,21 +100,6 @@
           </el-form>
         </section>
 
-        <section class="management-panel" aria-labelledby="management-title">
-          <div class="panel-title">
-            <PanelTopOpen :size="20" aria-hidden="true" />
-            <div>
-              <span>运行状态</span>
-              <h2 id="management-title">管理任务队列</h2>
-            </div>
-          </div>
-
-          <el-table :data="rows" size="large">
-            <el-table-column prop="area" label="模块" min-width="160" />
-            <el-table-column prop="status" label="状态" min-width="180" />
-            <el-table-column prop="owner" label="负责人" min-width="140" />
-          </el-table>
-        </section>
       </div>
       <AdminHotIngredientsPanel v-else />
     </section>
@@ -122,9 +110,10 @@
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
-import { LogOut, PanelTopOpen, PlugZap, Save } from 'lucide-vue-next'
+import { LogOut, PlugZap, Save } from 'lucide-vue-next'
 import { getTextRecipeAiConfig, saveTextRecipeAiConfig } from '../api/adminAiConfig'
 import AdminHotIngredientsPanel from '../components/AdminHotIngredientsPanel.vue'
+import AdminOperationsOverview from '../components/AdminOperationsOverview.vue'
 import { useAuthStore } from '../stores/auth'
 import { buildAdminPanelQuery, resolveAdminPanel } from '../utils/hotIngredientNavigation'
 
@@ -149,12 +138,6 @@ const aiConfig = ref({
   apiKey: '',
   enabled: true
 })
-
-const rows = [
-  { area: '食材识别', status: '基础能力已就绪', owner: 'AI 服务' },
-  { area: '菜谱推荐', status: '千问文本生成已接入', owner: '推荐服务' },
-  { area: '用户登录', status: 'JWT 已启用', owner: '认证服务' }
-]
 
 onMounted(() => {
   loadConfig()
@@ -301,8 +284,7 @@ h2 {
 }
 
 .summary-card,
-.config-panel,
-.management-panel {
+.config-panel {
   border: 1px solid var(--app-line);
   border-radius: 8px;
   background:
@@ -337,8 +319,7 @@ h2 {
   font-size: 21px;
 }
 
-.config-panel,
-.management-panel {
+.config-panel {
   min-height: 0;
   padding: 16px;
   overflow: auto;
@@ -400,12 +381,6 @@ h2 {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-}
-
-.management-panel :deep(.el-table) {
-  overflow: hidden;
-  border: 1px solid var(--app-line);
-  border-radius: 8px;
 }
 
 @media (max-width: 980px) {

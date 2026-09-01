@@ -32,12 +32,17 @@ test('只有普通用户显示我的菜谱入口', () => {
 test('管理后台根据查询参数解析和更新面板', () => {
   assert.equal(resolveAdminPanel('hot-ingredients'), 'hot-ingredients')
   assert.equal(resolveAdminPanel(['hot-ingredients']), 'hot-ingredients')
-  assert.equal(resolveAdminPanel('unknown'), 'settings')
+  assert.equal(resolveAdminPanel('settings'), 'settings')
+  assert.equal(resolveAdminPanel('unknown'), 'overview')
   assert.deepEqual(buildAdminPanelQuery({ source: 'sidebar' }, 'hot-ingredients'), {
     source: 'sidebar',
     panel: 'hot-ingredients'
   })
   assert.deepEqual(buildAdminPanelQuery({ source: 'sidebar', panel: 'hot-ingredients' }, 'settings'), {
+    source: 'sidebar',
+    panel: 'settings'
+  })
+  assert.deepEqual(buildAdminPanelQuery({ source: 'sidebar', panel: 'settings' }, 'overview'), {
     source: 'sidebar'
   })
 })
