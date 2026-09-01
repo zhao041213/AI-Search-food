@@ -51,6 +51,20 @@ class AliyunPnvsSmsCodeSenderTest {
     }
 
     @Test
+    void httpEndpointIsRejectedForRemoteSms() {
+        SmsProperties properties = completeProperties();
+        properties.getPnvs().setEndpoint("http://dypnsapi.aliyuncs.com");
+
+        assertThatThrownBy(() -> new AliyunPnvsSmsCodeSender(
+                properties,
+                objectMapper,
+                ignored -> mock(Client.class)
+        ))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Aliyun PNVS endpoint must use HTTPS");
+    }
+
+    @Test
     void sendUsesProviderGeneratedCodeAndConfiguredLimits() throws Exception {
         Client client = mock(Client.class);
         when(client.sendSmsVerifyCode(any(SendSmsVerifyCodeRequest.class)))

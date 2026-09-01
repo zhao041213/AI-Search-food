@@ -1,0 +1,48 @@
+server:
+  port: ${SERVER_PORT:7068}
+
+spring:
+  datasource:
+    url: ${MYSQL_URL:jdbc:mysql://mysql:3306/ai_smart_recipe?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true}
+    username: ${MYSQL_USERNAME:recipe_app}
+    password: ${MYSQL_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  flyway:
+    enabled: true
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:}
+  sms:
+    provider: ${SMS_PROVIDER:aliyun-pnvs}
+    code-expiry: ${SMS_CODE_EXPIRY:5m}
+    resend-interval: ${SMS_RESEND_INTERVAL:60s}
+    max-attempts: ${SMS_MAX_ATTEMPTS:5}
+    pnvs:
+      access-key-id: ${ALIBABA_CLOUD_ACCESS_KEY_ID:}
+      access-key-secret: ${ALIBABA_CLOUD_ACCESS_KEY_SECRET:}
+      sign-name: ${ALIYUN_PNVS_SIGN_NAME:}
+      template-code: ${ALIYUN_PNVS_TEMPLATE_CODE:}
+      endpoint: ${ALIYUN_PNVS_ENDPOINT:dypnsapi.aliyuncs.com}
+      scheme-name: ${ALIYUN_PNVS_SCHEME_NAME:}
+      connect-timeout: ${PNVS_CONNECT_TIMEOUT:5s}
+      read-timeout: ${PNVS_READ_TIMEOUT:10s}
+  ai:
+    qwen:
+      api-key: ${DASHSCOPE_API_KEY:}
+      model: ${DASHSCOPE_MODEL:qwen-plus}
+      vision-model: ${DASHSCOPE_VISION_MODEL:qwen-vl-plus}
+      endpoint: ${DASHSCOPE_BASE_URL:${DASHSCOPE_ENDPOINT:https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions}}
+  finished-dish-reviews:
+    storage-dir: ${FINISHED_DISH_REVIEW_STORAGE_DIR:/app/data/finished-dish-reviews}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true

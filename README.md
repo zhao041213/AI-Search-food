@@ -147,3 +147,61 @@ mvn "-Dmaven.repo.local=D:\AI-Search-food\.m2" -f backend/pom.xml test
 cd frontend
 npm run build
 ```
+
+## Docker Compose 部署
+
+完整的本地启动、API 调用、千问和阿里云 PNVS 配置说明见：[本地启动、API 与阿里云短信配置](docs/local-run-api-and-aliyun-sms.md)。
+
+Docker Compose 用于本地演示、测试环境和毕业设计展示。安装 Docker Desktop（包含 Compose）后，宿主机不需要安装 Java、Maven、Node.js、MySQL 或 Nginx。
+
+首次使用：
+
+```powershell
+Copy-Item .env.example .env
+# 编辑 .env，填写数据库、JWT、千问和阿里云 PNVS 配置
+docker compose up -d --build
+docker compose ps
+```
+
+前端默认入口为 `http://localhost`。端口冲突时，在 `.env` 中设置 `FRONTEND_PORT=8080` 后访问 `http://localhost:8080`。前端容器通过 Nginx 将 `/api/*` 转发到后端，后端和 MySQL 默认不会绑定到宿主机端口。
+
+查看日志：
+
+```powershell
+docker compose logs -f backend
+docker compose logs -f frontend
+docker compose logs -f mysql
+```
+
+停止和再次启动：
+
+```powershell
+docker compose stop
+docker compose start
+docker compose down
+docker compose up -d
+```
+
+普通 `docker compose down` 会保留 `mysql_data` 和 `review_uploads` 数据卷；只有明确需要清空数据时才执行危险命令：
+
+```powershell
+docker compose down -v
+```
+
+需要从宿主机调试后端时，使用仅绑定回环地址的调试覆盖文件：
+
+```powershell
+docker compose -f docker-compose.yml -f docker-compose.debug.yml up -d --build
+```
+
+调试后端地址为 `http://127.0.0.1:7068`（可通过 `BACKEND_DEBUG_PORT` 修改）。生产 Docker 模式固定使用真实 PNVS，不会自动回退为模拟短信；真实短信调用可能产生费用。
+
+常见问题：
+
+- 数据库未健康：查看 `docker compose logs mysql`，确认 `MYSQL_*` 配置后等待健康检查完成。
+- Flyway 迁移失败：查看 `docker compose logs backend`，确认数据库账号有建表权限；不要修改既有迁移文件。
+- 千问或短信配置缺失：后端启动日志只会列出缺失的变量名，不会输出密钥值。
+- 端口冲突：修改 `FRONTEND_PORT`；不要停止其他项目正在使用的进程。
+- 重新构建镜像：执行 `docker compose build --no-cache` 后再 `docker compose up -d`。
+
+Docker 配置不会改变原有的 `npm run dev`、`npm start` 和 `mvn spring-boot:run` 本地开发方式。

@@ -4,6 +4,8 @@ node_modules/
 dist/
 frontend/nginx/runtime-local.conf
 .env
+.env.*
+!.env.example
 backend/src/main/resources/application-local.yml
 *.log
 .worktrees

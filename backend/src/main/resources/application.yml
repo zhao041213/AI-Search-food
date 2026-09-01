@@ -50,9 +50,11 @@ app:
       template-code: ${ALIYUN_PNVS_TEMPLATE_CODE:}
       endpoint: ${ALIYUN_PNVS_ENDPOINT:dypnsapi.aliyuncs.com}
       scheme-name: ${ALIYUN_PNVS_SCHEME_NAME:}
+      connect-timeout: ${PNVS_CONNECT_TIMEOUT:5s}
+      read-timeout: ${PNVS_READ_TIMEOUT:10s}
   ai:
     qwen:
       api-key: ${DASHSCOPE_API_KEY:}
       model: ${DASHSCOPE_MODEL:qwen-plus}
       vision-model: ${DASHSCOPE_VISION_MODEL:qwen-vl-plus}
-      endpoint: ${DASHSCOPE_ENDPOINT:https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions}
+      endpoint: ${DASHSCOPE_BASE_URL:${DASHSCOPE_ENDPOINT:https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions}}

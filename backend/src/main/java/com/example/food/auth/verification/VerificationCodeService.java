@@ -98,6 +98,18 @@ public class VerificationCodeService {
     }
 
     private void cleanupFailedIssue(Long verificationCodeId, RuntimeException originalException) {
+        if (smsCodeSender.supportsRemoteVerification()) {
+            try {
+                transactionTemplate.executeWithoutResult(status ->
+                        mapper.update(null, new UpdateWrapper<PhoneVerificationCode>()
+                                .eq("id", verificationCodeId)
+                                .isNull("consumed_at")
+                                .set("consumed_at", LocalDateTime.now())));
+            } catch (RuntimeException cleanupException) {
+                originalException.addSuppressed(cleanupException);
+            }
+            return;
+        }
         try {
             transactionTemplate.executeWithoutResult(status ->
                     mapper.delete(new QueryWrapper<PhoneVerificationCode>()
@@ -136,7 +148,15 @@ public class VerificationCodeService {
             throw new VerificationCodeException(currentError);
         }
 
-        smsCodeSender.verify(phone, submittedCode);
+        try {
+            smsCodeSender.verify(phone, submittedCode);
+        } catch (VerificationCodeException exception) {
+            String errorMessage = transactionTemplate.execute(status ->
+                    recordFailedAttempt(verificationCode.getId()));
+            throw new VerificationCodeException(errorMessage == null
+                    ? "Verification code invalid"
+                    : errorMessage);
+        }
         int updatedRows = transactionTemplate.execute(status -> mapper.update(null,
                 new UpdateWrapper<PhoneVerificationCode>()
                         .eq("id", verificationCode.getId())

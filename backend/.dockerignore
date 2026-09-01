@@ -1,0 +1,13 @@
+.git
+.gitignore
+.m2
+target
+*.iml
+*.log
+data
+src/main/resources/application-local.yml
+src/main/resources/application-local.*.yml
+.env
+.env.*
+!.env.example
+Dockerfile*

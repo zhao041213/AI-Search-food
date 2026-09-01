@@ -121,6 +121,8 @@ public class SmsProperties {
         private String templateCode = "";
         private String endpoint = "dypnsapi.aliyuncs.com";
         private String schemeName = "";
+        private Duration connectTimeout = Duration.ofSeconds(5);
+        private Duration readTimeout = Duration.ofSeconds(10);
 
         public String getAccessKeyId() {
             return accessKeyId;
@@ -168,6 +170,22 @@ public class SmsProperties {
 
         public void setSchemeName(String schemeName) {
             this.schemeName = schemeName;
+        }
+
+        public Duration getConnectTimeout() {
+            return connectTimeout;
+        }
+
+        public void setConnectTimeout(Duration connectTimeout) {
+            this.connectTimeout = connectTimeout;
+        }
+
+        public Duration getReadTimeout() {
+            return readTimeout;
+        }
+
+        public void setReadTimeout(Duration readTimeout) {
+            this.readTimeout = readTimeout;
         }
     }
 }
