@@ -163,6 +163,13 @@ docker compose up -d --build
 docker compose ps
 ```
 
+配置完成后的日常启动：
+
+```powershell
+docker compose up -d
+docker compose ps
+```
+
 前端默认入口为 `http://localhost`。端口冲突时，在 `.env` 中设置 `FRONTEND_PORT=8080` 后访问 `http://localhost:8080`。前端容器通过 Nginx 将 `/api/*` 转发到后端，后端和 MySQL 默认不会绑定到宿主机端口。
 
 查看日志：
@@ -173,13 +180,23 @@ docker compose logs -f frontend
 docker compose logs -f mysql
 ```
 
-停止和再次启动：
+临时停止和再次启动（保留容器和数据库数据）：
 
 ```powershell
 docker compose stop
 docker compose start
+```
+
+关闭本项目并移除容器（保留数据库数据卷）：
+
+```powershell
 docker compose down
-docker compose up -d
+```
+
+仅需重启服务时：
+
+```powershell
+docker compose restart
 ```
 
 普通 `docker compose down` 会保留 `mysql_data` 和 `review_uploads` 数据卷；只有明确需要清空数据时才执行危险命令：
