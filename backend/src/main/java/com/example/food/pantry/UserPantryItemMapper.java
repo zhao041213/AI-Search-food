@@ -52,4 +52,17 @@ public interface UserPantryItemMapper extends BaseMapper<UserPantryItem> {
             @Param("itemId") Long itemId,
             @Param("quantity") java.math.BigDecimal quantity
     );
+
+    @Select("""
+            SELECT * FROM user_pantry_items
+            WHERE user_id = #{userId}
+              AND quantity IS NOT NULL AND quantity > 0
+            ORDER BY CASE WHEN expire_date IS NULL THEN 1 ELSE 0 END, expire_date ASC, id ASC
+            FOR UPDATE
+    """)
+    /** Locks all positive batches for the user; the service applies alias normalization before allocation. */
+    List<UserPantryItem> findAvailableForUpdate(@Param("userId") Long userId, @Param("ingredientName") String ingredientName);
+
+    @Select("SELECT * FROM user_pantry_items WHERE id = #{id} AND user_id = #{userId} FOR UPDATE")
+    UserPantryItem findOwnedForUpdate(@Param("userId") Long userId, @Param("id") Long id);
 }
