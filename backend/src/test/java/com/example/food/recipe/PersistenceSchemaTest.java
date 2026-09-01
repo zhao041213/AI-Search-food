@@ -78,6 +78,20 @@ class PersistenceSchemaTest {
     }
 
     @Test
+    void recommendationFeedbackTableAndSearchResultSnapshotsAreCreatedByFlyway() {
+        assertThat(columnExists("search_logs", "result_title")).isTrue();
+        assertThat(columnExists("search_logs", "result_ingredients")).isTrue();
+        assertThat(tableExists("recommendation_feedbacks")).isTrue();
+        assertThat(columnExists("recommendation_feedbacks", "user_id")).isTrue();
+        assertThat(columnExists("recommendation_feedbacks", "search_log_id")).isTrue();
+        assertThat(columnExists("recommendation_feedbacks", "reaction")).isTrue();
+        assertThat(columnExists("recommendation_feedbacks", "cooked")).isTrue();
+        assertThat(columnExists("recommendation_feedbacks", "reacted_at")).isTrue();
+        assertThat(columnExists("recommendation_feedbacks", "cooked_at")).isTrue();
+        assertThat(indexExists("idx_recommendation_feedback_user_updated")).isTrue();
+    }
+
+    @Test
     void dietPreferenceIsDeletedWithItsUser() {
         jdbcTemplate.update("""
                 INSERT INTO users (phone, nickname)
@@ -129,6 +143,36 @@ class PersistenceSchemaTest {
                 userId
         );
         assertThat(count).isZero();
+    }
+
+    @Test
+    void recommendationFeedbackIsDeletedWithItsUserAndSearchLog() {
+        jdbcTemplate.update("INSERT INTO users (phone, nickname) VALUES (?, ?)", "13800138011", "feedback-cascade-test");
+        Long userId = jdbcTemplate.queryForObject(
+                "SELECT id FROM users WHERE phone = ?", Long.class, "13800138011");
+        jdbcTemplate.update(
+                "INSERT INTO search_logs (user_id, input_type, query_text) VALUES (?, 'text', ?)",
+                userId, "番茄"
+        );
+        Long searchLogId = jdbcTemplate.queryForObject(
+                "SELECT id FROM search_logs WHERE user_id = ? AND query_text = ?",
+                Long.class, userId, "番茄");
+        jdbcTemplate.update(
+                "INSERT INTO recommendation_feedbacks (user_id, search_log_id, reaction, cooked) VALUES (?, ?, 'LIKE', 1)",
+                userId, searchLogId
+        );
+
+        jdbcTemplate.update("DELETE FROM search_logs WHERE id = ?", searchLogId);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM recommendation_feedbacks WHERE search_log_id = ?",
+                Integer.class, searchLogId
+        )).isZero();
+
+        jdbcTemplate.update("DELETE FROM users WHERE id = ?", userId);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM recommendation_feedbacks WHERE user_id = ?",
+                Integer.class, userId
+        )).isZero();
     }
 
     @Test

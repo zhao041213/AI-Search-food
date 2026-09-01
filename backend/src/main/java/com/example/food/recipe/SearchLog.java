@@ -16,6 +16,8 @@ public class SearchLog {
     private String queryText;
     private String inputType;
     private String recognizedIngredients;
+    private String resultTitle;
+    private String resultIngredients;
     private String aiModel;
     private String mealType;
     private String goal;
@@ -67,6 +69,22 @@ public class SearchLog {
 
     public void setRecognizedIngredients(String recognizedIngredients) {
         this.recognizedIngredients = recognizedIngredients;
+    }
+
+    public String getResultTitle() {
+        return resultTitle;
+    }
+
+    public void setResultTitle(String resultTitle) {
+        this.resultTitle = resultTitle;
+    }
+
+    public String getResultIngredients() {
+        return resultIngredients;
+    }
+
+    public void setResultIngredients(String resultIngredients) {
+        this.resultIngredients = resultIngredients;
     }
 
     public String getAiModel() {

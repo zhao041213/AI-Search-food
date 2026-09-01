@@ -134,6 +134,14 @@
               </span>
             </div>
 
+            <RecommendationFeedbackButtons
+              :reaction="feedbackReaction"
+              :cooked="feedbackCooked"
+              :loading="feedbackLoading"
+              :disabled="!selected.searchLogId"
+              @toggle-reaction="toggleRecommendationReaction"
+            />
+
             <NutritionEstimateCard :nutrition="selected.recipe.nutritionEstimate" />
 
             <div class="recipe-pages">
@@ -243,6 +251,7 @@
     :recipe="selected.recipe"
     :storage-key="cookingStorageKey"
     :recipe-id="selected.id"
+    :search-log-id="selected.searchLogId"
   />
   <StockInDialog
     v-model="stockInDialogVisible"
@@ -273,7 +282,14 @@ import {
   Trash2,
   Video
 } from 'lucide-vue-next'
-import { deleteSavedRecipe, getSavedRecipe, getSavedRecipes } from '../api/recipes'
+import {
+  clearRecommendationReaction,
+  deleteSavedRecipe,
+  getRecommendationFeedback,
+  getSavedRecipe,
+  getSavedRecipes,
+  setRecommendationReaction
+} from '../api/recipes'
 import { getPantryItems, stockInPantry } from '../api/pantry'
 import { getShoppingItemChecks, saveShoppingItemCheck } from '../api/shoppingChecks'
 import CookingModeDialog from '../components/CookingModeDialog.vue'
@@ -281,6 +297,8 @@ import FinishedDishReviewDialog from '../components/FinishedDishReviewDialog.vue
 import ShoppingChecklistTable from '../components/ShoppingChecklistTable.vue'
 import StockInDialog from '../components/StockInDialog.vue'
 import NutritionEstimateCard from '../components/NutritionEstimateCard.vue'
+import RecommendationFeedbackButtons from '../components/RecommendationFeedbackButtons.vue'
+import { useAuthStore } from '../stores/auth'
 import {
   buildPurchaseLinks,
   buildBilibiliSearchLink,
@@ -291,6 +309,10 @@ import {
   parseIngredientNames,
   shoppingChecklistKey
 } from '../utils/recipeEnhancements'
+import {
+  nextRecommendationReaction,
+  normalizeRecommendationFeedback
+} from '../utils/recommendationFeedback'
 
 const recipes = ref([])
 const selected = ref(null)
@@ -312,6 +334,10 @@ const shoppingCheckSavingKey = ref('')
 const stockInKey = ref('')
 const stockInDialogVisible = ref(false)
 const stockInItem = ref(null)
+const feedbackReaction = ref(null)
+const feedbackCooked = ref(false)
+const feedbackLoading = ref(false)
+const auth = useAuthStore()
 let listRequestId = 0
 let detailRequestId = 0
 
@@ -385,6 +411,7 @@ async function loadRecipes(preferredId = null) {
       detailRequestId += 1
       detailLoading.value = false
       selected.value = null
+      resetRecommendationFeedback()
       return
     }
 
@@ -419,7 +446,9 @@ async function openRecipe(id) {
       return
     }
     selected.value = response.data.data
+    resetRecommendationFeedback()
     activePage.value = recipePages.value[0]?.key || 'ingredients'
+    await loadRecommendationFeedback(selected.value?.searchLogId)
     await loadShoppingChecks()
   } catch (error) {
     if (requestId === detailRequestId) {
@@ -666,6 +695,74 @@ function openFinishedDishReview() {
     return
   }
   finishedDishReviewVisible.value = true
+}
+
+function resetRecommendationFeedback() {
+  feedbackReaction.value = null
+  feedbackCooked.value = false
+  feedbackLoading.value = false
+}
+
+async function loadRecommendationFeedback(searchLogId) {
+  if (!searchLogId) {
+    resetRecommendationFeedback()
+    return
+  }
+  const token = auth.token
+  try {
+    const response = await getRecommendationFeedback(searchLogId)
+    if (auth.token !== token || selected.value?.searchLogId !== searchLogId) {
+      return
+    }
+    const feedback = normalizeRecommendationFeedback(response.data.data)
+    feedbackReaction.value = feedback.reaction
+    feedbackCooked.value = feedback.cooked
+  } catch (error) {
+    if (auth.token === token && selected.value?.searchLogId === searchLogId) {
+      resetRecommendationFeedback()
+      if (error?.response?.status !== 404) {
+        ElMessage.warning(getFeedbackErrorMessage(error))
+      }
+    }
+  }
+}
+
+async function toggleRecommendationReaction(reaction) {
+  const searchLogId = selected.value?.searchLogId
+  if (!searchLogId || feedbackLoading.value) {
+    return
+  }
+  const previousReaction = feedbackReaction.value
+  feedbackLoading.value = true
+  try {
+    const nextReaction = nextRecommendationReaction(previousReaction, reaction)
+    const response = nextReaction === null
+      ? await clearRecommendationReaction(searchLogId)
+      : await setRecommendationReaction(searchLogId, reaction)
+    const feedback = normalizeRecommendationFeedback(response.data.data)
+    feedbackReaction.value = feedback.reaction
+    feedbackCooked.value = feedback.cooked
+    ElMessage.success(feedbackReaction.value ? '推荐偏好已记录' : '推荐偏好已取消')
+  } catch (error) {
+    feedbackReaction.value = previousReaction
+    ElMessage.error(getFeedbackErrorMessage(error))
+  } finally {
+    feedbackLoading.value = false
+  }
+}
+
+function getFeedbackErrorMessage(error) {
+  const status = error?.response?.status
+  if (status === 401) {
+    return '登录状态已失效，请重新登录后保存推荐偏好'
+  }
+  if (status === 403) {
+    return '当前账号没有操作该推荐记录的权限'
+  }
+  if (status === 404) {
+    return '推荐记录不存在或已过期'
+  }
+  return error?.response?.data?.message || '推荐反馈保存失败，请稍后重试'
 }
 
 function getErrorMessage(error) {

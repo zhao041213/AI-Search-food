@@ -4,6 +4,7 @@ import com.example.food.ai.qwen.QwenRecipeClient;
 import com.example.food.ai.recipe.dto.RecipeGenerateRequest;
 import com.example.food.ai.recipe.dto.RecipeGenerateResponse;
 import com.example.food.pantry.UserPantryService;
+import com.example.food.recipe.RecommendationFeedbackService;
 import com.example.food.recipe.SearchLogService;
 import com.example.food.security.AppRole;
 import com.example.food.security.AuthPrincipal;
@@ -40,6 +41,9 @@ class RecipeRecommendationServiceTest {
 
     @Mock
     private UserHealthProfileService userHealthProfileService;
+
+    @Mock
+    private RecommendationFeedbackService recommendationFeedbackService;
 
     @InjectMocks
     private RecipeRecommendationService recipeRecommendationService;
@@ -172,6 +176,44 @@ class RecipeRecommendationServiceTest {
                 .contains("不得输出疾病诊断、治疗方案、处方")
                 .doesNotContain("化验指标解读：");
         verify(userHealthProfileService).getRecommendationContext(7L);
+    }
+
+    @Test
+    void generationPromptIncludesRecentRecommendationFeedback() {
+        RecipeGenerateRequest request = new RecipeGenerateRequest("番茄", "dinner", "balanced", "text");
+        AuthPrincipal principal = new AuthPrincipal(7L, "13800138000", AppRole.USER);
+        when(recommendationFeedbackService.context(7L)).thenReturn(
+                new RecommendationFeedbackService.FeedbackContext(
+                        List.of("番茄炒蛋", "番茄"),
+                        List.of("香菜拌豆腐", "香菜"),
+                        List.of("土豆炖牛肉")
+                )
+        );
+        when(qwenRecipeClient.generateRecipe(anyString())).thenReturn(recipeResponse());
+
+        recipeRecommendationService.generate(request, principal, null);
+
+        ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(qwenRecipeClient).generateRecipe(promptCaptor.capture());
+        assertThat(promptCaptor.getValue())
+                .contains("用户近期推荐反馈")
+                .contains("用户喜欢的菜名或食材（可优先考虑）：番茄炒蛋、番茄")
+                .contains("用户不喜欢的菜名或食材（尽量避免重复，但本次明确输入优先）：香菜拌豆腐、香菜")
+                .contains("用户近期已做过的菜名或食材（优先提供不同组合）：土豆炖牛肉");
+    }
+
+    @Test
+    void feedbackReadFailureFallsBackToOriginalPrompt() {
+        RecipeGenerateRequest request = new RecipeGenerateRequest("番茄", "dinner", "balanced", "text");
+        AuthPrincipal principal = new AuthPrincipal(7L, "13800138000", AppRole.USER);
+        when(recommendationFeedbackService.context(7L)).thenThrow(new IllegalStateException("feedback unavailable"));
+        when(qwenRecipeClient.generateRecipe(anyString())).thenReturn(recipeResponse());
+
+        recipeRecommendationService.generate(request, principal, null);
+
+        ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(qwenRecipeClient).generateRecipe(promptCaptor.capture());
+        assertThat(promptCaptor.getValue()).doesNotContain("用户近期推荐反馈");
     }
 
     @Test

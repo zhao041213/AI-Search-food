@@ -60,6 +60,8 @@ public class SearchLogService {
         searchLog.setRecognizedIngredients(toJson(ingredients.stream()
                 .map(IngredientNormalizer.NormalizedIngredient::originalName)
                 .toList()));
+        searchLog.setResultTitle(limitText(response.title(), 128));
+        searchLog.setResultIngredients(toJson(resultIngredients(response)));
         searchLog.setAiModel(modelLabel(response));
         searchLog.setMealType(normalize(request.mealType()));
         searchLog.setGoal(resolveGoal(request));
@@ -136,6 +138,33 @@ public class SearchLogService {
             return null;
         }
         return normalized.length() <= 64 ? normalized : normalized.substring(0, 64);
+    }
+
+    private List<String> resultIngredients(RecipeGenerateResponse response) {
+        if (response == null || response.ingredients() == null) {
+            return List.of();
+        }
+        return response.ingredients().stream()
+                .map(RecipeGenerateResponse.Ingredient::name)
+                .filter(this::hasText)
+                .flatMap(value -> ingredientNormalizer.normalizeDistinct(value).stream())
+                .map(IngredientNormalizer.NormalizedIngredient::canonicalName)
+                .map(value -> limitText(value, 64))
+                .distinct()
+                .limit(30)
+                .toList();
+    }
+
+    private String limitText(String value, int maxLength) {
+        if (!hasText(value)) {
+            return null;
+        }
+        String normalized = value.trim();
+        return normalized.length() <= maxLength ? normalized : normalized.substring(0, maxLength);
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
     private String normalize(String value) {

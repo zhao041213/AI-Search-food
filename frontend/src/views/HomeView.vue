@@ -296,6 +296,14 @@
                 </div>
               </div>
 
+              <RecommendationFeedbackButtons
+                :reaction="feedbackReaction"
+                :cooked="feedbackCooked"
+                :loading="feedbackLoading"
+                :disabled="!recipe.searchLogId"
+                @toggle-reaction="toggleRecommendationReaction"
+              />
+
               <NutritionEstimateCard :nutrition="recipe.nutritionEstimate" />
 
               <div class="recipe-pages" aria-label="菜谱详情分页">
@@ -461,6 +469,7 @@
     :recipe="recipe"
     :storage-key="cookingStorageKey"
     :recipe-id="savedRecipeId"
+    :search-log-id="recipe?.searchLogId"
   />
   <StockInDialog
     v-model="stockInDialogVisible"
@@ -501,7 +510,14 @@ import {
   Video
 } from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
-import { generateRecipe, recognizeIngredients, saveRecipe } from '../api/recipes'
+import {
+  clearRecommendationReaction,
+  generateRecipe,
+  getRecommendationFeedback,
+  recognizeIngredients,
+  saveRecipe,
+  setRecommendationReaction
+} from '../api/recipes'
 import { getRecentSearches } from '../api/searchHistory'
 import { getDietPreference, saveDietPreference } from '../api/userPreferences'
 import { getPantryExpiryAlerts, getPantryItems, stockInPantry } from '../api/pantry'
@@ -513,6 +529,7 @@ import FinishedDishReviewDialog from '../components/FinishedDishReviewDialog.vue
 import RecentSearchPopover from '../components/RecentSearchPopover.vue'
 import ShoppingChecklistTable from '../components/ShoppingChecklistTable.vue'
 import NutritionEstimateCard from '../components/NutritionEstimateCard.vue'
+import RecommendationFeedbackButtons from '../components/RecommendationFeedbackButtons.vue'
 import StockInDialog from '../components/StockInDialog.vue'
 import { useAuthStore } from '../stores/auth'
 import {
@@ -522,6 +539,10 @@ import {
   resolveGoalWithPreference,
   toSearchForm
 } from '../utils/personalization'
+import {
+  nextRecommendationReaction,
+  normalizeRecommendationFeedback
+} from '../utils/recommendationFeedback'
 import {
   buildPurchaseLinks,
   buildBilibiliSearchLink,
@@ -551,6 +572,9 @@ const regenerating = ref(false)
 const recognizing = ref(false)
 const savingRecipe = ref(false)
 const savedRecipeId = ref(null)
+const feedbackReaction = ref(null)
+const feedbackCooked = ref(false)
+const feedbackLoading = ref(false)
 const currentRecipePage = ref(0)
 const cookingModeVisible = ref(false)
 const finishedDishReviewVisible = ref(false)
@@ -763,6 +787,7 @@ async function runSearch() {
   lastSearch.value = request
   recipe.value = null
   savedRecipeId.value = null
+  resetRecommendationFeedback()
   currentRecipePage.value = 0
   shoppingCheckOverrides.value = {}
   generating.value = true
@@ -771,6 +796,7 @@ async function runSearch() {
     const response = await generateRecipe(request)
     recipe.value = response.data.data
     currentRecipePage.value = 0
+    await loadRecommendationFeedback(recipe.value?.searchLogId)
     recentSearchLoaded.value = false
     await loadShoppingChecks()
     ElMessage.success('菜谱推荐已生成')
@@ -794,6 +820,7 @@ function resetSearch() {
   lastSearch.value = null
   recipe.value = null
   savedRecipeId.value = null
+  resetRecommendationFeedback()
   currentRecipePage.value = 0
   shoppingCheckOverrides.value = {}
   window.sessionStorage.removeItem(PENDING_RECIPE_KEY)
@@ -881,7 +908,9 @@ async function regenerateCurrentRecipe(preference) {
     }
     recipe.value = generatedRecipe
     savedRecipeId.value = null
+    resetRecommendationFeedback()
     currentRecipePage.value = 0
+    await loadRecommendationFeedback(recipe.value?.searchLogId)
     recentSearchLoaded.value = false
     await loadShoppingChecks()
     window.sessionStorage.removeItem(PENDING_RECIPE_KEY)
@@ -913,6 +942,7 @@ function restorePendingRecipe() {
       goalManuallySelected.value = true
       searchMode.value = draft.lastSearch.searchMode || 'text'
       currentRecipePage.value = 0
+      loadRecommendationFeedback(recipe.value?.searchLogId)
       loadShoppingChecks()
       ElMessage.info('已恢复未保存的菜谱，请点击保存')
     }
@@ -1033,6 +1063,7 @@ function applyRecentSearch(item) {
 }
 
 function clearPersonalizationState() {
+  resetRecommendationFeedback()
   dietPreference.value = normalizeDietPreference()
   preferenceDialogVisible.value = false
   preferenceLoaded.value = false
@@ -1045,6 +1076,84 @@ function clearPersonalizationState() {
   if (!goalManuallySelected.value) {
     goal.value = 'balanced'
   }
+}
+
+function resetRecommendationFeedback() {
+  feedbackReaction.value = null
+  feedbackCooked.value = false
+  feedbackLoading.value = false
+}
+
+async function loadRecommendationFeedback(searchLogId) {
+  if (!auth.isUser || !searchLogId) {
+    resetRecommendationFeedback()
+    return
+  }
+  const token = auth.token
+  try {
+    const response = await getRecommendationFeedback(searchLogId)
+    if (auth.token !== token || recipe.value?.searchLogId !== searchLogId) {
+      return
+    }
+    const feedback = normalizeRecommendationFeedback(response.data.data)
+    feedbackReaction.value = feedback.reaction
+    feedbackCooked.value = feedback.cooked
+  } catch (error) {
+    if (auth.token === token && recipe.value?.searchLogId === searchLogId) {
+      resetRecommendationFeedback()
+      if (error?.response?.status !== 404) {
+        ElMessage.warning(getFeedbackErrorMessage(error))
+      }
+    }
+  }
+}
+
+async function toggleRecommendationReaction(reaction) {
+  const searchLogId = recipe.value?.searchLogId
+  if (!searchLogId || feedbackLoading.value) {
+    return
+  }
+  if (!auth.isUser) {
+    window.sessionStorage.setItem(PENDING_RECIPE_KEY, JSON.stringify({
+      recipe: recipe.value,
+      lastSearch: lastSearch.value
+    }))
+    ElMessage.warning('登录后可保存推荐偏好')
+    router.push({ name: 'login', query: { redirect: '/' } })
+    return
+  }
+
+  const previousReaction = feedbackReaction.value
+  feedbackLoading.value = true
+  try {
+    const nextReaction = nextRecommendationReaction(previousReaction, reaction)
+    const response = nextReaction === null
+      ? await clearRecommendationReaction(searchLogId)
+      : await setRecommendationReaction(searchLogId, reaction)
+    const feedback = normalizeRecommendationFeedback(response.data.data)
+    feedbackReaction.value = feedback.reaction
+    feedbackCooked.value = feedback.cooked
+    ElMessage.success(feedbackReaction.value ? '推荐偏好已记录' : '推荐偏好已取消')
+  } catch (error) {
+    feedbackReaction.value = previousReaction
+    ElMessage.error(getFeedbackErrorMessage(error))
+  } finally {
+    feedbackLoading.value = false
+  }
+}
+
+function getFeedbackErrorMessage(error) {
+  const status = error?.response?.status
+  if (status === 401) {
+    return '登录状态已失效，请重新登录后保存推荐偏好'
+  }
+  if (status === 403) {
+    return '当前账号没有操作该推荐记录的权限'
+  }
+  if (status === 404) {
+    return '推荐记录不存在或已过期'
+  }
+  return error?.response?.data?.message || '推荐反馈保存失败，请稍后重试'
 }
 
 function clearPantryState() {

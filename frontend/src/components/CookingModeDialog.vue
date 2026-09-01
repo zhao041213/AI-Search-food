@@ -198,6 +198,8 @@ import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { Check, ChefHat, ChevronLeft, ChevronRight, Clock, Pause, Play, RotateCcw } from 'lucide-vue-next'
 import { ElMessage } from 'element-plus'
 import { getCookingPreview, submitCookingConsumption } from '../api/pantry'
+import { markRecommendationCooked } from '../api/recipes'
+import { useAuthStore } from '../stores/auth'
 import {
   createCookingSession,
   formatCookingDuration,
@@ -213,7 +215,8 @@ const props = defineProps({
   modelValue: { type: Boolean, default: false },
   recipe: { type: Object, default: () => ({}) },
   storageKey: { type: String, default: '' },
-  recipeId: { type: [Number, String], default: null }
+  recipeId: { type: [Number, String], default: null },
+  searchLogId: { type: [Number, String], default: null }
 })
 
 const emit = defineEmits(['update:modelValue', 'finished'])
@@ -230,6 +233,7 @@ const inventoryLoading = ref(false)
 const finishConfirmVisible = ref(false)
 const consuming = ref(false)
 const actualServings = ref(1)
+const auth = useAuthStore()
 
 const recipeTitle = computed(() => String(props.recipe?.title || 'AI 智能菜谱').trim() || 'AI 智能菜谱')
 const currentStep = computed(() => steps.value[session.currentStepIndex] || null)
@@ -359,7 +363,7 @@ function finishCooking() {
     loadInventoryPreview()
     return
   }
-  completeCooking('LOCAL_ONLY')
+  void completeCooking('LOCAL_ONLY')
 }
 
 function validServings(value) {
@@ -377,7 +381,7 @@ function finishAsCompleted() {
 
 function finishWithoutConsumption() {
   finishConfirmVisible.value = false
-  completeCooking('MARK_ONLY')
+  void completeCooking('MARK_ONLY')
 }
 
 async function finishAndConsume() {
@@ -402,7 +406,7 @@ async function finishAndConsume() {
       items
     })
     finishConfirmVisible.value = false
-    completeCooking('COOKING_CONSUME')
+    await completeCooking('COOKING_CONSUME')
     ElMessage.success('烹饪完成，已扣减选中的库存')
   } catch (error) {
     ElMessage.error(error?.response?.data?.message || '库存扣减失败，请刷新后重试')
@@ -411,12 +415,24 @@ async function finishAndConsume() {
   }
 }
 
-function completeCooking(mode) {
+async function completeCooking(mode) {
   session.currentStepIndex = steps.value.length - 1
   session.finished = true
   stopTimer()
   persistSession()
+  await recordRecommendationCooked()
   emit('finished', { recipe: props.recipe, recipeId: props.recipeId, storageKey: props.storageKey, mode, currentStepIndex: session.currentStepIndex, remainingSeconds: session.remainingSeconds })
+}
+
+async function recordRecommendationCooked() {
+  if (!auth.isUser || !props.searchLogId) {
+    return
+  }
+  try {
+    await markRecommendationCooked(props.searchLogId)
+  } catch {
+    ElMessage.warning('烹饪已完成，但“已做过”反馈保存失败，请稍后重试')
+  }
 }
 
 function createClientKey() {
