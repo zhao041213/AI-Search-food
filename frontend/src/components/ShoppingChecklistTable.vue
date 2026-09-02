@@ -1,14 +1,14 @@
 <template>
   <section class="shopping-checklist" aria-label="采购清单">
-    <div class="shopping-summary" role="status" aria-atomic="true">
-      <span>采购清单</span>
+    <div v-if="!compact" class="shopping-summary" role="status" aria-atomic="true">
+      <span v-if="!compact">采购清单</span>
       <span v-if="showInventory">已同步库存状态</span>
     </div>
 
     <el-table class="shopping-table" :data="items" size="large">
-      <el-table-column prop="name" label="食材" min-width="120" />
-      <el-table-column prop="amount" label="用量" min-width="90" />
-      <el-table-column label="采购状态" min-width="126">
+      <el-table-column prop="name" label="食材" min-width="100" />
+      <el-table-column prop="amount" label="用量" min-width="78" />
+      <el-table-column label="采购状态" min-width="110">
         <template #default="scope">
           <el-dropdown trigger="click" :disabled="isSaving(scope.row)" @command="handleStatusSelect(scope.row, $event)">
             <button class="status-button" type="button" :disabled="isSaving(scope.row)" aria-haspopup="menu" :aria-label="`切换${scope.row.name}的采购状态`">
@@ -27,7 +27,7 @@
           </el-dropdown>
         </template>
       </el-table-column>
-      <el-table-column label="购买链接" min-width="150">
+      <el-table-column label="购买链接" min-width="126">
         <template #default="scope">
           <div class="purchase-links">
             <a v-if="scope.row.purchaseLinks?.dingdong" :href="scope.row.purchaseLinks.dingdong" target="_blank" rel="noopener noreferrer" @click="emit('purchase-search', scope.row.name)">叮咚买菜 <ExternalLink :size="13" aria-hidden="true" /></a>
@@ -80,7 +80,8 @@ const props = defineProps({
   savingKey: { type: String, default: '' },
   sourceType: { type: String, default: '' },
   sourceId: { type: [Number, String], default: null },
-  stockInKey: { type: String, default: '' }
+  stockInKey: { type: String, default: '' },
+  compact: { type: Boolean, default: false }
 })
 const emit = defineEmits(['status-change', 'purchase-search', 'stock-in'])
 const showInventory = computed(() => Boolean(props.sourceType && props.sourceId))
