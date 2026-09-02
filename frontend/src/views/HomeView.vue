@@ -1,5 +1,12 @@
 <template>
-  <main class="home-page">
+  <main
+    class="home-page"
+    :class="{
+      'is-result-expanded': hasSearch,
+      'is-result-priority': resultPriorityMode,
+      'is-detail-view': detailViewOpen
+    }"
+  >
     <section class="command-shell" aria-labelledby="home-title">
       <header class="workspace-heading">
         <div>
@@ -22,8 +29,8 @@
         <RouterLink class="pantry-expiry-link" to="/pantry">查看库存</RouterLink>
       </div>
 
-      <div class="command-grid">
-        <section class="search-panel" aria-label="菜谱搜索表单">
+      <div class="command-grid" :class="{ 'result-priority-grid': resultPriorityMode }">
+        <section v-if="!resultPriorityMode" class="search-panel" aria-label="菜谱搜索表单">
           <div class="panel-title">
             <ScanSearch :size="20" aria-hidden="true" />
             <div>
@@ -194,12 +201,44 @@
           </el-form>
         </section>
 
-        <section class="result-panel" v-loading="generating" aria-label="菜谱搜索结果">
-          <div class="result-header">
-            <div>
-              <p class="eyebrow">菜谱输出窗口</p>
-              <h2>{{ resultTitle }}</h2>
+        <section v-else-if="!detailViewOpen" class="query-summary-bar" aria-label="当前查询条件">
+          <div class="query-summary-copy">
+            <span class="eyebrow">当前查询</span>
+            <strong>{{ cleanIngredients }}</strong>
+            <div class="query-summary-meta">
+              <span>{{ mealTypeLabel }}</span>
+              <span>{{ goalLabel }}</span>
+              <span>{{ searchModeLabel }}</span>
             </div>
+          </div>
+          <div class="query-summary-actions">
+            <el-button plain @click="editSearchConditions">
+              <SlidersHorizontal :size="16" aria-hidden="true" />
+              <span>修改条件</span>
+            </el-button>
+            <el-button
+              type="primary"
+              plain
+              :loading="regenerating"
+              :disabled="generating || !recipe"
+              @click="regenerateCurrentRecipe('simple')"
+            >
+              <RefreshCw :size="16" aria-hidden="true" />
+              <span>重新生成</span>
+            </el-button>
+          </div>
+        </section>
+
+        <section class="result-panel" v-loading="generating" aria-label="菜谱搜索结果">
+          <div v-if="!detailViewOpen" class="result-header">
+              <div>
+                <p class="eyebrow">菜谱输出窗口</p>
+                <h2>{{ resultTitle }}</h2>
+                <p v-if="recipe?.summary" class="result-summary-line">{{ recipe.summary }}</p>
+                <div v-if="recipe?.effects?.length" class="result-header-tags" aria-label="菜谱关键标签">
+                  <span v-for="effect in recipe.effects" :key="effect" class="system-tag">{{ effect }}</span>
+                </div>
+              </div>
             <div class="result-header-actions">
               <el-button
                 v-if="recipe?.steps?.length"
@@ -211,7 +250,7 @@
                 <span>开始烹饪</span>
               </el-button>
               <el-button
-                v-if="recipe"
+                v-if="false && recipe"
                 class="finished-dish-review-button"
                 plain
                 :disabled="generating"
@@ -221,7 +260,7 @@
                 <span>评价成品</span>
               </el-button>
               <el-dropdown
-                v-if="recipe"
+                v-if="false && recipe"
                 trigger="click"
                 :disabled="generating || savingRecipe"
                 @command="regenerateCurrentRecipe"
@@ -260,7 +299,48 @@
                 <Bookmark :size="16" aria-hidden="true" />
                 <span>{{ savedRecipeId ? '已保存' : '保存到我的菜谱' }}</span>
               </el-button>
-              <span class="status-pill">{{ generating ? '生成中' : searchModeLabel }}</span>
+              <el-dropdown
+                v-if="recipe"
+                class="secondary-action-menu"
+                trigger="click"
+                :disabled="generating || savingRecipe"
+                @command="handleSecondaryAction"
+              >
+                <el-button plain size="small" :disabled="generating || savingRecipe">
+                  <ChevronDown :size="15" aria-hidden="true" />
+                  <span>更多操作</span>
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="review">
+                      <Sparkles :size="14" aria-hidden="true" />
+                      <span>评价成品</span>
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+              <span class="status-pill">{{ generating ? '生成中' : '已就绪' }}</span>
+            </div>
+          </div>
+
+          <div v-if="detailViewOpen" class="recipe-detail-view-header">
+            <button class="detail-back-button" type="button" @click="closeDetailView">
+              <ArrowLeft :size="18" aria-hidden="true" />
+              <span>返回菜谱结果</span>
+            </button>
+            <div class="detail-view-title">
+              <p class="eyebrow">菜谱详情</p>
+              <h2>{{ detailSectionLabel }} · {{ recipe?.title || '菜谱' }}</h2>
+            </div>
+            <div class="detail-view-actions">
+              <el-button
+                v-if="detailSection === 'steps' && recipe?.steps?.length"
+                type="primary"
+                @click="openCookingMode"
+              >
+                <Play :size="16" aria-hidden="true" />
+                <span>开始烹饪</span>
+              </el-button>
             </div>
           </div>
 
@@ -271,7 +351,7 @@
           </div>
 
           <div v-else class="result-content">
-            <dl class="brief-grid">
+            <dl v-if="false" class="brief-grid">
               <div>
                 <dt>食材</dt>
                 <dd>{{ cleanIngredients }}</dd>
@@ -287,7 +367,7 @@
             </dl>
 
             <div v-if="recipe" class="recipe-detail">
-              <div class="recipe-summary-block">
+              <div v-if="false" class="recipe-summary-block">
                 <p>{{ recipe.summary }}</p>
                 <div v-if="recipe.effects?.length" class="tag-row" aria-label="菜谱功效">
                   <span v-for="effect in recipe.effects" :key="effect" class="system-tag">
@@ -297,6 +377,7 @@
               </div>
 
               <RecommendationFeedbackButtons
+                v-if="!detailViewOpen"
                 :reaction="feedbackReaction"
                 :cooked="feedbackCooked"
                 :loading="feedbackLoading"
@@ -304,9 +385,240 @@
                 @toggle-reaction="toggleRecommendationReaction"
               />
 
-              <NutritionEstimateCard :nutrition="recipe.nutritionEstimate" />
+              <NutritionEstimateCard
+                v-if="!detailViewOpen"
+                :nutrition="recipe.nutritionEstimate"
+              />
 
-              <div class="recipe-pages" aria-label="菜谱详情分页">
+              <nav v-if="false" class="recipe-entry-nav" aria-label="菜谱详情入口">
+                <button
+                  v-for="section in recipeSections"
+                  :key="section.key"
+                  class="recipe-entry-button"
+                  type="button"
+                  :disabled="!canOpenDetail(section.key)"
+                  @click="openDetail(section.key, $event)"
+                >
+                  <span class="recipe-entry-index">{{ section.index }}</span>
+                  <span class="recipe-entry-copy">
+                    <strong>{{ section.label }}</strong>
+                    <small>{{ detailEntryDescription(section.key) }}</small>
+                  </span>
+                  <ChevronRight :size="17" aria-hidden="true" />
+                </button>
+              </nav>
+
+              <div v-if="detailViewOpen" class="recipe-sections" aria-label="菜谱详情章节">
+                <nav v-if="false" class="recipe-section-nav" role="tablist" aria-label="菜谱章节导航">
+                  <button
+                    v-for="section in recipeSections"
+                    :key="section.key"
+                    class="recipe-section-link"
+                    :class="{ active: detailSection === section.key }"
+                    type="button"
+                    :id="`recipe-tab-${section.key}`"
+                    :aria-selected="detailSection === section.key"
+                    :aria-controls="`recipe-section-${section.key}`"
+                    role="tab"
+                    @click="selectDetailSection(section.key)"
+                    @keydown.left.prevent="moveDetailTab(-1)"
+                    @keydown.right.prevent="moveDetailTab(1)"
+                  >
+                    <span>{{ section.index }}</span>
+                    {{ section.label }}
+                  </button>
+                </nav>
+
+                <section v-if="detailSection === 'overview'" id="recipe-section-overview" class="recipe-section" aria-labelledby="recipe-overview-title" role="tabpanel">
+                  <div class="section-heading">
+                    <div>
+                      <span class="section-index">01</span>
+                      <h3 id="recipe-overview-title">概览</h3>
+                    </div>
+                    <span>推荐摘要与智能说明</span>
+                  </div>
+                  <div class="overview-card">
+                    <p>{{ recipe.summary || '暂无菜谱简介' }}</p>
+                    <div v-if="recipe.effects?.length" class="tag-row" aria-label="菜谱功效">
+                      <span v-for="effect in recipe.effects" :key="effect" class="system-tag">
+                        {{ effect }}
+                      </span>
+                    </div>
+                  </div>
+                  <div v-if="explanationItems.length" class="explanation-grid">
+                    <article v-for="item in explanationItems" :key="item.key" class="explanation-item">
+                      <component :is="item.icon" :size="18" aria-hidden="true" />
+                      <div>
+                        <h4>{{ item.label }}</h4>
+                        <p>{{ item.content }}</p>
+                      </div>
+                    </article>
+                  </div>
+                  <NutritionEstimateCard :nutrition="recipe.nutritionEstimate" />
+                  <el-empty v-if="!explanationItems.length" description="暂无额外说明" :image-size="56" />
+                </section>
+
+                <section v-if="detailSection === 'ingredients'" id="recipe-section-ingredients" class="recipe-section" aria-labelledby="recipe-ingredients-title" role="tabpanel">
+                  <div class="section-heading">
+                    <div>
+                      <span class="section-index">02</span>
+                      <h3 id="recipe-ingredients-title">准备食材</h3>
+                    </div>
+                    <span>食材、库存与采购</span>
+                  </div>
+                  <div class="section-card-grid">
+                    <article v-if="recipe.ingredients?.length" class="detail-card ingredients-detail-card">
+                      <div class="detail-card-head">
+                        <h4>所需食材</h4>
+                        <span>{{ recipe.ingredients.length }} 项</span>
+                      </div>
+                      <el-table class="ingredients-table" :data="recipe.ingredients" size="large">
+                        <el-table-column prop="name" label="食材" min-width="120" />
+                        <el-table-column prop="amount" label="用量" min-width="120" />
+                      </el-table>
+                      <div class="ingredient-mobile-list">
+                        <div v-for="ingredient in recipe.ingredients" :key="`${ingredient.name}-${ingredient.amount}`" class="ingredient-mobile-row">
+                          <strong>{{ ingredient.name }}</strong>
+                          <span>{{ ingredient.amount }}</span>
+                        </div>
+                      </div>
+                    </article>
+
+                    <article v-if="ingredientAnalysisRows.length" class="detail-card detail-card-wide analysis-detail-card">
+                      <div class="detail-card-head">
+                        <h4>食材分析</h4>
+                        <span>库存状态</span>
+                      </div>
+                      <el-table class="analysis-table" :data="ingredientAnalysisRows" size="large">
+                        <el-table-column prop="name" label="食材" min-width="100" />
+                        <el-table-column prop="amount" label="用量" min-width="88" />
+                        <el-table-column label="状态" min-width="82">
+                          <template #default="scope">
+                            <span class="ingredient-state" :class="scope.row.alreadyOwned ? 'owned' : 'missing'">
+                              {{ scope.row.alreadyOwned ? '已有' : '缺失' }}
+                            </span>
+                          </template>
+                        </el-table-column>
+                        <el-table-column label="替代建议" min-width="160">
+                          <template #default="scope">
+                            {{ scope.row.substitutesText || '暂无替代建议' }}
+                          </template>
+                        </el-table-column>
+                        <el-table-column label="说明" min-width="180">
+                          <template #default="scope">
+                            {{ scope.row.reason || (scope.row.alreadyOwned ? '可直接使用现有食材' : '建议按清单补充') }}
+                          </template>
+                        </el-table-column>
+                      </el-table>
+                      <div class="analysis-mobile-list">
+                        <article v-for="item in ingredientAnalysisRows" :key="`${item.name}-${item.amount}`" class="analysis-mobile-card">
+                          <div class="analysis-mobile-heading">
+                            <strong>{{ item.name }}</strong>
+                            <span>{{ item.amount }}</span>
+                          </div>
+                          <div class="analysis-mobile-meta">
+                            <span class="ingredient-state" :class="item.alreadyOwned ? 'owned' : 'missing'">
+                              {{ item.alreadyOwned ? '已有' : '缺失' }}
+                            </span>
+                            <span>{{ item.reason || (item.alreadyOwned ? '可直接使用现有食材' : '建议按清单补充') }}</span>
+                          </div>
+                          <p v-if="item.substitutesText">替代建议：{{ item.substitutesText }}</p>
+                        </article>
+                      </div>
+                    </article>
+
+                    <article v-if="shoppingList.length" class="detail-card detail-card-wide shopping-detail-card">
+                      <div class="detail-card-head">
+                        <h4>采购清单</h4>
+                        <span>可勾选跟踪</span>
+                      </div>
+                      <ShoppingChecklistTable
+                        :items="shoppingList"
+                        compact
+                        :overrides="shoppingCheckOverrides"
+                        :saving-key="shoppingCheckSavingKey"
+                        source-type="RECIPE"
+                        :source-id="savedRecipeId"
+                        :stock-in-key="stockInKey"
+                        @status-change="toggleShoppingItem"
+                        @purchase-search="preparePlatformSearch"
+                        @stock-in="handleStockIn"
+                      />
+                    </article>
+                  </div>
+                  <el-empty v-if="!recipe.ingredients?.length && !ingredientAnalysisRows.length && !shoppingList.length" description="暂无食材信息" :image-size="56" />
+                </section>
+
+                <section v-if="detailSection === 'steps'" id="recipe-section-steps" class="recipe-section" aria-labelledby="recipe-steps-title" role="tabpanel">
+                  <div class="section-heading">
+                    <div>
+                      <span class="section-index">03</span>
+                      <h3 id="recipe-steps-title">烹饪过程</h3>
+                    </div>
+                    <span>{{ recipe.steps?.length || 0 }} 个步骤</span>
+                  </div>
+                  <ol v-if="recipe.steps?.length" class="full-step-list">
+                    <li v-for="(step, index) in recipe.steps" :key="step.order || `${step.title}-${index}`" class="full-step-item">
+                      <span class="full-step-index">{{ step.order || index + 1 }}</span>
+                      <div class="full-step-copy">
+                        <div class="full-step-head">
+                          <h4>{{ step.title || `步骤 ${step.order || index + 1}` }}</h4>
+                          <span v-if="step.durationMinutes">预计 {{ step.durationMinutes }} 分钟</span>
+                        </div>
+                        <p>{{ step.description || '请按当前步骤完成烹饪。' }}</p>
+                        <p v-if="step.tip || step.note" class="full-step-note">
+                          注意：{{ step.tip || step.note }}
+                        </p>
+                      </div>
+                    </li>
+                  </ol>
+                  <div v-if="false && recipe.tips?.length" class="tips-card">
+                    <div class="detail-card-head">
+                      <h4>烹饪建议</h4>
+                      <span>操作提醒</span>
+                    </div>
+                    <ul class="tip-list">
+                      <li v-for="tip in recipe.tips" :key="tip">{{ tip }}</li>
+                    </ul>
+                  </div>
+                  <el-empty v-if="!recipe.steps?.length" description="暂无可执行的烹饪步骤" :image-size="56" />
+                </section>
+
+                <section v-if="detailSection === 'more'" id="recipe-section-more" class="recipe-section" aria-labelledby="recipe-more-title" role="tabpanel">
+                  <div class="section-heading">
+                    <div>
+                      <span class="section-index">04</span>
+                      <h3 id="recipe-more-title">更多信息</h3>
+                    </div>
+                    <span>相关视频关键词</span>
+                  </div>
+                  <div v-if="recipe.tips?.length" class="tips-card">
+                    <div class="detail-card-head">
+                      <h4>烹饪建议</h4>
+                      <span>操作提醒</span>
+                    </div>
+                    <ul class="tip-list">
+                      <li v-for="tip in recipe.tips" :key="tip">{{ tip }}</li>
+                    </ul>
+                  </div>
+                  <div v-if="videoKeywords.length" class="video-keywords">
+                    <a
+                      v-for="keyword in videoKeywords"
+                      :key="keyword"
+                      :href="buildBilibiliSearchLink(keyword)"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <Video :size="15" aria-hidden="true" />
+                      {{ keyword }}
+                      <ExternalLink :size="13" aria-hidden="true" />
+                    </a>
+                  </div>
+                  <el-empty v-else description="暂无更多辅助信息" :image-size="56" />
+                </section>
+              </div>
+
+              <div v-if="false" class="recipe-pages" aria-label="菜谱详情分页">
                 <div class="page-toolbar">
                   <button
                     class="page-arrow"
@@ -450,6 +762,46 @@
               </el-table>
             </div>
           </div>
+
+          <nav v-if="hasSearch && !detailViewOpen" class="recipe-entry-nav" aria-label="菜谱详情入口">
+            <button
+              v-for="section in recipeSections"
+              :key="section.key"
+              class="recipe-entry-button"
+              type="button"
+              :disabled="!canOpenDetail(section.key)"
+              @click="openDetail(section.key, $event)"
+            >
+              <span class="recipe-entry-index">{{ section.index }}</span>
+              <span class="recipe-entry-copy">
+                <strong>{{ section.label }}</strong>
+                <small>{{ detailEntryDescription(section.key) }}</small>
+              </span>
+              <ChevronRight :size="17" aria-hidden="true" />
+            </button>
+          </nav>
+
+          <nav v-if="detailViewOpen" class="recipe-detail-bottom-nav" role="tablist" aria-label="菜谱详情导航">
+            <button
+              v-for="section in recipeSections"
+              :key="section.key"
+              class="recipe-detail-bottom-link"
+              :class="{ active: detailSection === section.key }"
+              type="button"
+              role="tab"
+              :id="`recipe-detail-tab-${section.key}`"
+              :aria-selected="detailSection === section.key"
+              :aria-current="detailSection === section.key ? 'page' : undefined"
+              :aria-controls="`recipe-section-${section.key}`"
+              :disabled="!canOpenDetail(section.key)"
+              @click="selectDetailSection(section.key)"
+              @keydown.left.prevent="moveDetailTab(-1)"
+              @keydown.right.prevent="moveDetailTab(1)"
+            >
+              <span>{{ section.index }}</span>
+              {{ section.label }}
+            </button>
+          </nav>
         </section>
       </div>
     </section>
@@ -489,6 +841,7 @@
 import { computed, markRaw, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
+  ArrowLeft,
   Camera,
   Bookmark,
   ChefHat,
@@ -576,6 +929,10 @@ const feedbackReaction = ref(null)
 const feedbackCooked = ref(false)
 const feedbackLoading = ref(false)
 const currentRecipePage = ref(0)
+const editingConditions = ref(false)
+const detailViewOpen = ref(false)
+const detailSection = ref('overview')
+const detailTriggerElement = ref(null)
 const cookingModeVisible = ref(false)
 const finishedDishReviewVisible = ref(false)
 const dietPreference = ref(normalizeDietPreference())
@@ -638,6 +995,7 @@ const modeLabels = {
 }
 
 const hasSearch = computed(() => Boolean(lastSearch.value))
+const resultPriorityMode = computed(() => hasSearch.value && !editingConditions.value)
 const showImageUpload = computed(() => searchMode.value === 'image')
 const showCameraCapture = computed(() => searchMode.value === 'camera')
 const cookingStorageKey = computed(() => {
@@ -700,6 +1058,21 @@ const explanationItems = computed(() => {
   ].filter((item) => item.content)
 })
 const videoKeywords = computed(() => filterVideoKeywords(recipe.value?.videoKeywords))
+const recipeSections = [
+  { key: 'overview', index: '01', label: '概览' },
+  { key: 'ingredients', index: '02', label: '准备食材' },
+  { key: 'steps', index: '03', label: '烹饪过程' },
+  { key: 'more', index: '04', label: '更多信息' }
+]
+const detailSectionLabel = computed(() => (
+  recipeSections.find((section) => section.key === detailSection.value)?.label || '菜谱详情'
+))
+const detailDescriptions = {
+  overview: 'AI 解释与营养摘要',
+  ingredients: '食材与采购清单',
+  steps: '完整烹饪步骤',
+  more: '建议与视频关键词'
+}
 const recipePages = computed(() => {
   if (!recipe.value) {
     return []
@@ -723,14 +1096,106 @@ const activeRecipePageIndex = computed(() => {
 })
 const activeRecipePage = computed(() => recipePages.value[activeRecipePageIndex.value])
 
+function detailEntryDescription(sectionKey) {
+  if (generating.value) {
+    return '生成中，完成后可查看'
+  }
+  return detailDescriptions[sectionKey] || '查看菜谱详情'
+}
+
+function canOpenDetail(sectionKey) {
+  return Boolean(recipe.value) && !generating.value
+}
+
+function selectDetailSection(sectionKey) {
+  if (recipeSections.some((section) => section.key === sectionKey) && canOpenDetail(sectionKey)) {
+    detailSection.value = sectionKey
+    if (detailViewOpen.value && window.history.state?.recipeDetail) {
+      window.history.replaceState(
+        { ...(window.history.state || {}), recipeDetailSection: sectionKey },
+        '',
+        `${window.location.pathname}${window.location.search}#recipe-${sectionKey}`
+      )
+    }
+  }
+}
+
+function moveDetailTab(delta) {
+  const currentIndex = recipeSections.findIndex((section) => section.key === detailSection.value)
+  const nextIndex = (currentIndex + delta + recipeSections.length) % recipeSections.length
+  let nextSection = recipeSections[nextIndex]
+  for (let offset = 0; offset < recipeSections.length && !canOpenDetail(nextSection.key); offset += 1) {
+    nextSection = recipeSections[(nextIndex + (delta < 0 ? -offset : offset) + recipeSections.length) % recipeSections.length]
+  }
+  if (!canOpenDetail(nextSection.key)) {
+    return
+  }
+  detailSection.value = nextSection.key
+  window.setTimeout(() => document.getElementById(`recipe-detail-tab-${nextSection.key}`)?.focus(), 0)
+}
+
+function openDetail(sectionKey, event) {
+  if (!canOpenDetail(sectionKey)) {
+    return
+  }
+  detailTriggerElement.value = event?.currentTarget || null
+  detailSection.value = sectionKey
+  detailViewOpen.value = true
+  const hash = `#recipe-${sectionKey}`
+  window.history.pushState(
+    { ...(window.history.state || {}), recipeDetail: true, recipeDetailSection: sectionKey },
+    '',
+    `${window.location.pathname}${window.location.search}${hash}`
+  )
+}
+
+function focusDetailTrigger() {
+  const trigger = detailTriggerElement.value
+  if (trigger?.isConnected) {
+    window.requestAnimationFrame(() => trigger.focus())
+  }
+}
+
+function closeDetailView({ fromHistory = false } = {}) {
+  if (!detailViewOpen.value) {
+    return
+  }
+  detailViewOpen.value = false
+  detailSection.value = 'overview'
+  if (!fromHistory && window.history.state?.recipeDetail) {
+    window.history.back()
+  } else if (window.location.hash.startsWith('#recipe-')) {
+    window.history.replaceState(
+      { ...(window.history.state || {}), recipeDetail: false },
+      '',
+      `${window.location.pathname}${window.location.search}`
+    )
+  }
+  focusDetailTrigger()
+}
+
+function handlePopState() {
+  if (detailViewOpen.value) {
+    closeDetailView({ fromHistory: true })
+  }
+}
+
+function handleSecondaryAction(command) {
+  if (command === 'review') {
+    openFinishedDishReview()
+  }
+}
+
 onBeforeUnmount(() => {
   cameraCaptureVisible.value = false
   cookingModeVisible.value = false
   finishedDishReviewVisible.value = false
+  window.removeEventListener('popstate', handlePopState)
   revokeImagePreview()
 })
 
 onMounted(() => {
+  window.addEventListener('popstate', handlePopState)
   if (!applyRouteIngredient()) {
     restorePendingRecipe()
   }
@@ -746,6 +1211,15 @@ watch(() => [auth.token, auth.role], () => {
   if (auth.isUser) {
     loadDietPreference()
     loadPantryItems()
+  }
+})
+
+watch(recipe, (currentRecipe, previousRecipe) => {
+  if (!currentRecipe) {
+    detailSection.value = 'overview'
+    if (detailViewOpen.value) {
+      closeDetailView({ fromHistory: true })
+    }
   }
 })
 
@@ -784,7 +1258,12 @@ async function runSearch() {
     searchMode: searchMode.value,
     dietPreference: buildRecipeDietPreference(dietPreference.value)
   }
+  if (detailViewOpen.value) {
+    closeDetailView({ fromHistory: true })
+  }
   lastSearch.value = request
+  editingConditions.value = false
+  detailSection.value = 'overview'
   recipe.value = null
   savedRecipeId.value = null
   resetRecommendationFeedback()
@@ -795,6 +1274,7 @@ async function runSearch() {
   try {
     const response = await generateRecipe(request)
     recipe.value = response.data.data
+    detailSection.value = 'overview'
     currentRecipePage.value = 0
     await loadRecommendationFeedback(recipe.value?.searchLogId)
     recentSearchLoaded.value = false
@@ -808,6 +1288,9 @@ async function runSearch() {
 }
 
 function resetSearch() {
+  if (detailViewOpen.value) {
+    closeDetailView({ fromHistory: true })
+  }
   ingredients.value = ''
   mealType.value = 'any'
   goalManuallySelected.value = false
@@ -818,12 +1301,20 @@ function resetSearch() {
   finishedDishReviewVisible.value = false
   clearSelectedImage()
   lastSearch.value = null
+  editingConditions.value = false
   recipe.value = null
   savedRecipeId.value = null
   resetRecommendationFeedback()
   currentRecipePage.value = 0
   shoppingCheckOverrides.value = {}
   window.sessionStorage.removeItem(PENDING_RECIPE_KEY)
+}
+
+function editSearchConditions() {
+  editingConditions.value = true
+  window.setTimeout(() => {
+    document.querySelector('.search-panel textarea')?.focus()
+  }, 0)
 }
 
 async function saveCurrentRecipe() {
@@ -898,6 +1389,11 @@ async function regenerateCurrentRecipe(preference) {
     dietPreference: buildRecipeDietPreference(dietPreference.value)
   }
 
+  editingConditions.value = false
+  if (detailViewOpen.value) {
+    closeDetailView({ fromHistory: true })
+  }
+  detailSection.value = 'overview'
   generating.value = true
   regenerating.value = true
   try {
@@ -907,6 +1403,7 @@ async function regenerateCurrentRecipe(preference) {
       throw new Error('模型未返回新菜谱')
     }
     recipe.value = generatedRecipe
+    detailSection.value = 'overview'
     savedRecipeId.value = null
     resetRecommendationFeedback()
     currentRecipePage.value = 0
@@ -936,6 +1433,8 @@ function restorePendingRecipe() {
     if (draft?.recipe && draft?.lastSearch) {
       recipe.value = draft.recipe
       lastSearch.value = draft.lastSearch
+      editingConditions.value = false
+      detailSection.value = 'overview'
       ingredients.value = draft.lastSearch.ingredients || ''
       mealType.value = draft.lastSearch.mealType || 'any'
       goal.value = draft.lastSearch.goal || 'balanced'
@@ -1530,6 +2029,7 @@ function getErrorMessage(error) {
 .home-page {
   height: calc(100vh - 58px);
   overflow: hidden;
+  overflow-x: hidden;
   padding: clamp(10px, 1.4vw, 18px);
   color: var(--app-text);
 }
@@ -1650,6 +2150,84 @@ h3 {
   grid-template-columns: minmax(310px, 0.78fr) minmax(0, 1.22fr);
   gap: 12px;
   min-height: 0;
+}
+
+.result-priority-grid {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.query-summary-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  min-height: 48px;
+  padding: 7px 12px;
+  border: 1px solid var(--app-line);
+  border-radius: 8px;
+  background: var(--app-surface);
+  box-shadow: var(--app-panel-shadow);
+}
+
+.query-summary-copy {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.query-summary-copy .eyebrow {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.query-summary-copy > strong {
+  overflow: hidden;
+  color: var(--app-text);
+  font-size: clamp(14px, 1.2vw, 18px);
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.query-summary-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.query-summary-meta span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--app-line);
+  border-radius: 999px;
+  color: var(--app-text-muted);
+  background: var(--app-surface-soft);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.query-summary-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.query-summary-actions :deep(.el-button) {
+  min-height: 40px;
+  margin-left: 0;
+}
+
+.query-summary-actions :deep(.el-button span) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .search-panel,
@@ -2012,11 +2590,751 @@ h3 {
   padding: clamp(12px, 1.4vw, 18px);
 }
 
+.home-page.is-result-expanded:not(.is-detail-view) .result-content {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.home-page.is-result-expanded:not(.is-detail-view) .result-panel {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.home-page.is-result-expanded:not(.is-detail-view) .recipe-detail {
+  grid-template-rows: auto auto auto;
+  align-content: start;
+  overflow: visible;
+}
+
+.home-page.is-detail-view .command-grid {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.home-page.is-detail-view .result-panel {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.home-page.is-detail-view .result-content {
+  display: block;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.home-page.is-detail-view .brief-grid,
+.home-page.is-detail-view .recipe-detail :deep(.recommendation-feedback),
+.home-page.is-detail-view .recipe-detail > :deep(.nutrition-card) {
+  display: none;
+}
+
+.home-page.is-detail-view .recipe-detail {
+  display: block;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.home-page.is-detail-view .recipe-sections {
+  display: block;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.home-page.is-detail-view .recipe-section {
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+}
+
+.recipe-detail-view-header {
+  display: grid;
+  grid-template-columns: minmax(145px, auto) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  min-height: 54px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--app-line);
+}
+
+.detail-back-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 7px;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 1px solid var(--app-line-strong);
+  border-radius: 7px;
+  color: var(--app-text);
+  background: var(--app-surface);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.detail-back-button:hover,
+.detail-back-button:focus-visible {
+  border-color: var(--app-accent);
+  background: var(--app-accent-soft);
+  outline: none;
+}
+
+.detail-view-title {
+  min-width: 0;
+}
+
+.detail-view-title h2 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detail-view-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.recipe-entry-nav {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 9px;
+  min-width: 0;
+  margin-top: 2px;
+}
+
+.recipe-entry-button {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  min-height: 78px;
+  padding: 11px 12px;
+  border: 1px solid var(--app-line);
+  border-radius: 8px;
+  color: var(--app-text);
+  background: var(--app-surface);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 180ms ease,
+    background-color 180ms ease,
+    transform 180ms ease;
+}
+
+.recipe-entry-button:hover,
+.recipe-entry-button:focus-visible {
+  border-color: var(--app-accent);
+  background: var(--app-surface-soft);
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.recipe-entry-button:disabled {
+  color: var(--app-text-faint);
+  background: var(--app-surface-strong);
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.recipe-entry-button:disabled:hover,
+.recipe-entry-button:disabled:focus-visible {
+  border-color: var(--app-line);
+  background: var(--app-surface-strong);
+  transform: none;
+}
+
+.recipe-entry-index {
+  color: var(--app-accent);
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.recipe-entry-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.recipe-entry-copy strong {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recipe-entry-copy small {
+  overflow: hidden;
+  color: var(--app-text-muted);
+  font-size: 11px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recipe-detail-bottom-nav {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+  min-width: 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--app-line);
+  background: var(--app-surface);
+}
+
+.recipe-detail-bottom-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 1px solid var(--app-line);
+  border-radius: 7px;
+  color: var(--app-text-muted);
+  background: var(--app-surface-soft);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  transition:
+    border-color 180ms ease,
+    background-color 180ms ease,
+    color 180ms ease;
+}
+
+.recipe-detail-bottom-link span {
+  color: var(--app-text-faint);
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 11px;
+}
+
+.recipe-detail-bottom-link:hover,
+.recipe-detail-bottom-link:focus-visible,
+.recipe-detail-bottom-link.active {
+  border-color: var(--app-accent);
+  color: var(--app-text);
+  background: var(--app-accent-soft);
+  outline: none;
+}
+
+.recipe-detail-bottom-link[aria-current="page"] {
+  box-shadow: inset 0 -2px 0 var(--app-accent);
+}
+
+.recipe-detail-bottom-link:disabled {
+  color: var(--app-text-faint);
+  background: var(--app-surface-strong);
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.home-page.is-result-expanded {
+  height: calc(100vh - 58px);
+  min-height: 0;
+  overflow: hidden;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.home-page.is-result-expanded .command-shell {
+  height: 100%;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.home-page.is-result-expanded .result-panel {
+  min-height: 0;
+  overflow: hidden;
+  display: grid;
+}
+
+.home-page.is-result-expanded .result-content {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 8px;
+  overflow: hidden;
+}
+
+.home-page.is-result-expanded .recipe-detail {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 8px;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.home-page.is-result-expanded .brief-grid {
+  display: none;
+}
+
+.home-page.is-result-expanded .workspace-heading {
+  gap: 8px;
+}
+
+.home-page.is-result-expanded h1 {
+  font-size: clamp(22px, 2.2vw, 31px);
+}
+
+.home-page.is-result-expanded .pantry-expiry-banner {
+  min-height: 34px;
+  padding: 5px 10px;
+}
+
+.recipe-sections {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 8px;
+  min-height: 0;
+  margin-top: 0;
+  overflow: hidden;
+}
+
+.recipe-section-nav {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  min-height: 48px;
+  padding: 4px;
+  border: 1px solid var(--app-line);
+  border-radius: 8px;
+  background: var(--app-surface-strong);
+}
+
+.recipe-section-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--app-text-muted);
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  transition:
+    border-color 180ms ease,
+    background-color 180ms ease,
+    color 180ms ease,
+    transform 180ms ease;
+}
+
+.recipe-section-link span {
+  color: var(--app-text-faint);
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 11px;
+}
+
+.recipe-section-link:hover,
+.recipe-section-link:focus-visible,
+.recipe-section-link.active {
+  border-color: var(--app-accent);
+  color: var(--app-text);
+  background: var(--app-accent-soft);
+  outline: none;
+}
+
+.recipe-section-link:active {
+  transform: translateY(1px);
+}
+
+.recipe-section {
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: clamp(14px, 2vw, 22px);
+  border: 1px solid var(--app-line);
+  border-radius: 8px;
+  background: var(--app-surface);
+}
+
+.home-page.is-result-expanded .recipe-section {
+  min-height: 0;
+}
+
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--app-line);
+}
+
+.section-heading > div {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+}
+
+.section-heading > span {
+  color: var(--app-text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.section-index {
+  color: var(--app-accent);
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.overview-card,
+.tips-card,
+.detail-card {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--app-line);
+  border-radius: 7px;
+  background: var(--app-surface-soft);
+}
+
+.overview-card {
+  display: grid;
+  gap: 10px;
+}
+
+.overview-card p {
+  margin: 0;
+  color: var(--app-text-soft);
+  line-height: 1.7;
+}
+
+.section-card-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, auto) auto;
+  gap: 16px;
+  align-items: stretch;
+}
+
+.detail-card-wide {
+  grid-column: auto;
+}
+
+#recipe-section-ingredients .ingredients-detail-card {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+#recipe-section-ingredients .analysis-detail-card {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+
+#recipe-section-ingredients .shopping-detail-card {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+#recipe-section-ingredients .ingredients-detail-card,
+#recipe-section-ingredients .shopping-detail-card {
+  height: 100%;
+  min-width: 0;
+  align-self: stretch;
+}
+
+#recipe-section-ingredients .ingredients-detail-card .ingredients-table,
+#recipe-section-ingredients .shopping-detail-card :deep(.shopping-table) {
+  width: 100%;
+  max-width: 100%;
+}
+
+#recipe-section-ingredients .ingredients-detail-card :deep(.el-table .cell),
+#recipe-section-ingredients .shopping-detail-card :deep(.el-table .cell) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+#recipe-section-ingredients .ingredients-detail-card :deep(.el-table__body-wrapper),
+#recipe-section-ingredients .ingredients-detail-card :deep(.el-table__inner-wrapper) {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+#recipe-section-ingredients .shopping-detail-card :deep(.shopping-checklist),
+#recipe-section-ingredients .shopping-detail-card :deep(.shopping-table),
+#recipe-section-ingredients .shopping-detail-card :deep(.el-table__inner-wrapper),
+#recipe-section-ingredients .shopping-detail-card :deep(.el-table__body-wrapper) {
+  min-width: 0;
+  max-width: 100%;
+}
+
+#recipe-section-ingredients .shopping-detail-card :deep(.el-table__body-wrapper) {
+  overflow-x: hidden;
+}
+
+#recipe-section-ingredients .shopping-detail-card :deep(.el-table .cell),
+#recipe-section-ingredients .shopping-detail-card :deep(.purchase-links),
+#recipe-section-ingredients .shopping-detail-card :deep(.purchase-links a) {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+#recipe-section-ingredients .shopping-detail-card :deep(.purchase-links) {
+  display: grid;
+  gap: 6px;
+}
+
+#recipe-section-ingredients .shopping-detail-card :deep(.purchase-links a) {
+  width: fit-content;
+  max-width: 100%;
+}
+
+#recipe-section-more .tips-card {
+  grid-column: 1;
+}
+
+#recipe-section-more {
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+}
+
+#recipe-section-more .section-heading {
+  grid-column: 1 / -1;
+}
+
+#recipe-section-more .video-keywords {
+  grid-column: 2;
+  align-content: start;
+}
+
+#recipe-section-more .el-empty {
+  grid-column: 1 / -1;
+}
+
+.detail-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.detail-card-head h4 {
+  margin: 0;
+  color: var(--app-text);
+  font-size: 14px;
+}
+
+.detail-card-head span {
+  color: var(--app-text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ingredient-mobile-list,
+.analysis-mobile-list {
+  display: none;
+}
+
+.analysis-mobile-card {
+  display: grid;
+  gap: 8px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--app-line);
+}
+
+.analysis-mobile-card:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.ingredient-mobile-row,
+.analysis-mobile-heading,
+.analysis-mobile-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ingredient-mobile-row {
+  min-height: 40px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--app-line);
+}
+
+.ingredient-mobile-row:last-child {
+  border-bottom: 0;
+}
+
+.ingredient-mobile-row strong,
+.analysis-mobile-heading strong {
+  color: var(--app-text);
+}
+
+.ingredient-mobile-row span,
+.analysis-mobile-heading span,
+.analysis-mobile-meta span:last-child,
+.analysis-mobile-card p {
+  color: var(--app-text-muted);
+  font-size: 12px;
+}
+
+.analysis-mobile-meta {
+  align-items: flex-start;
+}
+
+.analysis-mobile-meta span:last-child {
+  flex: 1;
+  line-height: 1.45;
+  text-align: right;
+}
+
+.analysis-mobile-card p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.full-step-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.full-step-item {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 14px;
+  border: 1px solid var(--app-line);
+  border-radius: 7px;
+  background: var(--app-surface-soft);
+}
+
+.full-step-index {
+  display: inline-grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--app-accent-text);
+  background: var(--app-accent);
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.full-step-copy {
+  min-width: 0;
+}
+
+.full-step-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.full-step-head h4 {
+  margin: 0;
+  color: var(--app-text);
+  font-size: 15px;
+}
+
+.full-step-head span {
+  flex: 0 0 auto;
+  color: var(--app-text-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.full-step-copy p {
+  margin: 6px 0 0;
+  color: var(--app-text-soft);
+  line-height: 1.7;
+}
+
+.full-step-copy .full-step-note {
+  color: var(--app-text-muted);
+  font-size: 12px;
+}
+
+.tips-card {
+  background: var(--app-surface);
+}
+
+.tips-card .tip-list {
+  padding-left: 18px;
+}
+
 .result-header {
   display: flex;
   align-items: start;
   justify-content: space-between;
   gap: 12px;
+}
+
+.result-summary-line {
+  max-width: 720px;
+  margin: 7px 0 0;
+  color: var(--app-text-soft);
+  line-height: 1.55;
+}
+
+.result-header-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.home-page.is-result-expanded .recipe-detail :deep(.nutrition-card) {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.34fr) minmax(0, 1fr) minmax(170px, 0.46fr);
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+}
+
+.home-page.is-result-expanded .recipe-detail :deep(.nutrition-card-heading) {
+  align-items: center;
+}
+
+.home-page.is-result-expanded .recipe-detail :deep(.nutrition-card-heading h3) {
+  font-size: 14px;
+}
+
+.home-page.is-result-expanded .recipe-detail :deep(.nutrition-metrics) {
+  gap: 6px;
+}
+
+.home-page.is-result-expanded .recipe-detail :deep(.nutrition-metric) {
+  gap: 2px;
+  padding: 6px 8px;
+}
+
+.home-page.is-result-expanded .recipe-detail :deep(.nutrition-metric strong) {
+  font-size: 16px;
+}
+
+.home-page.is-result-expanded .recipe-detail :deep(.nutrition-disclosure) {
+  margin: 0;
+  font-size: 11px;
 }
 
 .result-header-actions {
@@ -2377,6 +3695,97 @@ h3 {
   .result-panel {
     min-height: 620px;
   }
+
+  .home-page.is-result-expanded .result-panel {
+    min-height: 0;
+  }
+
+  .home-page.is-result-expanded {
+    height: auto;
+    min-height: calc(100vh - 58px);
+    overflow: visible;
+    display: block;
+  }
+
+  .home-page.is-result-expanded .command-shell {
+    height: auto;
+    min-height: 0;
+  }
+
+  .home-page.is-result-expanded .result-panel,
+  .home-page.is-result-expanded .result-content,
+  .home-page.is-result-expanded .recipe-detail {
+    display: block;
+    overflow: visible;
+  }
+
+  .home-page.is-result-expanded .recipe-sections {
+    overflow: visible;
+  }
+
+  .home-page.is-detail-view {
+    height: auto;
+    min-height: calc(100vh - 58px);
+    overflow: visible;
+  }
+
+  .home-page.is-detail-view .command-grid {
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .home-page.is-detail-view .result-panel,
+  .home-page.is-detail-view .result-content,
+  .home-page.is-detail-view .recipe-detail {
+    display: grid;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .home-page.is-detail-view .result-panel {
+    grid-template-rows: auto minmax(0, 1fr) auto;
+  }
+
+  .home-page.is-detail-view .result-content {
+    display: block;
+    overflow: hidden;
+  }
+
+  .home-page.is-detail-view .recipe-detail {
+    display: block;
+    height: 100%;
+  }
+
+  .home-page.is-detail-view .recipe-sections,
+  .home-page.is-detail-view .recipe-section {
+    height: 100%;
+    overflow: auto;
+  }
+
+  .recipe-detail-view-header {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .section-card-grid {
+    grid-template-columns: 1fr;
+  }
+
+  #recipe-section-ingredients .ingredients-detail-card,
+  #recipe-section-ingredients .analysis-detail-card,
+  #recipe-section-ingredients .shopping-detail-card {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  #recipe-section-more {
+    grid-template-columns: 1fr;
+  }
+
+  #recipe-section-more .section-heading,
+  #recipe-section-more .tips-card,
+  #recipe-section-more .video-keywords,
+  #recipe-section-more .el-empty {
+    grid-column: 1;
+  }
 }
 
 @media (max-width: 720px) {
@@ -2388,6 +3797,15 @@ h3 {
   .workspace-heading {
     align-items: start;
     flex-direction: column;
+  }
+
+  .result-header {
+    flex-direction: column;
+  }
+
+  .result-header-actions {
+    width: 100%;
+    justify-content: flex-start;
   }
 
   .signal-strip {
@@ -2420,6 +3838,119 @@ h3 {
 
   .camera-capture-panel :deep(.el-button) {
     width: 100%;
+  }
+
+  .query-summary-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .query-summary-copy > strong {
+    white-space: normal;
+  }
+
+  .query-summary-actions {
+    justify-content: stretch;
+  }
+
+  .query-summary-actions :deep(.el-button) {
+    flex: 1 1 0;
+  }
+
+  .recipe-entry-nav,
+  .recipe-detail-bottom-nav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .recipe-entry-button {
+    min-height: 72px;
+    padding: 10px;
+  }
+
+  .recipe-detail-view-header {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .detail-view-actions {
+    grid-column: 2;
+    justify-content: flex-start;
+  }
+
+  .detail-view-title h2 {
+    white-space: normal;
+  }
+
+  .home-page.is-detail-view .result-panel {
+    min-height: calc(100vh - 121px);
+  }
+
+  .recipe-detail-bottom-nav {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+  }
+
+  .recipe-section-nav {
+    top: 10px;
+  }
+
+  .recipe-section-link {
+    flex: 1 1 calc(50% - 6px);
+    min-width: 0;
+  }
+
+  .section-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .full-step-item {
+    grid-template-columns: 30px minmax(0, 1fr);
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .full-step-index {
+    width: 30px;
+    height: 30px;
+  }
+
+  .full-step-head {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .full-step-list {
+    grid-template-columns: 1fr;
+  }
+
+  .home-page.is-result-expanded .recipe-detail :deep(.nutrition-card) {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .ingredients-table,
+  .analysis-table {
+    display: none;
+  }
+
+  .ingredient-mobile-list,
+  .analysis-mobile-list {
+    display: grid;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .recipe-section-link,
+  .recipe-entry-button,
+  .recipe-detail-bottom-link,
+  .mode-card,
+  .page-arrow,
+  .page-tab {
+    transition: none;
   }
 }
 </style>

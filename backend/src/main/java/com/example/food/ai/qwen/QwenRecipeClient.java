@@ -41,7 +41,7 @@ public class QwenRecipeClient {
         this(
                 restTemplateBuilder
                         .setConnectTimeout(Duration.ofSeconds(5))
-                        .setReadTimeout(Duration.ofSeconds(60))
+                        .setReadTimeout(Duration.ofSeconds(120))
                         .build(),
                 objectMapper,
                 properties,
