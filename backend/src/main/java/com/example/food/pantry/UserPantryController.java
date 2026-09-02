@@ -5,6 +5,8 @@ import com.example.food.pantry.dto.ConsumePantryItemRequest;
 import com.example.food.pantry.dto.PantryItemRequest;
 import com.example.food.pantry.dto.PantryItemResponse;
 import com.example.food.pantry.dto.PantryExpirySummaryResponse;
+import com.example.food.pantry.dto.PantryReadinessRequest;
+import com.example.food.pantry.dto.PantryReadinessResponse;
 import com.example.food.security.AuthPrincipal;
 import jakarta.validation.Valid;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -41,6 +43,14 @@ public class UserPantryController {
             @AuthenticationPrincipal AuthPrincipal principal
     ) {
         return ApiResponse.ok(service.expirySummary(principal.id()));
+    }
+
+    @PostMapping("/readiness")
+    public ApiResponse<PantryReadinessResponse> readiness(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @Valid @RequestBody PantryReadinessRequest request
+    ) {
+        return ApiResponse.ok(service.readiness(principal.id(), request));
     }
 
     @PostMapping

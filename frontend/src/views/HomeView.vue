@@ -473,12 +473,26 @@
                         <span>{{ recipe.ingredients.length }} 项</span>
                       </div>
                       <el-table class="ingredients-table" :data="recipe.ingredients" size="large">
-                        <el-table-column prop="name" label="食材" min-width="120" />
+                        <el-table-column label="食材" min-width="120">
+                          <template #default="scope">
+                            <div class="ingredient-name-cell">
+                              <strong>{{ scope.row.name }}</strong>
+                              <span v-if="readinessBadge(getReadinessItem(scope.row.name))" class="readiness-ingredient-badge" :class="{ soon: getReadinessItem(scope.row.name)?.expiringSoon && !getReadinessItem(scope.row.name)?.shortage }">
+                                {{ readinessBadge(getReadinessItem(scope.row.name)) }}
+                              </span>
+                            </div>
+                          </template>
+                        </el-table-column>
                         <el-table-column prop="amount" label="用量" min-width="120" />
                       </el-table>
                       <div class="ingredient-mobile-list">
                         <div v-for="ingredient in recipe.ingredients" :key="`${ingredient.name}-${ingredient.amount}`" class="ingredient-mobile-row">
-                          <strong>{{ ingredient.name }}</strong>
+                          <div class="ingredient-name-cell">
+                            <strong>{{ ingredient.name }}</strong>
+                            <span v-if="readinessBadge(getReadinessItem(ingredient.name))" class="readiness-ingredient-badge" :class="{ soon: getReadinessItem(ingredient.name)?.expiringSoon && !getReadinessItem(ingredient.name)?.shortage }">
+                              {{ readinessBadge(getReadinessItem(ingredient.name)) }}
+                            </span>
+                          </div>
                           <span>{{ ingredient.amount }}</span>
                         </div>
                       </div>
@@ -763,6 +777,83 @@
             </div>
           </div>
 
+          <section v-if="hasSearch && !detailViewOpen && recipe" class="pantry-readiness-card" aria-labelledby="pantry-readiness-title">
+            <div class="pantry-readiness-head">
+              <div>
+                <p class="eyebrow">开做前准备</p>
+                <h3 id="pantry-readiness-title">先确认食材，再开始烹饪</h3>
+              </div>
+              <span class="pantry-readiness-status" role="status">{{ pantryReadinessStatusText }}</span>
+            </div>
+
+            <div v-if="pantryReadinessLoading" class="pantry-readiness-skeleton" aria-live="polite">
+              <span v-for="index in 6" :key="index" class="pantry-readiness-skeleton-block"></span>
+            </div>
+
+            <template v-else>
+              <div class="pantry-readiness-metrics">
+                <div class="pantry-readiness-metric pantry-readiness-metric-primary">
+                  <span>食材准备度</span>
+                  <strong>{{ pantryReadinessHasData ? `${pantryReadiness.readinessPercent}%` : '—' }}</strong>
+                  <div class="pantry-readiness-progress" role="progressbar" :aria-valuenow="pantryReadinessHasData ? pantryReadiness.readinessPercent : undefined" aria-valuemin="0" aria-valuemax="100">
+                    <i :style="{ width: `${pantryReadinessHasData ? pantryReadiness.readinessPercent : 0}%` }"></i>
+                  </div>
+                </div>
+                <div class="pantry-readiness-metric">
+                  <span>已准备项</span>
+                  <strong>{{ pantryReadinessHasData ? `${pantryReadiness.readyCount} / ${pantryReadiness.itemCount}` : '—' }}</strong>
+                </div>
+                <div class="pantry-readiness-metric">
+                  <span>缺少食材</span>
+                  <strong>{{ pantryReadinessHasData ? pantryReadiness.shortageCount : '—' }}</strong>
+                </div>
+                <div class="pantry-readiness-metric">
+                  <span>临期食材</span>
+                  <strong>{{ pantryReadinessHasData ? pantryReadiness.expiringSoonCount : '—' }}</strong>
+                </div>
+                <div class="pantry-readiness-metric">
+                  <span>预计烹饪时间</span>
+                  <strong>{{ pantryReadinessTimeLabel }}</strong>
+                </div>
+                <div class="pantry-readiness-metric">
+                  <span>烹饪难度</span>
+                  <strong>{{ pantryReadinessDifficultyLabel }}</strong>
+                </div>
+              </div>
+
+              <div class="pantry-readiness-footer">
+                <div class="pantry-readiness-missing" aria-live="polite">
+                  <span class="pantry-readiness-missing-label">待准备</span>
+                  <span v-if="!auth.isUser" class="pantry-readiness-ready-copy">登录后匹配库存</span>
+                  <span v-else-if="pantryReadinessError" class="pantry-readiness-ready-copy">{{ pantryReadinessErrorText || '库存匹配失败，请重试' }}</span>
+                  <span v-else-if="!pantryItems.length" class="pantry-readiness-ready-copy">暂无库存记录</span>
+                  <span v-else-if="!pantryReadinessMissingItems.length" class="pantry-readiness-ready-copy">食材已齐全</span>
+                  <span v-for="item in pantryReadinessMissingPreview" :key="item.ingredientName" class="pantry-readiness-tag">
+                    {{ item.ingredientName }}
+                  </span>
+                  <span v-if="pantryReadinessMissingOverflow" class="pantry-readiness-overflow">+{{ pantryReadinessMissingOverflow }}</span>
+                </div>
+                <div class="pantry-readiness-actions">
+                  <el-button plain :disabled="pantryReadinessLoading || !recipe" @click="viewPreparedIngredients($event)">
+                    查看准备食材
+                  </el-button>
+                  <el-button
+                    plain
+                    :loading="pantryReadinessBulkSaving"
+                    :disabled="pantryReadinessLoading || !pantryReadinessMissingItems.length || !auth.isUser"
+                    @click="addMissingToShoppingList"
+                  >
+                    加入采购清单
+                  </el-button>
+                </div>
+              </div>
+              <p v-if="pantryReadinessError" class="pantry-readiness-error" role="alert">
+                {{ pantryReadinessErrorText || '库存匹配暂时失败' }}，<button type="button" @click="retryPantryReadiness">重试</button>
+              </p>
+              <p v-else class="pantry-readiness-disclaimer">库存状态仅用于开做前参考，不会自动修改菜单或库存。</p>
+            </template>
+          </section>
+
           <nav v-if="hasSearch && !detailViewOpen" class="recipe-entry-nav" aria-label="菜谱详情入口">
             <button
               v-for="section in recipeSections"
@@ -873,10 +964,11 @@ import {
 } from '../api/recipes'
 import { getRecentSearches } from '../api/searchHistory'
 import { getDietPreference, saveDietPreference } from '../api/userPreferences'
-import { getPantryExpiryAlerts, getPantryItems, stockInPantry } from '../api/pantry'
+import { getPantryExpiryAlerts, getPantryItems, getPantryReadiness, stockInPantry } from '../api/pantry'
 import { getShoppingItemChecks, saveShoppingItemCheck } from '../api/shoppingChecks'
 import CameraIngredientCapture from '../components/CameraIngredientCapture.vue'
 import CookingModeDialog from '../components/CookingModeDialog.vue'
+import { getPantryReadinessErrorMessage } from '../utils/pantryReadiness'
 import DietPreferenceDialog from '../components/DietPreferenceDialog.vue'
 import FinishedDishReviewDialog from '../components/FinishedDishReviewDialog.vue'
 import RecentSearchPopover from '../components/RecentSearchPopover.vue'
@@ -947,6 +1039,12 @@ const recentSearchVisible = ref(false)
 const pantryItems = ref([])
 const pantryLoading = ref(false)
 const pantryExpirySummary = ref(emptyPantryExpirySummary())
+const pantryReadiness = ref(emptyPantryReadiness())
+const pantryReadinessLoading = ref(false)
+const pantryReadinessError = ref(false)
+const pantryReadinessErrorText = ref('')
+const pantryReadinessRequestId = ref(0)
+const pantryReadinessBulkSaving = ref(false)
 const shoppingCheckOverrides = ref({})
 const shoppingCheckSavingKey = ref('')
 const stockInKey = ref('')
@@ -1040,6 +1138,36 @@ const recommendationRows = computed(() => [
 const shoppingList = computed(() => buildRecipeShoppingList(
   recipe.value,
   ownedIngredients.value
+))
+const pantryReadinessItems = computed(() => (
+  Array.isArray(pantryReadiness.value?.items) ? pantryReadiness.value.items : []
+))
+const pantryReadinessMissingItems = computed(() => pantryReadinessItems.value.filter((item) => item?.shortage))
+const pantryReadinessMissingPreview = computed(() => pantryReadinessMissingItems.value.slice(0, 3))
+const pantryReadinessMissingOverflow = computed(() => Math.max(0, pantryReadinessMissingItems.value.length - 3))
+const pantryReadinessHasData = computed(() => (
+  auth.isUser && !pantryReadinessError.value && pantryReadiness.value.itemCount > 0
+))
+const pantryReadinessStatusText = computed(() => {
+  if (!auth.isUser) return '登录后匹配库存'
+  if (pantryReadinessLoading.value) return '正在匹配库存'
+  if (pantryReadinessError.value) return '库存匹配失败'
+  if (!pantryItems.value.length) return '暂无库存记录'
+  return '已匹配库存'
+})
+const pantryReadinessTimeLabel = computed(() => {
+  const source = recipe.value || {}
+  const explicitMinutes = [source.totalDurationMinutes, source.estimatedMinutes, source.totalCookingMinutes]
+    .find((value) => Number.isFinite(Number(value)) && Number(value) > 0)
+  if (explicitMinutes) return `${Math.round(Number(explicitMinutes))} 分钟`
+  const stepMinutes = (Array.isArray(source.steps) ? source.steps : [])
+    .map((step) => Number(step?.durationMinutes))
+    .filter((value) => Number.isFinite(value) && value > 0)
+    .reduce((total, value) => total + value, 0)
+  return stepMinutes > 0 ? `${Math.round(stepMinutes)} 分钟` : '待估算'
+})
+const pantryReadinessDifficultyLabel = computed(() => (
+  recipe.value?.difficulty || recipe.value?.cookingDifficulty || '待评估'
 ))
 const ingredientAnalysisRows = computed(() => shoppingList.value.map((item) => {
   const missing = findMissingIngredient(recipe.value?.missingIngredients, item.name)
@@ -1279,6 +1407,7 @@ async function runSearch() {
     await loadRecommendationFeedback(recipe.value?.searchLogId)
     recentSearchLoaded.value = false
     await loadShoppingChecks()
+    await loadPantryReadiness()
     ElMessage.success('菜谱推荐已生成')
   } catch (error) {
     ElMessage.error(getErrorMessage(error))
@@ -1410,6 +1539,7 @@ async function regenerateCurrentRecipe(preference) {
     await loadRecommendationFeedback(recipe.value?.searchLogId)
     recentSearchLoaded.value = false
     await loadShoppingChecks()
+    await loadPantryReadiness()
     window.sessionStorage.removeItem(PENDING_RECIPE_KEY)
     ElMessage.success('新版本菜谱已生成')
   } catch (error) {
@@ -1443,6 +1573,7 @@ function restorePendingRecipe() {
       currentRecipePage.value = 0
       loadRecommendationFeedback(recipe.value?.searchLogId)
       loadShoppingChecks()
+      loadPantryReadiness()
       ElMessage.info('已恢复未保存的菜谱，请点击保存')
     }
   } catch {
@@ -1659,6 +1790,12 @@ function clearPantryState() {
   pantryItems.value = []
   pantryLoading.value = false
   pantryExpirySummary.value = emptyPantryExpirySummary()
+  pantryReadiness.value = emptyPantryReadiness()
+  pantryReadinessLoading.value = false
+  pantryReadinessError.value = false
+  pantryReadinessErrorText.value = ''
+  pantryReadinessRequestId.value += 1
+  pantryReadinessBulkSaving.value = false
   shoppingCheckOverrides.value = {}
   shoppingCheckSavingKey.value = ''
 }
@@ -1669,6 +1806,17 @@ function emptyPantryExpirySummary() {
     warningDays: 7,
     expiredItems: [],
     expiringSoonItems: []
+  }
+}
+
+function emptyPantryReadiness() {
+  return {
+    itemCount: 0,
+    readyCount: 0,
+    shortageCount: 0,
+    expiringSoonCount: 0,
+    readinessPercent: 0,
+    items: []
   }
 }
 
@@ -1695,6 +1843,7 @@ async function loadPantryItems() {
       ? expiryResult.value.data.data || emptyPantryExpirySummary()
       : emptyPantryExpirySummary()
     await loadShoppingChecks()
+    await loadPantryReadiness()
   } catch (error) {
     if (auth.isUser && auth.token === token) {
       pantryItems.value = []
@@ -1706,6 +1855,119 @@ async function loadPantryItems() {
       pantryLoading.value = false
     }
   }
+}
+
+function recipeReadinessIngredients() {
+  return (Array.isArray(recipe.value?.ingredients) ? recipe.value.ingredients : [])
+    .map((ingredient) => {
+      if (typeof ingredient === 'string') {
+        return { name: ingredient.trim(), amount: '' }
+      }
+      return {
+        name: typeof ingredient?.name === 'string' ? ingredient.name.trim() : '',
+        amount: typeof ingredient?.amount === 'string' ? ingredient.amount.trim() : ''
+      }
+    })
+    .filter((ingredient) => ingredient.name)
+}
+
+async function loadPantryReadiness() {
+  const currentRecipe = recipe.value
+  const requestIngredients = recipeReadinessIngredients()
+  if (!currentRecipe || !requestIngredients.length || !auth.isUser) {
+    pantryReadinessRequestId.value += 1
+    pantryReadiness.value = emptyPantryReadiness()
+    pantryReadinessLoading.value = false
+    pantryReadinessError.value = false
+    pantryReadinessErrorText.value = ''
+    return
+  }
+
+  const requestId = pantryReadinessRequestId.value + 1
+  pantryReadinessRequestId.value = requestId
+  const token = auth.token
+  pantryReadinessLoading.value = true
+  pantryReadinessError.value = false
+  pantryReadinessErrorText.value = ''
+  try {
+    const response = await getPantryReadiness({ ingredients: requestIngredients })
+    if (requestId !== pantryReadinessRequestId.value || !auth.isUser || auth.token !== token || recipe.value !== currentRecipe) {
+      return
+    }
+    pantryReadiness.value = response.data.data || emptyPantryReadiness()
+  } catch (error) {
+    if (requestId === pantryReadinessRequestId.value && auth.isUser && auth.token === token && recipe.value === currentRecipe) {
+      pantryReadiness.value = emptyPantryReadiness()
+      pantryReadinessError.value = true
+      pantryReadinessErrorText.value = getPantryReadinessErrorMessage(error)
+    }
+  } finally {
+    if (requestId === pantryReadinessRequestId.value) {
+      pantryReadinessLoading.value = false
+    }
+  }
+}
+
+function retryPantryReadiness() {
+  loadPantryReadiness()
+}
+
+function getReadinessItem(ingredientName) {
+  const key = shoppingChecklistKey(ingredientName)
+  if (!key) return null
+  return pantryReadinessItems.value.find((item) => shoppingChecklistKey(item?.ingredientName) === key) || null
+}
+
+function readinessBadge(item) {
+  if (!item) return ''
+  if (item.shortage) return item.status === 'EXPIRED_ONLY' ? '仅有过期库存' : '需补充'
+  if (item.expiringSoon) return '临期'
+  return ''
+}
+
+async function addMissingToShoppingList() {
+  if (pantryReadinessBulkSaving.value || pantryReadinessLoading.value) return
+  if (!auth.isUser) {
+    ElMessage.warning('登录后才能加入采购清单')
+    return
+  }
+  const searchLogId = recipe.value?.searchLogId
+  if (!searchLogId) {
+    ElMessage.warning('当前菜谱还没有可关联的采购记录')
+    return
+  }
+  const missingItems = pantryReadinessMissingItems.value.filter((item) => (
+    ['MISSING', 'PARTIAL', 'EXPIRED_ONLY'].includes(item.status)
+  ))
+  const newItems = missingItems.filter((item) => (
+    !Object.prototype.hasOwnProperty.call(shoppingCheckOverrides.value, shoppingChecklistKey(item.ingredientName))
+  ))
+  if (!newItems.length) {
+    ElMessage.info('缺少食材已在采购清单中')
+    return
+  }
+
+  const previous = { ...shoppingCheckOverrides.value }
+  pantryReadinessBulkSaving.value = true
+  try {
+    await Promise.all(newItems.map((item) => saveShoppingItemCheck({
+      searchLogId,
+      ingredientName: item.ingredientName,
+      status: 'PENDING'
+    })))
+    await loadShoppingChecks()
+    ElMessage.success(`已将 ${newItems.length} 项食材加入采购清单`)
+  } catch {
+    shoppingCheckOverrides.value = previous
+    ElMessage.error('加入采购清单失败，请重试')
+  } finally {
+    pantryReadinessBulkSaving.value = false
+  }
+}
+
+function viewPreparedIngredients(event) {
+  if (!recipe.value) return
+  openDetail('ingredients', event)
 }
 
 async function loadShoppingChecks() {
@@ -1807,6 +2069,7 @@ async function handleStockInConfirm(payload) {
     await stockInPantry({ sourceType: 'RECIPE', sourceId: savedRecipeId.value, idempotencyKey: createClientKey(), ingredientName: item.name, quantity: payload.quantity, unit: payload.unit, category: payload.category, expireDate: payload.expireDate })
     shoppingCheckOverrides.value = { ...shoppingCheckOverrides.value, [key]: 'READY' }
     stockInDialogVisible.value = false
+    await loadPantryItems()
     ElMessage.success(`${item.name} 已加入库存`)
   } catch (error) { ElMessage.error(error?.response?.data?.message || '入库失败，请稍后重试') }
   finally { stockInKey.value = '' }
@@ -2590,17 +2853,222 @@ h3 {
   padding: clamp(12px, 1.4vw, 18px);
 }
 
+.pantry-readiness-card {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--app-line);
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--app-surface), var(--app-surface-soft));
+}
+
+.pantry-readiness-head,
+.pantry-readiness-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.pantry-readiness-head h3 {
+  font-size: 17px;
+  line-height: 1.25;
+}
+
+.pantry-readiness-status {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border: 1px solid var(--app-line-strong);
+  border-radius: 999px;
+  color: var(--app-text-soft);
+  background: var(--app-surface);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.pantry-readiness-metrics {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+  min-width: 0;
+}
+
+.pantry-readiness-metric {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  min-width: 0;
+  min-height: 59px;
+  padding: 9px 10px;
+  border: 1px solid var(--app-line);
+  border-radius: 8px;
+  background: var(--app-surface);
+}
+
+.pantry-readiness-metric > span {
+  overflow-wrap: anywhere;
+  color: var(--app-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.pantry-readiness-metric > strong {
+  overflow-wrap: anywhere;
+  color: var(--app-text);
+  font-size: 16px;
+  line-height: 1.25;
+}
+
+.pantry-readiness-metric-primary > strong {
+  color: var(--app-accent);
+}
+
+.pantry-readiness-progress {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--app-line);
+}
+
+.pantry-readiness-progress i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--app-accent);
+  transition: width 240ms ease;
+}
+
+.pantry-readiness-missing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pantry-readiness-missing-label {
+  color: var(--app-text-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.pantry-readiness-tag,
+.pantry-readiness-overflow {
+  overflow-wrap: anywhere;
+  padding: 4px 8px;
+  border: 1px solid var(--app-line-strong);
+  border-radius: 999px;
+  color: var(--app-text-soft);
+  background: var(--app-surface);
+  font-size: 12px;
+}
+
+.pantry-readiness-overflow {
+  color: var(--app-text-muted);
+}
+
+.pantry-readiness-ready-copy,
+.pantry-readiness-disclaimer {
+  color: var(--app-text-muted);
+  font-size: 12px;
+}
+
+.pantry-readiness-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.pantry-readiness-actions :deep(.el-button) {
+  min-height: 40px;
+  margin-left: 0;
+}
+
+.pantry-readiness-error,
+.pantry-readiness-disclaimer {
+  margin: 0;
+}
+
+.pantry-readiness-error {
+  color: var(--app-danger, #b54747);
+  font-size: 12px;
+}
+
+.pantry-readiness-error button {
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  font-weight: 800;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.pantry-readiness-skeleton {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.pantry-readiness-skeleton-block {
+  display: block;
+  height: 59px;
+  border-radius: 8px;
+  background: linear-gradient(90deg, var(--app-surface-soft), var(--app-line), var(--app-surface-soft));
+  background-size: 200% 100%;
+  animation: pantry-readiness-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes pantry-readiness-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+.ingredient-name-cell {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.readiness-ingredient-badge {
+  padding: 2px 6px;
+  border: 1px solid rgba(181, 71, 71, 0.35);
+  border-radius: 999px;
+  color: var(--app-danger, #b54747);
+  background: rgba(181, 71, 71, 0.08);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.readiness-ingredient-badge.soon {
+  border-color: rgba(180, 118, 32, 0.35);
+  color: #9a6818;
+  background: rgba(231, 177, 58, 0.12);
+}
+
 .home-page.is-result-expanded:not(.is-detail-view) .result-content {
-  grid-template-rows: minmax(0, 1fr);
+  display: block;
+  min-height: 0;
+  overflow: visible;
 }
 
 .home-page.is-result-expanded:not(.is-detail-view) .result-panel {
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  display: block;
+  min-height: 0;
+  overflow: visible;
 }
 
 .home-page.is-result-expanded:not(.is-detail-view) .recipe-detail {
-  grid-template-rows: auto auto auto;
-  align-content: start;
+  display: block;
+  min-height: 0;
   overflow: visible;
 }
 
@@ -2886,6 +3354,39 @@ h3 {
 .home-page.is-result-expanded .pantry-expiry-banner {
   min-height: 34px;
   padding: 5px 10px;
+}
+
+/* Recipe results keep their natural height so the nutrition and readiness cards
+   remain in normal document flow at every desktop viewport height. */
+.home-page.is-result-expanded:not(.is-detail-view) {
+  display: block;
+  height: auto;
+  min-height: calc(100vh - 58px);
+  overflow: visible;
+}
+
+.home-page.is-result-expanded:not(.is-detail-view) .command-shell {
+  display: block;
+  height: auto;
+  min-height: 0;
+}
+
+.home-page.is-result-expanded:not(.is-detail-view) .command-grid {
+  display: block;
+  min-height: 0;
+}
+
+.home-page.is-result-expanded:not(.is-detail-view) .result-content {
+  margin-top: 9px;
+}
+
+.home-page.is-result-expanded:not(.is-detail-view) .recipe-detail > * + * {
+  margin-top: 8px;
+}
+
+.home-page.is-result-expanded:not(.is-detail-view) .pantry-readiness-card,
+.home-page.is-result-expanded:not(.is-detail-view) .recipe-entry-nav {
+  margin-top: 14px;
 }
 
 .recipe-sections {
@@ -3700,6 +4201,11 @@ h3 {
     min-height: 0;
   }
 
+  .pantry-readiness-metrics,
+  .pantry-readiness-skeleton {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .home-page.is-result-expanded {
     height: auto;
     min-height: calc(100vh - 58px);
@@ -3857,6 +4363,30 @@ h3 {
     flex: 1 1 0;
   }
 
+  .pantry-readiness-head,
+  .pantry-readiness-footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .pantry-readiness-status {
+    align-self: flex-start;
+  }
+
+  .pantry-readiness-metrics,
+  .pantry-readiness-skeleton {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .pantry-readiness-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .pantry-readiness-actions :deep(.el-button) {
+    flex: 1 1 0;
+  }
+
   .recipe-entry-nav,
   .recipe-detail-bottom-nav {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3944,6 +4474,12 @@ h3 {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .pantry-readiness-progress i,
+  .pantry-readiness-skeleton-block {
+    animation: none;
+    transition: none;
+  }
+
   .recipe-section-link,
   .recipe-entry-button,
   .recipe-detail-bottom-link,

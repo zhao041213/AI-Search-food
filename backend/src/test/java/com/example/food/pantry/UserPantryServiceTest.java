@@ -2,6 +2,8 @@ package com.example.food.pantry;
 
 import com.example.food.pantry.dto.PantryItemRequest;
 import com.example.food.pantry.dto.PantryItemResponse;
+import com.example.food.pantry.dto.PantryReadinessRequest;
+import com.example.food.pantry.dto.PantryReadinessResponse;
 import com.example.food.stats.IngredientNormalizer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -190,6 +192,58 @@ class UserPantryServiceTest {
         assertThatThrownBy(() -> service.consume(7L, 5L, new BigDecimal("1.001")))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("最多支持");
+    }
+
+    @Test
+    void calculatesReadinessWithShortageUnitMismatchAndExpiringItems() {
+        Clock clock = Clock.fixed(
+                LocalDate.of(2026, 8, 31).atStartOfDay(ZoneId.of("Asia/Shanghai")).toInstant(),
+                ZoneId.of("Asia/Shanghai")
+        );
+        UserPantryService fixedService = new UserPantryService(mapper, new IngredientNormalizer(), new IngredientAmountParser(), clock);
+
+        UserPantryItem enough = item(1L, 7L, "tomato");
+        enough.setQuantity(new BigDecimal("600"));
+        enough.setUnit("g");
+        enough.setExpireDate(LocalDate.of(2026, 9, 2));
+        UserPantryItem partial = item(2L, 7L, "beef");
+        partial.setQuantity(new BigDecimal("100"));
+        partial.setUnit("g");
+        UserPantryItem wrongUnit = item(3L, 7L, "onion");
+        wrongUnit.setQuantity(new BigDecimal("2"));
+        wrongUnit.setUnit("piece");
+        when(mapper.findByUserId(7L)).thenReturn(List.of(enough, partial, wrongUnit));
+
+        var response = fixedService.readiness(7L, new PantryReadinessRequest(List.of(
+                new PantryReadinessRequest.Ingredient("tomato", "500g"),
+                new PantryReadinessRequest.Ingredient("beef", "300g"),
+                new PantryReadinessRequest.Ingredient("onion", "100g"),
+                new PantryReadinessRequest.Ingredient("potato", "200g")
+        )));
+
+        assertThat(response.itemCount()).isEqualTo(4);
+        assertThat(response.readyCount()).isEqualTo(1);
+        assertThat(response.shortageCount()).isEqualTo(2);
+        assertThat(response.expiringSoonCount()).isEqualTo(1);
+        assertThat(response.readinessPercent()).isEqualTo(25);
+        assertThat(response.items()).extracting(PantryReadinessResponse.Item::status)
+                .containsExactly("ENOUGH", "PARTIAL", "UNIT_MISMATCH", "MISSING");
+        assertThat(response.items().get(0).expiringSoon()).isTrue();
+        assertThat(response.items().get(1).shortage()).isTrue();
+        assertThat(response.items().get(2).shortage()).isFalse();
+    }
+
+    @Test
+    void doesNotTreatUnknownAmountAsMissingOrReady() {
+        when(mapper.findByUserId(7L)).thenReturn(List.of());
+
+        var response = service.readiness(7L, new PantryReadinessRequest(List.of(
+                new PantryReadinessRequest.Ingredient("salt", "适量")
+        )));
+
+        assertThat(response.readyCount()).isZero();
+        assertThat(response.shortageCount()).isZero();
+        assertThat(response.items().get(0).status()).isEqualTo("UNQUANTIFIED");
     }
 
     private UserPantryItem item(Long id, Long userId, String ingredientName) {

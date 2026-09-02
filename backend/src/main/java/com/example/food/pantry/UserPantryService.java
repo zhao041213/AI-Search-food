@@ -3,6 +3,8 @@ package com.example.food.pantry;
 import com.example.food.pantry.dto.PantryItemRequest;
 import com.example.food.pantry.dto.PantryItemResponse;
 import com.example.food.pantry.dto.PantryExpirySummaryResponse;
+import com.example.food.pantry.dto.PantryReadinessRequest;
+import com.example.food.pantry.dto.PantryReadinessResponse;
 import com.example.food.stats.IngredientNormalizer;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -15,6 +17,7 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 @Service
@@ -24,16 +27,27 @@ public class UserPantryService {
 
     private final UserPantryItemMapper mapper;
     private final IngredientNormalizer ingredientNormalizer;
+    private final IngredientAmountParser amountParser;
     private final Clock clock;
 
     @Autowired
     public UserPantryService(UserPantryItemMapper mapper, IngredientNormalizer ingredientNormalizer) {
-        this(mapper, ingredientNormalizer, Clock.systemDefaultZone());
+        this(mapper, ingredientNormalizer, new IngredientAmountParser(), Clock.systemDefaultZone());
     }
 
     UserPantryService(UserPantryItemMapper mapper, IngredientNormalizer ingredientNormalizer, Clock clock) {
+        this(mapper, ingredientNormalizer, new IngredientAmountParser(), clock);
+    }
+
+    UserPantryService(
+            UserPantryItemMapper mapper,
+            IngredientNormalizer ingredientNormalizer,
+            IngredientAmountParser amountParser,
+            Clock clock
+    ) {
         this.mapper = mapper;
         this.ingredientNormalizer = ingredientNormalizer;
+        this.amountParser = amountParser;
         this.clock = clock;
     }
 
@@ -46,6 +60,131 @@ public class UserPantryService {
                 .map(UserPantryItem::getIngredientName)
                 .distinct()
                 .toList();
+    }
+
+    public PantryReadinessResponse readiness(Long userId, PantryReadinessRequest request) {
+        List<UserPantryItem> pantryItems = mapper.findByUserId(userId);
+        LocalDate today = LocalDate.now(clock);
+        LocalDate warningUntil = today.plusDays(EXPIRY_WARNING_DAYS);
+        List<PantryReadinessResponse.Item> items = request.ingredients().stream()
+                .map(ingredient -> readinessItem(ingredient, pantryItems, today, warningUntil))
+                .toList();
+        int readyCount = (int) items.stream().filter(item -> "ENOUGH".equals(item.status())).count();
+        int shortageCount = (int) items.stream().filter(PantryReadinessResponse.Item::shortage).count();
+        int expiringSoonCount = (int) items.stream().filter(PantryReadinessResponse.Item::expiringSoon).count();
+        int itemCount = items.size();
+        int readinessPercent = itemCount == 0 ? 0 : readyCount * 100 / itemCount;
+        return new PantryReadinessResponse(
+                itemCount,
+                readyCount,
+                shortageCount,
+                expiringSoonCount,
+                readinessPercent,
+                List.copyOf(items)
+        );
+    }
+
+    private PantryReadinessResponse.Item readinessItem(
+            PantryReadinessRequest.Ingredient ingredient,
+            List<UserPantryItem> pantryItems,
+            LocalDate today,
+            LocalDate warningUntil
+    ) {
+        String rawName = ingredient.name() == null ? "" : ingredient.name().trim();
+        List<IngredientNormalizer.NormalizedIngredient> normalized = ingredientNormalizer.normalizeDistinct(rawName);
+        String name = normalized.size() == 1 ? normalized.get(0).canonicalName() : "";
+        String rawAmount = ingredient.amount() == null ? "" : ingredient.amount().trim();
+        IngredientAmountParser.ParsedAmount expected = amountParser.parse(rawAmount);
+        List<UserPantryItem> sameName = name.isBlank()
+                ? List.of()
+                : pantryItems.stream()
+                .filter(item -> name.equals(canonicalName(item.getIngredientName())))
+                .filter(item -> item.getQuantity() != null && item.getQuantity().signum() > 0)
+                .toList();
+        List<UserPantryItem> active = sameName.stream()
+                .filter(item -> item.getExpireDate() == null || !item.getExpireDate().isBefore(today))
+                .sorted(Comparator.comparing(UserPantryItem::getExpireDate, Comparator.nullsLast(Comparator.naturalOrder())))
+                .toList();
+        boolean expiringSoon = active.stream().anyMatch(item -> item.getExpireDate() != null
+                && !item.getExpireDate().isAfter(warningUntil));
+
+        if (normalized.size() != 1) {
+            return readinessItem(name, rawAmount, expected, null, null, "INVALID",
+                    "食材名称无法比较，请检查名称", false, expiringSoon, List.of());
+        }
+        if (!expected.isParsed()) {
+            String status = expected.status() == IngredientAmountParser.Status.UNQUANTIFIED
+                    ? "UNQUANTIFIED" : "INVALID";
+            return readinessItem(name, rawAmount, expected, null, null, status,
+                    "用量无法安全比较，将在烹饪时再次确认", false, expiringSoon, List.of());
+        }
+
+        BigDecimal availableQuantity = BigDecimal.ZERO;
+        List<PantryReadinessResponse.Batch> batches = new ArrayList<>();
+        boolean hasCompatible = false;
+        for (UserPantryItem item : active) {
+            BigDecimal converted = amountParser.convert(item.getQuantity(), item.getUnit(), expected.unit());
+            if (converted == null) {
+                continue;
+            }
+            hasCompatible = true;
+            availableQuantity = availableQuantity.add(converted);
+            batches.add(new PantryReadinessResponse.Batch(item.getId(), item.getQuantity(), item.getUnit(), item.getExpireDate()));
+        }
+
+        if (hasCompatible && availableQuantity.compareTo(expected.quantity()) >= 0) {
+            return readinessItem(name, rawAmount, expected, availableQuantity, expected.unit(), "ENOUGH",
+                    "库存充足", false, expiringSoon, batches);
+        }
+        if (hasCompatible) {
+            return readinessItem(name, rawAmount, expected, availableQuantity, expected.unit(), "PARTIAL",
+                    "库存不足，还需要补充", true, expiringSoon, batches);
+        }
+        if (!active.isEmpty()) {
+            return readinessItem(name, rawAmount, expected, null, expected.unit(), "UNIT_MISMATCH",
+                    "库存单位无法比较", false, expiringSoon, List.of());
+        }
+        if (!sameName.isEmpty()) {
+            return readinessItem(name, rawAmount, expected, null, expected.unit(), "EXPIRED_ONLY",
+                    "仅有已过期库存，暂不计入准备度", true, false, List.of());
+        }
+        return readinessItem(name, rawAmount, expected, null, expected.unit(), "MISSING",
+                "完全缺少该食材", true, false, List.of());
+    }
+
+    private PantryReadinessResponse.Item readinessItem(
+            String name,
+            String rawAmount,
+            IngredientAmountParser.ParsedAmount expected,
+            BigDecimal availableQuantity,
+            String availableUnit,
+            String status,
+            String message,
+            boolean shortage,
+            boolean expiringSoon,
+            List<PantryReadinessResponse.Batch> batches
+    ) {
+        return new PantryReadinessResponse.Item(
+                name,
+                rawAmount,
+                expected.quantity(),
+                expected.unit(),
+                availableQuantity,
+                availableUnit,
+                status,
+                message,
+                shortage,
+                expiringSoon,
+                List.copyOf(batches)
+        );
+    }
+
+    private String canonicalName(String value) {
+        return ingredientNormalizer.normalizeDistinct(value == null ? "" : value).stream()
+                .findFirst()
+                .map(IngredientNormalizer.NormalizedIngredient::canonicalName)
+                .orElse("")
+                .trim();
     }
 
     public PantryExpirySummaryResponse expirySummary(Long userId) {
