@@ -3,6 +3,7 @@ package com.example.food.pantry;
 import com.example.food.common.GlobalExceptionHandler;
 import com.example.food.pantry.dto.PantryItemResponse;
 import com.example.food.pantry.dto.PantryExpirySummaryResponse;
+import com.example.food.pantry.dto.PantryReadinessResponse;
 import com.example.food.security.AppRole;
 import com.example.food.security.AuthPrincipal;
 import com.example.food.security.JwtService;
@@ -77,6 +78,53 @@ class UserPantryControllerTest {
                 .andExpect(jsonPath("$.data.expiringSoonItems[0].ingredientName").value("牛奶"));
 
         verify(service).expirySummary(7L);
+    }
+
+    @Test
+    void userCanReadRecipePantryReadiness() throws Exception {
+        authenticateUser();
+        when(service.readiness(org.mockito.ArgumentMatchers.eq(7L), any())).thenReturn(new PantryReadinessResponse(
+                2,
+                1,
+                1,
+                1,
+                50,
+                List.of(new PantryReadinessResponse.Item(
+                        "tomato", "2 piece", new BigDecimal("2"), "piece", new BigDecimal("2"), "piece",
+                        "ENOUGH", "enough", false, true, List.of()
+                ))
+        ));
+
+        mockMvc.perform(post("/api/users/me/pantry/readiness")
+                        .header("Authorization", "Bearer user-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "ingredients": [
+                                    {"name": "tomato", "amount": "2 piece"}
+                                  ]
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.itemCount").value(2))
+                .andExpect(jsonPath("$.data.readinessPercent").value(50))
+                .andExpect(jsonPath("$.data.items[0].status").value("ENOUGH"));
+
+        verify(service).readiness(org.mockito.ArgumentMatchers.eq(7L), any());
+    }
+
+    @Test
+    void emptyReadinessIngredientsReturnsParameterError() throws Exception {
+        authenticateUser();
+
+        mockMvc.perform(post("/api/users/me/pantry/readiness")
+                        .header("Authorization", "Bearer user-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"ingredients": []}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Invalid request parameters"));
     }
 
     @Test
