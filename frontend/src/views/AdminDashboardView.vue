@@ -11,6 +11,8 @@
             <el-radio-button value="overview">运营概览</el-radio-button>
             <el-radio-button value="settings">系统设置</el-radio-button>
             <el-radio-button value="hot-ingredients">热门分析</el-radio-button>
+            <el-radio-button value="operation-logs">操作日志</el-radio-button>
+            <el-radio-button value="error-logs">异常日志</el-radio-button>
           </el-radio-group>
           <el-button type="primary" plain @click="logout">
             <LogOut :size="16" aria-hidden="true" />
@@ -101,7 +103,9 @@
         </section>
 
       </div>
-      <AdminHotIngredientsPanel v-else />
+      <AdminHotIngredientsPanel v-else-if="activePanel === 'hot-ingredients'" />
+      <AdminErrorLogs v-else-if="activePanel === 'error-logs'" />
+      <AdminOperationLogs v-else />
     </section>
   </main>
 </template>
@@ -113,6 +117,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { LogOut, PlugZap, Save } from 'lucide-vue-next'
 import { getTextRecipeAiConfig, saveTextRecipeAiConfig } from '../api/adminAiConfig'
 import AdminHotIngredientsPanel from '../components/AdminHotIngredientsPanel.vue'
+import AdminErrorLogs from '../components/AdminErrorLogs.vue'
+import AdminOperationLogs from '../components/AdminOperationLogs.vue'
 import AdminOperationsOverview from '../components/AdminOperationsOverview.vue'
 import { useAuthStore } from '../stores/auth'
 import { buildAdminPanelQuery, resolveAdminPanel } from '../utils/hotIngredientNavigation'

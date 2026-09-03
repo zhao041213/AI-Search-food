@@ -51,7 +51,7 @@ class AuthServiceTest {
         String code = authService.issueRegistrationCode(phone).code();
 
         AuthResponse response = authService.registerUser(
-                new PhoneRegistrationRequest(phone, code, "Recipe User")
+                new PhoneRegistrationRequest(phone, code, "Recipe User", "Recipe123")
         );
 
         User stored = userMapper.selectOne(new QueryWrapper<User>().eq("phone", phone));
@@ -59,6 +59,10 @@ class AuthServiceTest {
         assertThat(stored.getNickname()).isEqualTo("Recipe User");
         assertThat(stored.getRole()).isEqualTo("USER");
         assertThat(stored.getEnabled()).isTrue();
+        assertThat(stored.getPasswordHash()).isNotBlank();
+        assertThat(stored.getPasswordHash()).doesNotContain("Recipe123");
+        assertThat(stored.getPasswordFailedAttempts()).isZero();
+        assertThat(stored.getPasswordLockedUntil()).isNull();
         assertThat(stored.getLastLoginAt()).isNotNull();
         assertThat(response.id()).isEqualTo(stored.getId());
         assertThat(response.token()).isNotBlank();

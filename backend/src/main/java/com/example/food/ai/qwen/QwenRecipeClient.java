@@ -18,10 +18,16 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 
 @Component
 public class QwenRecipeClient {
@@ -84,6 +90,46 @@ public class QwenRecipeClient {
         }
     }
 
+    public RecipeStreamResult streamRecipe(
+            String prompt,
+            Consumer<String> onDelta,
+            Runnable onFirstChunk
+    ) {
+        AiModelRuntimeConfig runtimeConfig = runtimeConfig();
+        if (runtimeConfig.apiKey() == null || runtimeConfig.apiKey().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "千问 API Key 未配置，请设置 DASHSCOPE_API_KEY");
+        }
+
+        try {
+            return restTemplate.execute(
+                    runtimeConfig.endpoint(),
+                    HttpMethod.POST,
+                    request -> {
+                        request.getHeaders().putAll(headers(runtimeConfig, true));
+                        objectMapper.writeValue(request.getBody(), requestBody(prompt, runtimeConfig, true));
+                    },
+                    response -> readStreamResponse(response, runtimeConfig, onDelta, onFirstChunk)
+            );
+        } catch (org.springframework.web.client.RestClientResponseException exception) {
+            if (isNativeStreamingUnsupported(exception.getStatusCode().value())) {
+                return new RecipeStreamResult(
+                        "",
+                        generateRecipe(prompt),
+                        runtimeConfig.provider(),
+                        runtimeConfig.modelName(),
+                        false
+                );
+            }
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "千问流式服务调用失败，请稍后重试", exception);
+        } catch (RestClientException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "千问流式服务调用失败，请稍后重试", exception);
+        }
+    }
+
+    public RecipeGenerateResponse parseRecipeContent(String content, AiModelRuntimeConfig runtimeConfig) {
+        return parseRecipePayload(content, runtimeConfig);
+    }
+
     public List<WeeklyMenuSelection> generateWeeklyMenu(String prompt) {
         AiModelRuntimeConfig runtimeConfig = runtimeConfig();
         if (runtimeConfig.apiKey() == null || runtimeConfig.apiKey().isBlank()) {
@@ -110,32 +156,58 @@ public class QwenRecipeClient {
         return new AiModelRuntimeConfig("qwen", properties.model(), properties.endpoint(), properties.apiKey());
     }
 
+    public AiModelRuntimeConfig currentRuntimeConfig() {
+        return runtimeConfig();
+    }
+
     private Map<String, Object> requestBody(String prompt, AiModelRuntimeConfig runtimeConfig) {
-        return Map.of(
-                "model", runtimeConfig.modelName(),
-                "messages", List.of(
-                        Map.of(
-                                "role", "system",
-                                "content", "你是专业的中文营养与家庭烹饪助手。只输出可解析的 JSON，不要输出 Markdown、代码块或额外说明。"
-                        ),
-                        Map.of(
-                                "role", "user",
-                                "content", prompt
-                        )
+        return requestBody(prompt, runtimeConfig, false);
+    }
+
+    private Map<String, Object> requestBody(
+            String prompt,
+            AiModelRuntimeConfig runtimeConfig,
+            boolean stream
+    ) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("model", runtimeConfig.modelName());
+        body.put("messages", List.of(
+                Map.of(
+                        "role", "system",
+                        "content", "你是专业的中文营养与家庭烹饪助手。只输出可解析的 JSON，不要输出 Markdown、代码块或额外说明。"
                 ),
-                "temperature", 0.7
-        );
+                Map.of(
+                        "role", "user",
+                        "content", prompt
+                )
+        ));
+        body.put("temperature", 0.7);
+        if (stream) {
+            body.put("stream", true);
+        }
+        return body;
     }
 
     private HttpHeaders headers(AiModelRuntimeConfig runtimeConfig) {
+        return headers(runtimeConfig, false);
+    }
+
+    private HttpHeaders headers(AiModelRuntimeConfig runtimeConfig, boolean stream) {
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth(runtimeConfig.apiKey());
         headers.setContentType(MediaType.APPLICATION_JSON);
+        if (stream) {
+            headers.setAccept(List.of(MediaType.TEXT_EVENT_STREAM, MediaType.APPLICATION_JSON));
+        }
         return headers;
     }
 
     private RecipeGenerateResponse parseRecipe(QwenChatResponse response, AiModelRuntimeConfig runtimeConfig) {
         String content = firstContent(response);
+        return parseRecipePayload(content, runtimeConfig);
+    }
+
+    private RecipeGenerateResponse parseRecipePayload(String content, AiModelRuntimeConfig runtimeConfig) {
         RecipePayload payload = readPayload(content);
         return new RecipeGenerateResponse(
                 payload.title(),
@@ -151,6 +223,155 @@ public class QwenRecipeClient {
                 runtimeConfig.provider(),
                 runtimeConfig.modelName()
         );
+    }
+
+    private RecipeStreamResult readStreamResponse(
+            org.springframework.http.client.ClientHttpResponse response,
+            AiModelRuntimeConfig runtimeConfig,
+            Consumer<String> onDelta,
+            Runnable onFirstChunk
+    ) throws IOException {
+        MediaType contentType = response.getHeaders().getContentType();
+        boolean sse = contentType != null && contentType.isCompatibleWith(MediaType.TEXT_EVENT_STREAM);
+        if (!sse) {
+            byte[] body = response.getBody().readAllBytes();
+            String text = new String(body, StandardCharsets.UTF_8).trim();
+            sse = text.startsWith("data:") || text.startsWith(":");
+            if (!sse) {
+                QwenChatResponse chatResponse = objectMapper.readValue(body, QwenChatResponse.class);
+                return new RecipeStreamResult(
+                        "",
+                        parseRecipe(chatResponse, runtimeConfig),
+                        runtimeConfig.provider(),
+                        runtimeConfig.modelName(),
+                        false
+                );
+            }
+            return readSse(text, runtimeConfig, onDelta, onFirstChunk);
+        }
+        return readSse(
+                new BufferedReader(new InputStreamReader(response.getBody(), StandardCharsets.UTF_8)),
+                runtimeConfig,
+                onDelta,
+                onFirstChunk
+        );
+    }
+
+    private RecipeStreamResult readSse(
+            String text,
+            AiModelRuntimeConfig runtimeConfig,
+            Consumer<String> onDelta,
+            Runnable onFirstChunk
+    ) throws IOException {
+        return readSse(
+                new BufferedReader(new java.io.StringReader(text)),
+                runtimeConfig,
+                onDelta,
+                onFirstChunk
+        );
+    }
+
+    private RecipeStreamResult readSse(
+            BufferedReader reader,
+            AiModelRuntimeConfig runtimeConfig,
+            Consumer<String> onDelta,
+            Runnable onFirstChunk
+    ) throws IOException {
+        StringBuilder content = new StringBuilder();
+        List<String> dataLines = new ArrayList<>();
+        boolean done = false;
+        String line;
+        while ((line = reader.readLine()) != null) {
+            if (line.isEmpty()) {
+                done = processSseEvent(dataLines, content, onDelta, onFirstChunk) || done;
+                dataLines.clear();
+                continue;
+            }
+            if (line.startsWith(":")) {
+                continue;
+            }
+            if (line.startsWith("data:")) {
+                String data = line.substring(5);
+                dataLines.add(data.startsWith(" ") ? data.substring(1) : data);
+            }
+        }
+        done = processSseEvent(dataLines, content, onDelta, onFirstChunk) || done;
+        if (!done) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "千问流式响应中断，请点击重试");
+        }
+        return new RecipeStreamResult(
+                content.toString(),
+                null,
+                runtimeConfig.provider(),
+                runtimeConfig.modelName(),
+                true
+        );
+    }
+
+    private boolean processSseEvent(
+            List<String> dataLines,
+            StringBuilder content,
+            Consumer<String> onDelta,
+            Runnable onFirstChunk
+    ) throws IOException {
+        if (dataLines.isEmpty()) {
+            return false;
+        }
+        String data = String.join("\n", dataLines).trim();
+        if ("[DONE]".equals(data)) {
+            return true;
+        }
+        try {
+            com.fasterxml.jackson.databind.JsonNode root = objectMapper.readTree(data);
+            String delta = streamContent(root);
+            if (delta != null && !delta.isEmpty()) {
+                if (content.isEmpty()) {
+                    onFirstChunk.run();
+                }
+                content.append(delta);
+                onDelta.accept(delta);
+            }
+            return false;
+        } catch (IOException | IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "千问流式响应格式无效，请点击重试", exception);
+        }
+    }
+
+    private String streamContent(com.fasterxml.jackson.databind.JsonNode root) {
+        if (root == null || root.isNull()) {
+            return null;
+        }
+        com.fasterxml.jackson.databind.JsonNode choices = root.path("choices");
+        if (!choices.isArray() || choices.isEmpty()) {
+            choices = root.path("output").path("choices");
+        }
+        if (!choices.isArray() || choices.isEmpty()) {
+            return null;
+        }
+        com.fasterxml.jackson.databind.JsonNode choice = choices.get(0);
+        String delta = textContent(choice.path("delta").path("content"));
+        if (delta != null) {
+            return delta;
+        }
+        return textContent(choice.path("message").path("content"));
+    }
+
+    private String textContent(com.fasterxml.jackson.databind.JsonNode node) {
+        return node != null && node.isTextual() ? node.textValue() : null;
+    }
+
+    private boolean isNativeStreamingUnsupported(int status) {
+        return status == 400 || status == 404 || status == 405 || status == 406
+                || status == 415 || status == 422;
+    }
+
+    public record RecipeStreamResult(
+            String content,
+            RecipeGenerateResponse fallbackResponse,
+            String provider,
+            String model,
+            boolean nativeStreaming
+    ) {
     }
 
     private String firstContent(QwenChatResponse response) {

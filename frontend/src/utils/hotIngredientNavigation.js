@@ -1,6 +1,8 @@
 const OVERVIEW_PANEL = 'overview'
 const HOT_INGREDIENT_PANEL = 'hot-ingredients'
 const SETTINGS_PANEL = 'settings'
+const OPERATION_LOGS_PANEL = 'operation-logs'
+const ERROR_LOGS_PANEL = 'error-logs'
 
 export function shouldShowSavedRecipesNavigation(role) {
   return role === 'USER'
@@ -21,7 +23,7 @@ export function getHotIngredientNavigation(isAdmin) {
 
 export function resolveAdminPanel(panel) {
   const value = Array.isArray(panel) ? panel[0] : panel
-  return [OVERVIEW_PANEL, SETTINGS_PANEL, HOT_INGREDIENT_PANEL].includes(value)
+  return [OVERVIEW_PANEL, SETTINGS_PANEL, HOT_INGREDIENT_PANEL, OPERATION_LOGS_PANEL, ERROR_LOGS_PANEL].includes(value)
     ? value
     : OVERVIEW_PANEL
 }

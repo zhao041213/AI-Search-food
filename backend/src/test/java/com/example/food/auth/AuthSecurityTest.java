@@ -61,7 +61,10 @@ class AuthSecurityTest {
                 "/api/auth/user/register/code",
                 "/api/auth/user/register",
                 "/api/auth/user/code",
-                "/api/auth/user/login"
+                "/api/auth/user/login",
+                "/api/auth/user/password-login",
+                "/api/auth/user/password/reset/code",
+                "/api/auth/user/password/reset"
         };
 
         for (String endpoint : endpoints) {

@@ -13,6 +13,9 @@ public record PhoneRegistrationRequest(
         String code,
         @NotBlank
         @Size(max = 64)
-        String nickname
+        String nickname,
+        @NotBlank
+        @Pattern(regexp = "^(?=.*[A-Za-z])(?=.*\\d)[\\s\\S]{8,64}$")
+        String password
 ) {
 }

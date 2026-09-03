@@ -1,9 +1,35 @@
 import { http } from './http'
+import { useAuthStore } from '../stores/auth'
+import { getAnonymousId } from '../utils/anonymousId'
+import { consumeRecipeStream } from '../utils/recipeStream'
 
 export function generateRecipe(payload) {
   return http.post('/ai/recipes/generate', payload, {
     timeout: 120000
   })
+}
+
+export async function generateRecipeStream(payload, options = {}) {
+  const auth = useAuthStore()
+  const headers = {
+    Accept: 'text/event-stream, application/json',
+    'Content-Type': 'application/json',
+    'X-Anonymous-Id': getAnonymousId()
+  }
+  if (auth.token) {
+    headers.Authorization = `Bearer ${auth.token}`
+  }
+
+  const response = await fetch('/api/ai/recipes/generate/stream', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(payload),
+    signal: options.signal
+  })
+  if (response.status === 401) {
+    auth.logout()
+  }
+  return consumeRecipeStream(response, options)
 }
 
 export function recognizeIngredients(file) {
