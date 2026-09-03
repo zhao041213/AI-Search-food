@@ -3,6 +3,7 @@ package com.example.food.auth;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.example.food.admin.AdminAccount;
 import com.example.food.admin.AdminMapper;
+import com.example.food.admin.operation.AdminOperationLogService;
 import com.example.food.auth.dto.AdminLoginRequest;
 import com.example.food.auth.dto.AuthResponse;
 import com.example.food.auth.dto.PhoneLoginRequest;
@@ -35,19 +36,22 @@ public class AuthService {
     private final JwtService jwtService;
     private final PasswordEncoder passwordEncoder;
     private final VerificationCodeService verificationCodeService;
+    private final AdminOperationLogService adminOperationLogService;
 
     public AuthService(
             UserMapper userMapper,
             AdminMapper adminMapper,
             JwtService jwtService,
             PasswordEncoder passwordEncoder,
-            VerificationCodeService verificationCodeService
+            VerificationCodeService verificationCodeService,
+            AdminOperationLogService adminOperationLogService
     ) {
         this.userMapper = userMapper;
         this.adminMapper = adminMapper;
         this.jwtService = jwtService;
         this.passwordEncoder = passwordEncoder;
         this.verificationCodeService = verificationCodeService;
+        this.adminOperationLogService = adminOperationLogService;
     }
 
     public SmsSendResult issueRegistrationCode(String phone) {
@@ -109,13 +113,35 @@ public class AuthService {
     public AuthResponse loginAdmin(AdminLoginRequest request) {
         AdminAccount admin = adminMapper.selectOne(new QueryWrapper<AdminAccount>().eq("username", request.username()));
         if (admin == null || !Boolean.TRUE.equals(admin.getEnabled())) {
+            recordAdminLogin(null, request.username(), AdminOperationLogService.FAILURE, "账号或密码错误");
             throw invalidAdminCredentials();
         }
         if (!passwordEncoder.matches(request.password(), admin.getPasswordHash())) {
+            recordAdminLogin(admin, request.username(), AdminOperationLogService.FAILURE, "账号或密码错误");
             throw invalidAdminCredentials();
         }
 
+        recordAdminLogin(admin, admin.getUsername(), AdminOperationLogService.SUCCESS, null);
         return adminResponse(admin);
+    }
+
+    private void recordAdminLogin(
+            AdminAccount admin,
+            String username,
+            String result,
+            String details
+    ) {
+        adminOperationLogService.record(
+                admin == null ? null : admin.getId(),
+                username,
+                AdminOperationLogService.ADMIN_LOGIN,
+                "POST",
+                "/api/auth/admin/login",
+                result,
+                AdminOperationLogService.SUCCESS.equals(result) ? 200 : 400,
+                null,
+                details
+        );
     }
 
     private User selectUserByPhone(String phone) {
