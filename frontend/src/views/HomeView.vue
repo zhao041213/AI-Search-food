@@ -56,9 +56,11 @@
                   maxlength="240"
                   show-word-limit
                   placeholder="例如：番茄、鸡蛋、菠菜"
+                  @keydown="handleIngredientsKeydown"
                   @focus="openRecentSearches"
                   @click="openRecentSearches"
                 />
+                <p class="ingredient-input-hint">按 Enter 生成，Shift + Enter 换行</p>
               </RecentSearchPopover>
             </el-form-item>
 
@@ -220,7 +222,7 @@
               type="primary"
               plain
               :loading="regenerating"
-              :disabled="generating || !recipe"
+              :disabled="!recipeComplete"
               @click="regenerateCurrentRecipe('simple')"
             >
               <RefreshCw :size="16" aria-hidden="true" />
@@ -229,12 +231,13 @@
           </div>
         </section>
 
-        <section class="result-panel" v-loading="generating" aria-label="菜谱搜索结果">
+        <section class="result-panel" aria-label="菜谱搜索结果">
           <div v-if="!detailViewOpen" class="result-header">
               <div>
                 <p class="eyebrow">菜谱输出窗口</p>
                 <h2>{{ resultTitle }}</h2>
                 <p v-if="recipe?.summary" class="result-summary-line">{{ recipe.summary }}</p>
+                <div v-else-if="generating" class="recipe-skeleton-line recipe-skeleton-line-wide" aria-hidden="true"></div>
                 <div v-if="recipe?.effects?.length" class="result-header-tags" aria-label="菜谱关键标签">
                   <span v-for="effect in recipe.effects" :key="effect" class="system-tag">{{ effect }}</span>
                 </div>
@@ -244,6 +247,7 @@
                 v-if="recipe?.steps?.length"
                 class="start-cooking-button"
                 type="primary"
+                :disabled="!recipeComplete"
                 @click="openCookingMode"
               >
                 <Play :size="16" aria-hidden="true" />
@@ -287,15 +291,15 @@
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
-              <el-button
+            <el-button
                 v-if="recipe"
                 class="save-recipe-button"
                 :type="savedRecipeId ? 'success' : 'primary'"
                 plain
                 :loading="savingRecipe"
-                :disabled="Boolean(savedRecipeId) || generating"
+                :disabled="Boolean(savedRecipeId) || !recipeComplete"
                 @click="saveCurrentRecipe"
-              >
+            >
                 <Bookmark :size="16" aria-hidden="true" />
                 <span>{{ savedRecipeId ? '已保存' : '保存到我的菜谱' }}</span>
               </el-button>
@@ -303,10 +307,10 @@
                 v-if="recipe"
                 class="secondary-action-menu"
                 trigger="click"
-                :disabled="generating || savingRecipe"
+                :disabled="!recipeComplete || savingRecipe"
                 @command="handleSecondaryAction"
               >
-                <el-button plain size="small" :disabled="generating || savingRecipe">
+                <el-button plain size="small" :disabled="!recipeComplete || savingRecipe">
                   <ChevronDown :size="15" aria-hidden="true" />
                   <span>更多操作</span>
                 </el-button>
@@ -323,6 +327,17 @@
             </div>
           </div>
 
+          <div v-if="recipe && (generating || streamFailed)" class="stream-status" role="status" aria-live="polite">
+            <span class="stream-status-dot" aria-hidden="true"></span>
+            <div>
+              <strong>{{ generationStageLabel }}</strong>
+              <span>{{ streamErrorMessage || '内容会按模块逐步显示，完成后即可保存和开始烹饪。' }}</span>
+            </div>
+            <el-button v-if="streamFailed" link type="primary" @click="retryStreamGeneration">
+              重试
+            </el-button>
+          </div>
+
           <div v-if="detailViewOpen" class="recipe-detail-view-header">
             <button class="detail-back-button" type="button" @click="closeDetailView">
               <ArrowLeft :size="18" aria-hidden="true" />
@@ -336,6 +351,7 @@
               <el-button
                 v-if="detailSection === 'steps' && recipe?.steps?.length"
                 type="primary"
+                :disabled="!recipeComplete"
                 @click="openCookingMode"
               >
                 <Play :size="16" aria-hidden="true" />
@@ -367,6 +383,41 @@
             </dl>
 
             <div v-if="recipe" class="recipe-detail">
+              <div v-if="generating || streamFailed" class="stream-progress-panel" aria-label="菜谱内容生成进度">
+                <div class="stream-progress-card">
+                  <div class="stream-progress-card-head">
+                    <h3>准备食材</h3>
+                    <span>{{ recipe.ingredients?.length ? `${recipe.ingredients.length} 项` : '等待中' }}</span>
+                  </div>
+                  <ul v-if="recipe.ingredients?.length" class="stream-preview-list">
+                    <li v-for="ingredient in recipe.ingredients.slice(0, 4)" :key="`${ingredient.name}-${ingredient.amount}`">
+                      <strong>{{ ingredient.name }}</strong>
+                      <span>{{ ingredient.amount }}</span>
+                    </li>
+                  </ul>
+                  <div v-else class="stream-preview-skeleton" aria-hidden="true">
+                    <span class="recipe-skeleton-line"></span>
+                    <span class="recipe-skeleton-line recipe-skeleton-line-short"></span>
+                  </div>
+                </div>
+                <div class="stream-progress-card">
+                  <div class="stream-progress-card-head">
+                    <h3>烹饪过程</h3>
+                    <span>{{ recipe.steps?.length ? `${recipe.steps.length} 步` : '等待中' }}</span>
+                  </div>
+                  <ol v-if="recipe.steps?.length" class="stream-preview-list stream-preview-steps">
+                    <li v-for="step in recipe.steps.slice(0, 3)" :key="step.order || step.title">
+                      <strong>{{ step.title || '烹饪步骤' }}</strong>
+                      <span>{{ step.description }}</span>
+                    </li>
+                  </ol>
+                  <div v-else class="stream-preview-skeleton" aria-hidden="true">
+                    <span class="recipe-skeleton-line"></span>
+                    <span class="recipe-skeleton-line recipe-skeleton-line-short"></span>
+                  </div>
+                </div>
+              </div>
+
               <div v-if="false" class="recipe-summary-block">
                 <p>{{ recipe.summary }}</p>
                 <div v-if="recipe.effects?.length" class="tag-row" aria-label="菜谱功效">
@@ -381,7 +432,7 @@
                 :reaction="feedbackReaction"
                 :cooked="feedbackCooked"
                 :loading="feedbackLoading"
-                :disabled="!recipe.searchLogId"
+                :disabled="!recipeComplete || !recipe.searchLogId"
                 @toggle-reaction="toggleRecommendationReaction"
               />
 
@@ -956,7 +1007,7 @@ import {
 import { useRoute, useRouter } from 'vue-router'
 import {
   clearRecommendationReaction,
-  generateRecipe,
+  generateRecipeStream,
   getRecommendationFeedback,
   recognizeIngredients,
   saveRecipe,
@@ -998,6 +1049,14 @@ import {
   parseIngredientNames,
   shoppingChecklistKey
 } from '../utils/recipeEnhancements'
+import {
+  applyRecipeStreamEvent,
+  createRecipeDraft,
+  isRecipeReady,
+  isRecipeResultPriority,
+  RecipeStreamError,
+  shouldSubmitIngredientsKey
+} from '../utils/recipeStream'
 
 const ingredients = ref('')
 const mealType = ref('any')
@@ -1014,6 +1073,12 @@ const lastSearch = ref(null)
 const recipe = ref(null)
 const generating = ref(false)
 const regenerating = ref(false)
+const generationStage = ref('idle')
+const generationCompleted = ref(false)
+const streamFailed = ref(false)
+const streamErrorMessage = ref('')
+const streamAbortController = ref(null)
+const generationRequestId = ref(0)
 const recognizing = ref(false)
 const savingRecipe = ref(false)
 const savedRecipeId = ref(null)
@@ -1093,7 +1158,12 @@ const modeLabels = {
 }
 
 const hasSearch = computed(() => Boolean(lastSearch.value))
-const resultPriorityMode = computed(() => hasSearch.value && !editingConditions.value)
+const recipeComplete = computed(() => Boolean(
+  generationCompleted.value
+  && !generating.value
+  && isRecipeReady(recipe.value)
+))
+const resultPriorityMode = computed(() => isRecipeResultPriority(lastSearch.value, editingConditions.value))
 const showImageUpload = computed(() => searchMode.value === 'image')
 const showCameraCapture = computed(() => searchMode.value === 'camera')
 const cookingStorageKey = computed(() => {
@@ -1223,6 +1293,16 @@ const activeRecipePageIndex = computed(() => {
   return Math.min(currentRecipePage.value, recipePages.value.length - 1)
 })
 const activeRecipePage = computed(() => recipePages.value[activeRecipePageIndex.value])
+const generationStageLabel = computed(() => ({
+  idle: '准备生成',
+  preparing: '正在准备',
+  generating: '正在连接 AI',
+  receiving: '正在生成菜谱',
+  parsing: '正在整理内容',
+  saving: '正在保存记录',
+  complete: '菜谱已生成',
+  error: '生成未完成'
+}[generationStage.value] || '正在处理'))
 
 function detailEntryDescription(sectionKey) {
   if (generating.value) {
@@ -1232,7 +1312,7 @@ function detailEntryDescription(sectionKey) {
 }
 
 function canOpenDetail(sectionKey) {
-  return Boolean(recipe.value) && !generating.value
+  return recipeComplete.value
 }
 
 function selectDetailSection(sectionKey) {
@@ -1315,6 +1395,7 @@ function handleSecondaryAction(command) {
 }
 
 onBeforeUnmount(() => {
+  cancelRecipeStream()
   cameraCaptureVisible.value = false
   cookingModeVisible.value = false
   finishedDishReviewVisible.value = false
@@ -1334,6 +1415,7 @@ onMounted(() => {
 })
 
 watch(() => [auth.token, auth.role], () => {
+  cancelRecipeStream()
   clearPersonalizationState()
   clearPantryState()
   if (auth.isUser) {
@@ -1364,6 +1446,9 @@ function applyRouteIngredient() {
 }
 
 async function runSearch() {
+  if (generating.value || recognizing.value) {
+    return
+  }
   if (requiresDietPreferenceLoad(auth.isUser, preferenceLoaded.value)) {
     const loaded = await loadDietPreference()
     if (!loaded) {
@@ -1386,37 +1471,115 @@ async function runSearch() {
     searchMode: searchMode.value,
     dietPreference: buildRecipeDietPreference(dietPreference.value)
   }
+  await runRecipeGeneration(request, '菜谱推荐已生成')
+}
+
+async function runRecipeGeneration(request, successMessage) {
+  cancelRecipeStream()
+  const requestId = generationRequestId.value + 1
+  generationRequestId.value = requestId
+  const controller = new AbortController()
+  streamAbortController.value = controller
+
   if (detailViewOpen.value) {
     closeDetailView({ fromHistory: true })
   }
   lastSearch.value = request
   editingConditions.value = false
   detailSection.value = 'overview'
-  recipe.value = null
+  recipe.value = createRecipeDraft()
   savedRecipeId.value = null
   resetRecommendationFeedback()
   currentRecipePage.value = 0
   shoppingCheckOverrides.value = {}
   generating.value = true
+  generationCompleted.value = false
+  generationStage.value = 'preparing'
+  streamFailed.value = false
+  streamErrorMessage.value = ''
 
   try {
-    const response = await generateRecipe(request)
-    recipe.value = response.data.data
-    detailSection.value = 'overview'
-    currentRecipePage.value = 0
+    await generateRecipeStream(request, {
+      signal: controller.signal,
+      onEvent: (event) => {
+        if (requestId !== generationRequestId.value) {
+          return
+        }
+        if (event.event === 'status') {
+          generationStage.value = event.data?.stage || generationStage.value
+          return
+        }
+        if (event.event === 'error') {
+          throw new RecipeStreamError(event.data?.message || '菜谱生成失败，请稍后重试')
+        }
+        if (['overview', 'ingredients', 'steps', 'details', 'complete'].includes(event.event)) {
+          recipe.value = applyRecipeStreamEvent(recipe.value, event)
+        }
+        if (event.event === 'complete') {
+          generationCompleted.value = true
+          generationStage.value = 'complete'
+        }
+      }
+    })
+
+    if (requestId !== generationRequestId.value) {
+      return false
+    }
+    if (!generationCompleted.value || !isRecipeReady(recipe.value)) {
+      throw new RecipeStreamError('AI 返回的菜谱内容不完整，请点击重试')
+    }
     await loadRecommendationFeedback(recipe.value?.searchLogId)
     recentSearchLoaded.value = false
     await loadShoppingChecks()
     await loadPantryReadiness()
-    ElMessage.success('菜谱推荐已生成')
+    ElMessage.success(successMessage)
+    return true
   } catch (error) {
-    ElMessage.error(getErrorMessage(error))
+    if (requestId !== generationRequestId.value || controller.signal.aborted || error?.name === 'AbortError') {
+      return false
+    }
+    streamFailed.value = true
+    generationStage.value = 'error'
+    streamErrorMessage.value = getErrorMessage(error)
+    ElMessage.error(streamErrorMessage.value)
+    return false
   } finally {
-    generating.value = false
+    if (requestId === generationRequestId.value) {
+      generating.value = false
+      if (streamAbortController.value === controller) {
+        streamAbortController.value = null
+      }
+    }
   }
 }
 
+function cancelRecipeStream() {
+  generationRequestId.value += 1
+  streamAbortController.value?.abort()
+  streamAbortController.value = null
+  generating.value = false
+}
+
+function retryStreamGeneration() {
+  if (!lastSearch.value || generating.value) {
+    return
+  }
+  void runRecipeGeneration(lastSearch.value, '菜谱推荐已生成')
+}
+
+function handleIngredientsKeydown(event) {
+  if (!shouldSubmitIngredientsKey(event, {
+    generating: generating.value,
+    recognizing: recognizing.value
+  })) {
+    return
+  }
+  event.preventDefault()
+  void runSearch()
+}
+
 function resetSearch() {
+  cancelRecipeStream()
   if (detailViewOpen.value) {
     closeDetailView({ fromHistory: true })
   }
@@ -1432,6 +1595,10 @@ function resetSearch() {
   lastSearch.value = null
   editingConditions.value = false
   recipe.value = null
+  generationCompleted.value = false
+  generationStage.value = 'idle'
+  streamFailed.value = false
+  streamErrorMessage.value = ''
   savedRecipeId.value = null
   resetRecommendationFeedback()
   currentRecipePage.value = 0
@@ -1447,7 +1614,7 @@ function editSearchConditions() {
 }
 
 async function saveCurrentRecipe() {
-  if (!recipe.value || savingRecipe.value || savedRecipeId.value) {
+  if (!recipeComplete.value || savingRecipe.value || savedRecipeId.value) {
     return
   }
 
@@ -1508,6 +1675,8 @@ async function regenerateCurrentRecipe(preference) {
 
   const currentRecipe = recipe.value
   const currentSavedRecipeId = savedRecipeId.value
+  const currentSearch = lastSearch.value
+  const currentGenerationCompleted = generationCompleted.value
   const request = {
     ingredients: lastSearch.value.ingredients,
     mealType: lastSearch.value.mealType,
@@ -1523,32 +1692,22 @@ async function regenerateCurrentRecipe(preference) {
     closeDetailView({ fromHistory: true })
   }
   detailSection.value = 'overview'
-  generating.value = true
   regenerating.value = true
   try {
-    const response = await generateRecipe(request)
-    const generatedRecipe = response.data.data
-    if (!generatedRecipe) {
-      throw new Error('模型未返回新菜谱')
+    const succeeded = await runRecipeGeneration(request, '新版本菜谱已生成')
+    if (succeeded) {
+      window.sessionStorage.removeItem(PENDING_RECIPE_KEY)
+      return
     }
-    recipe.value = generatedRecipe
-    detailSection.value = 'overview'
-    savedRecipeId.value = null
-    resetRecommendationFeedback()
-    currentRecipePage.value = 0
-    await loadRecommendationFeedback(recipe.value?.searchLogId)
-    recentSearchLoaded.value = false
-    await loadShoppingChecks()
-    await loadPantryReadiness()
-    window.sessionStorage.removeItem(PENDING_RECIPE_KEY)
-    ElMessage.success('新版本菜谱已生成')
-  } catch (error) {
     recipe.value = currentRecipe
+    lastSearch.value = currentSearch
     savedRecipeId.value = currentSavedRecipeId
-    ElMessage.error(getErrorMessage(error))
+    generationCompleted.value = currentGenerationCompleted
+    generationStage.value = currentGenerationCompleted ? 'complete' : 'idle'
+    streamFailed.value = false
+    streamErrorMessage.value = ''
   } finally {
     regenerating.value = false
-    generating.value = false
   }
 }
 
@@ -1571,6 +1730,10 @@ function restorePendingRecipe() {
       goalManuallySelected.value = true
       searchMode.value = draft.lastSearch.searchMode || 'text'
       currentRecipePage.value = 0
+      generationCompleted.value = true
+      generationStage.value = 'complete'
+      streamFailed.value = false
+      streamErrorMessage.value = ''
       loadRecommendationFeedback(recipe.value?.searchLogId)
       loadShoppingChecks()
       loadPantryReadiness()
@@ -1739,6 +1902,9 @@ async function loadRecommendationFeedback(searchLogId) {
 }
 
 async function toggleRecommendationReaction(reaction) {
+  if (!recipeComplete.value) {
+    return
+  }
   const searchLogId = recipe.value?.searchLogId
   if (!searchLogId || feedbackLoading.value) {
     return
@@ -2219,7 +2385,7 @@ async function preparePlatformSearch(ingredientName) {
 }
 
 function openCookingMode() {
-  if (!recipe.value?.steps?.length) {
+  if (!recipeComplete.value) {
     ElMessage.warning('当前菜谱暂无可执行的烹饪步骤')
     return
   }
@@ -2227,7 +2393,7 @@ function openCookingMode() {
 }
 
 function openFinishedDishReview() {
-  if (!recipe.value?.title) {
+  if (!recipeComplete.value) {
     ElMessage.warning('当前菜谱信息不完整，暂时无法评价')
     return
   }
@@ -2270,6 +2436,14 @@ function getErrorMessage(error) {
   const messages = {
     '千问 API Key 未配置，请设置 DASHSCOPE_API_KEY': '千问 API Key 未配置，请先设置 DASHSCOPE_API_KEY',
     '千问服务调用失败，请稍后重试': '千问服务调用失败，请稍后重试',
+    '千问流式服务调用失败，请稍后重试': 'AI 服务连接失败，请稍后重试',
+    '千问流式响应中断，请点击重试': '菜谱生成连接中断，请点击重试',
+    '千问流式响应格式无效，请点击重试': '菜谱生成返回格式异常，请点击重试',
+    'AI 返回的菜谱内容不完整，请点击重试': '菜谱内容不完整，请点击重试',
+    'AI 菜谱生成暂时失败，请检查网络后重试': 'AI 菜谱生成暂时失败，请检查网络后重试',
+    'AI 生成超时，请点击重试': 'AI 生成超时，请检查网络后重试',
+    'Failed to fetch': '菜谱生成连接失败，请检查网络后重试',
+    'Load failed': '菜谱生成连接失败，请检查网络后重试',
     '千问服务未返回菜谱内容': '千问服务未返回菜谱内容',
     '千问返回内容不是有效菜谱 JSON': '千问返回内容格式异常',
     '千问视觉服务调用失败，请稍后重试': '千问视觉服务调用失败，请稍后重试',
@@ -3802,6 +3976,155 @@ h3 {
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 8px;
+}
+
+.ingredient-input-hint {
+  margin: 5px 0 0;
+  color: var(--app-text-faint);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.recipe-skeleton-line {
+  display: block;
+  width: 100%;
+  height: 14px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--app-surface-soft), var(--app-line), var(--app-surface-soft));
+  background-size: 200% 100%;
+  animation: recipe-skeleton-shimmer 1.6s ease-in-out infinite;
+}
+
+.recipe-skeleton-line-wide {
+  width: min(88%, 520px);
+  margin-top: 7px;
+}
+
+.recipe-skeleton-line-short {
+  width: 62%;
+}
+
+.stream-status {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border: 1px solid var(--app-line);
+  border-radius: 8px;
+  color: var(--app-text-muted);
+  background: var(--app-surface);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.stream-status strong,
+.stream-status span {
+  display: block;
+}
+
+.stream-status strong {
+  color: var(--app-text);
+  font-size: 12px;
+}
+
+.stream-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--app-accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--app-accent) 16%, transparent);
+}
+
+.stream-progress-panel {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.stream-progress-card {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--app-line);
+  border-radius: 8px;
+  background: var(--app-surface);
+}
+
+.stream-progress-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.stream-progress-card-head h3 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.stream-progress-card-head span {
+  color: var(--app-text-faint);
+  font-size: 11px;
+}
+
+.stream-preview-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stream-preview-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  min-width: 0;
+  color: var(--app-text-soft);
+  font-size: 12px;
+}
+
+.stream-preview-list strong,
+.stream-preview-list span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stream-preview-list strong {
+  color: var(--app-text);
+}
+
+.stream-preview-list span {
+  color: var(--app-text-muted);
+}
+
+.stream-preview-steps li {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.stream-preview-skeleton {
+  display: grid;
+  gap: 10px;
+}
+
+@keyframes recipe-skeleton-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .recipe-skeleton-line {
+    animation: none;
+  }
+}
+
+@media (max-width: 520px) {
+  .stream-progress-panel {
+    grid-template-columns: 1fr;
+  }
 }
 
 .home-page.is-result-expanded .recipe-detail :deep(.nutrition-card) {

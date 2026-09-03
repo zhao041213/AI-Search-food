@@ -62,13 +62,24 @@ public class RecipeRecommendationService {
     public RecipeGenerateResponse generate(
             RecipeGenerateRequest request,
             AuthPrincipal principal,
-        String anonymousId
+            String anonymousId
     ) {
+        RecipeGenerateResponse response = qwenRecipeClient.generateRecipe(promptFor(request, principal));
+        return persist(request, response, principal, anonymousId);
+    }
+
+    public String promptFor(RecipeGenerateRequest request, AuthPrincipal principal) {
         UserHealthProfileService.RecommendationContext healthProfile = healthProfile(principal);
         String feedbackContext = feedbackContext(principal);
-        RecipeGenerateResponse response = qwenRecipeClient.generateRecipe(
-                buildPrompt(request, pantryIngredients(principal), healthProfile, feedbackContext)
-        );
+        return buildPrompt(request, pantryIngredients(principal), healthProfile, feedbackContext);
+    }
+
+    public RecipeGenerateResponse persist(
+            RecipeGenerateRequest request,
+            RecipeGenerateResponse response,
+            AuthPrincipal principal,
+            String anonymousId
+    ) {
         Long searchLogId = searchLogService.record(request, response, principal, anonymousId);
         return response.withSearchLogId(searchLogId);
     }

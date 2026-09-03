@@ -6,6 +6,11 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
+      '/api/ai/recipes/generate/stream': {
+        target: 'http://localhost:7068',
+        timeout: 120000,
+        proxyTimeout: 120000
+      },
       '/api': 'http://localhost:7068'
     }
   },
