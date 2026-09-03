@@ -81,7 +81,7 @@ class AuthControllerTest {
         mockMvc.perform(post("/api/auth/user/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"phone":"%s","code":"%s","nickname":"注册用户"}
+                                {"phone":"%s","code":"%s","nickname":"注册用户","password":"Recipe123"}
                                 """.formatted(phone, code)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
@@ -157,6 +157,45 @@ class AuthControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.displayName").value("登录用户"))
                 .andExpect(jsonPath("$.data.role").value("USER"))
+                .andExpect(jsonPath("$.data.token").isNotEmpty());
+    }
+
+    @Test
+    void registeredUserCanLoginWithPassword() throws Exception {
+        String phone = "13900000009";
+        register(phone, "密码登录用户");
+
+        mockMvc.perform(post("/api/auth/user/password-login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"phone":"%s","password":"Recipe123"}
+                                """.formatted(phone)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.role").value("USER"))
+                .andExpect(jsonPath("$.data.token").isNotEmpty());
+    }
+
+    @Test
+    void passwordResetAllowsLoginWithNewPassword() throws Exception {
+        String phone = "13900000010";
+        register(phone, "密码重置用户");
+        String resetCode = requestPasswordResetCode(phone);
+
+        mockMvc.perform(post("/api/auth/user/password/reset")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"phone":"%s","code":"%s","newPassword":"NewRecipe456"}
+                                """.formatted(phone, resetCode)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+
+        mockMvc.perform(post("/api/auth/user/password-login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"phone":"%s","password":"NewRecipe456"}
+                                """.formatted(phone)))
+                .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.token").isNotEmpty());
     }
 
@@ -302,12 +341,23 @@ class AuthControllerTest {
         return objectMapper.readTree(body).path("data").path("code").asText();
     }
 
+    private String requestPasswordResetCode(String phone) throws Exception {
+        String body = mockMvc.perform(post("/api/auth/user/password/reset/code")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"phone\":\"%s\"}".formatted(phone)))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString(StandardCharsets.UTF_8);
+        return objectMapper.readTree(body).path("data").path("code").asText();
+    }
+
     private void register(String phone, String nickname) throws Exception {
         String code = requestRegistrationCode(phone);
         mockMvc.perform(post("/api/auth/user/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"phone":"%s","code":"%s","nickname":"%s"}
+                                {"phone":"%s","code":"%s","nickname":"%s","password":"Recipe123"}
                                 """.formatted(phone, code, nickname)))
                 .andExpect(status().isOk());
     }

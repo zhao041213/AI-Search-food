@@ -6,6 +6,8 @@ import com.example.food.auth.dto.PhoneCodeRequest;
 import com.example.food.auth.dto.PhoneCodeResponse;
 import com.example.food.auth.dto.PhoneLoginRequest;
 import com.example.food.auth.dto.PhoneRegistrationRequest;
+import com.example.food.auth.dto.PasswordResetRequest;
+import com.example.food.auth.dto.UserPasswordLoginRequest;
 import com.example.food.auth.verification.SmsSendResult;
 import com.example.food.common.ApiResponse;
 import jakarta.validation.Valid;
@@ -42,6 +44,24 @@ public class AuthController {
     @PostMapping("/user/login")
     public ApiResponse<AuthResponse> loginUser(@Valid @RequestBody PhoneLoginRequest request) {
         return ApiResponse.ok(authService.loginUser(request));
+    }
+
+    @PostMapping("/user/password-login")
+    public ApiResponse<AuthResponse> loginUserWithPassword(
+            @Valid @RequestBody UserPasswordLoginRequest request
+    ) {
+        return ApiResponse.ok(authService.loginUserWithPassword(request));
+    }
+
+    @PostMapping("/user/password/reset/code")
+    public ApiResponse<PhoneCodeResponse> issuePasswordResetCode(@Valid @RequestBody PhoneCodeRequest request) {
+        return ApiResponse.ok(codeResponse(authService.issuePasswordResetCode(request.phone())));
+    }
+
+    @PostMapping("/user/password/reset")
+    public ApiResponse<Void> resetUserPassword(@Valid @RequestBody PasswordResetRequest request) {
+        authService.resetUserPassword(request);
+        return ApiResponse.ok(null);
     }
 
     @PostMapping("/admin/login")

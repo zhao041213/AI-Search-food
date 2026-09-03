@@ -16,6 +16,9 @@ public class User {
     private String avatarUrl;
     private String role;
     private Boolean enabled;
+    private String passwordHash;
+    private Integer passwordFailedAttempts;
+    private LocalDateTime passwordLockedUntil;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private LocalDateTime lastLoginAt;
@@ -66,6 +69,30 @@ public class User {
 
     public void setEnabled(Boolean enabled) {
         this.enabled = enabled;
+    }
+
+    public String getPasswordHash() {
+        return passwordHash;
+    }
+
+    public void setPasswordHash(String passwordHash) {
+        this.passwordHash = passwordHash;
+    }
+
+    public Integer getPasswordFailedAttempts() {
+        return passwordFailedAttempts;
+    }
+
+    public void setPasswordFailedAttempts(Integer passwordFailedAttempts) {
+        this.passwordFailedAttempts = passwordFailedAttempts;
+    }
+
+    public LocalDateTime getPasswordLockedUntil() {
+        return passwordLockedUntil;
+    }
+
+    public void setPasswordLockedUntil(LocalDateTime passwordLockedUntil) {
+        this.passwordLockedUntil = passwordLockedUntil;
     }
 
     public LocalDateTime getCreatedAt() {
