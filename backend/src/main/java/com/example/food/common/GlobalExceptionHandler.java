@@ -1,6 +1,9 @@
 package com.example.food.common;
 
+import com.example.food.admin.error.AdminErrorLogService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
+import org.springframework.beans.factory.ObjectProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -26,6 +29,12 @@ public class GlobalExceptionHandler {
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
     private static final String INVALID_REQUEST_PARAMETERS = "Invalid request parameters";
 
+    private final ObjectProvider<AdminErrorLogService> errorLogServiceProvider;
+
+    public GlobalExceptionHandler(ObjectProvider<AdminErrorLogService> errorLogServiceProvider) {
+        this.errorLogServiceProvider = errorLogServiceProvider;
+    }
+
     @ExceptionHandler({
             MethodArgumentNotValidException.class,
             BindException.class,
@@ -44,14 +53,17 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(ResponseStatusException.class)
-    public ResponseEntity<ApiResponse<Void>> handleResponseStatus(ResponseStatusException exception) {
+    public ResponseEntity<ApiResponse<Void>> handleResponseStatus(
+            ResponseStatusException exception,
+            HttpServletRequest request
+    ) {
         HttpStatusCode statusCode = exception.getStatusCode();
-        return statusEnvelope(statusCode, exception.getReason());
+        return statusEnvelope(statusCode, exception.getReason(), exception, request);
     }
 
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<ApiResponse<Void>> handleNoResource(NoResourceFoundException exception) {
-        return statusEnvelope(exception.getStatusCode(), null);
+        return statusEnvelope(exception.getStatusCode(), null, exception, null);
     }
 
     @ExceptionHandler({
@@ -59,23 +71,34 @@ public class GlobalExceptionHandler {
             HttpMediaTypeNotSupportedException.class,
             HttpMediaTypeNotAcceptableException.class
     })
-    public ResponseEntity<ApiResponse<Void>> handleSpringMvcStatusException(Exception exception) {
-        return errorResponseEnvelope((ErrorResponse) exception);
+    public ResponseEntity<ApiResponse<Void>> handleSpringMvcStatusException(
+            Exception exception,
+            HttpServletRequest request
+    ) {
+        return errorResponseEnvelope((ErrorResponse) exception, exception, request);
     }
 
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<ApiResponse<Void>> handleException(Exception exception) {
+    public ResponseEntity<ApiResponse<Void>> handleException(
+            Exception exception,
+            HttpServletRequest request
+    ) {
         if (exception instanceof ErrorResponse errorResponse) {
-            return errorResponseEnvelope(errorResponse);
+            return errorResponseEnvelope(errorResponse, exception, request);
         }
         log.error("Unexpected exception", exception);
+        recordFailure(exception, HttpStatus.INTERNAL_SERVER_ERROR.value(), request);
         return ResponseEntity
                 .status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(ApiResponse.error(500, "Internal server error"));
     }
 
-    private ResponseEntity<ApiResponse<Void>> errorResponseEnvelope(ErrorResponse errorResponse) {
-        return statusEnvelope(errorResponse.getStatusCode(), errorResponseMessage(errorResponse));
+    private ResponseEntity<ApiResponse<Void>> errorResponseEnvelope(
+            ErrorResponse errorResponse,
+            Throwable exception,
+            HttpServletRequest request
+    ) {
+        return statusEnvelope(errorResponse.getStatusCode(), errorResponseMessage(errorResponse), exception, request);
     }
 
     private String errorResponseMessage(ErrorResponse errorResponse) {
@@ -90,10 +113,27 @@ public class GlobalExceptionHandler {
         return null;
     }
 
-    private ResponseEntity<ApiResponse<Void>> statusEnvelope(HttpStatusCode statusCode, String reason) {
+    private ResponseEntity<ApiResponse<Void>> statusEnvelope(
+            HttpStatusCode statusCode,
+            String reason,
+            Throwable exception,
+            HttpServletRequest request
+    ) {
+        recordFailure(exception, statusCode.value(), request);
         return ResponseEntity
                 .status(statusCode)
                 .body(ApiResponse.error(statusCode.value(), statusMessage(statusCode, reason)));
+    }
+
+    private void recordFailure(Throwable exception, int statusCode, HttpServletRequest request) {
+        if (exception == null || statusCode < 500) {
+            return;
+        }
+        AdminErrorLogService service = errorLogServiceProvider.getIfAvailable();
+        if (service == null) {
+            return;
+        }
+        service.recordException(exception, request, statusCode);
     }
 
     private String statusMessage(HttpStatusCode statusCode, String reason) {

@@ -1,11 +1,13 @@
 package com.example.food.ai.recipe;
 
+import com.example.food.admin.error.AdminErrorLogService;
 import com.example.food.ai.qwen.QwenRecipeClient;
 import com.example.food.ai.recipe.dto.RecipeGenerateRequest;
 import com.example.food.ai.recipe.dto.RecipeGenerateResponse;
 import com.example.food.security.AuthPrincipal;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.http.HttpStatus;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -30,18 +32,29 @@ public class RecipeStreamingService {
 
     private final RecipeRecommendationService recipeRecommendationService;
     private final QwenRecipeClient qwenRecipeClient;
+    private final AdminErrorLogService errorLogService;
     private final ExecutorService workerExecutor = Executors.newCachedThreadPool(daemonThreadFactory("recipe-stream"));
     private final ScheduledExecutorService heartbeatExecutor = Executors.newScheduledThreadPool(
             1,
             daemonThreadFactory("recipe-heartbeat")
     );
 
+    @Autowired
+    public RecipeStreamingService(
+            RecipeRecommendationService recipeRecommendationService,
+            QwenRecipeClient qwenRecipeClient,
+            AdminErrorLogService errorLogService
+    ) {
+        this.recipeRecommendationService = recipeRecommendationService;
+        this.qwenRecipeClient = qwenRecipeClient;
+        this.errorLogService = errorLogService;
+    }
+
     public RecipeStreamingService(
             RecipeRecommendationService recipeRecommendationService,
             QwenRecipeClient qwenRecipeClient
     ) {
-        this.recipeRecommendationService = recipeRecommendationService;
-        this.qwenRecipeClient = qwenRecipeClient;
+        this(recipeRecommendationService, qwenRecipeClient, null);
     }
 
     public SseEmitter generate(
@@ -148,6 +161,16 @@ public class RecipeStreamingService {
         } catch (Throwable exception) {
             if (cancelled.get() || Thread.currentThread().isInterrupted()) {
                 return;
+            }
+            if (errorLogService != null) {
+                errorLogService.recordException(
+                        exception,
+                        principal,
+                        "POST",
+                        "/api/ai/recipes/generate/stream",
+                        HttpStatus.BAD_GATEWAY.value(),
+                        null
+                );
             }
             sendError(emitter, cancelled, errorMessage(exception));
             emitter.complete();

@@ -1,8 +1,10 @@
 package com.example.food.stats.image;
 
+import com.example.food.admin.error.AdminErrorLogService;
 import com.example.food.ai.qwen.QwenVisionClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,15 +30,27 @@ public class IngredientImageTaskService {
     private final IngredientImageMapper imageMapper;
     private final IngredientImageProvider imageProvider;
     private final QwenVisionClient qwenVisionClient;
+    private final AdminErrorLogService errorLogService;
+
+    @Autowired
+    public IngredientImageTaskService(
+            IngredientImageMapper imageMapper,
+            IngredientImageProvider imageProvider,
+            QwenVisionClient qwenVisionClient,
+            AdminErrorLogService errorLogService
+    ) {
+        this.imageMapper = imageMapper;
+        this.imageProvider = imageProvider;
+        this.qwenVisionClient = qwenVisionClient;
+        this.errorLogService = errorLogService;
+    }
 
     public IngredientImageTaskService(
             IngredientImageMapper imageMapper,
             IngredientImageProvider imageProvider,
             QwenVisionClient qwenVisionClient
     ) {
-        this.imageMapper = imageMapper;
-        this.imageProvider = imageProvider;
-        this.qwenVisionClient = qwenVisionClient;
+        this(imageMapper, imageProvider, qwenVisionClient, null);
     }
 
     @Async("ingredientImageTaskExecutor")
@@ -74,12 +88,36 @@ public class IngredientImageTaskService {
                 storeReady(imageId, candidate, content, verification);
                 return;
             }
-            markFailed(imageId, verificationAttempted
+            String failureReason = verificationAttempted
                     ? "所有候选图片均未通过千问视觉校验"
-                    : "候选图片均无法下载或格式不受支持");
+                    : "候选图片均无法下载或格式不受支持";
+            markFailed(imageId, failureReason);
+            if (errorLogService != null) {
+                errorLogService.recordFailure(
+                        verificationAttempted ? AdminErrorLogService.AI : AdminErrorLogService.TOOL,
+                        verificationAttempted ? "QwenVisionClient" : "WikimediaIngredientImageProvider",
+                        failureReason,
+                        null,
+                        null,
+                        "ASYNC",
+                        "/internal/tools/ingredient-image-cache",
+                        502,
+                        null
+                );
+            }
         } catch (Exception exception) {
             LOGGER.warn("食材图片缓存任务失败，ingredientImageId={}, ingredient={}", imageId, canonicalName);
             markFailed(imageId, shortReason(exception));
+            if (errorLogService != null) {
+                errorLogService.recordException(
+                        exception,
+                        null,
+                        "ASYNC",
+                        "/internal/tools/ingredient-image-cache",
+                        500,
+                        null
+                );
+            }
         }
     }
 
