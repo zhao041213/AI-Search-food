@@ -1,25 +1,138 @@
 # AI 智能菜谱推荐系统
 
-基于多模态大模型的食材识别与智能菜谱推荐系统。当前分支包含标准前后端分离结构、MySQL/Flyway 数据库基础、JWT 认证、手机号注册与登录、管理员登录和前端基础页面。
+<p align="center">
+  <strong>基于多模态大模型的食材识别与个性化菜谱工作台</strong>
+</p>
+
+<p align="center">
+  <a href="README.md"><strong>中文</strong></a>
+  &nbsp;·&nbsp;
+  <a href="README.en.md">English</a>
+</p>
+
+项目将食材输入、图像识别、AI 菜谱生成、库存管理、采购准备和烹饪反馈串成一个完整闭环，面向家庭用户提供可执行的饮食决策辅助。系统同时提供管理员运营概览、模型配置和日志审计能力。
+
+> 本项目是一个 Java 17 + Spring Boot 3 + Vue 3 的毕业设计项目，支持本地开发、MySQL 持久化和 Docker Compose 部署。
+
+## 功能概览
+
+| 模块 | 已实现能力 |
+| --- | --- |
+| 智能输入 | 文字输入、上传图片识别食材、拍照识别食材 |
+| AI 菜谱 | 个性化推荐、流式生成、功效标签、营养估算、烹饪步骤和视频关键词 |
+| 食材准备 | 所需食材、库存匹配、缺少食材分析、采购清单、临期提醒 |
+| 用户空间 | 菜谱收藏、搜索历史、推荐反馈、健康档案、饮食偏好 |
+| 库存与菜单 | 入库、烹饪消耗、撤销操作、一周菜单、AI 自动安排 21 个餐次 |
+| 成品评价 | 上传成品图片，由 AI 评价菜品完成度并保存记录 |
+| 用户认证 | 手机号验证码注册/登录、手机号密码登录、密码重置和错误锁定 |
+| 管理员端 | 运营数据、热门食材、AI 模型配置、操作日志、异常日志 |
+
+## 产品亮点
+
+- 生成菜谱时采用 Server-Sent Events 流式输出，已返回内容会在原结果页面中逐步展示。
+- 生成页面保持“结果页接管输入页”的交互，流式期间不使用遮挡正文的全屏加载层。
+- 推荐会综合食材、餐次、饮食偏好、健康档案和用户库存，减少只根据单一食材生成的无效结果。
+- 普通用户可以在验证码登录和密码登录之间切换，密码使用 BCrypt 哈希保存。
+- 管理员操作和系统异常独立记录，并在展示和日志写入前脱敏敏感信息。
+
+## 技术架构
+
+```text
+┌──────────────────────────────────────────────────────────────┐
+│                         Vue 3 前端                           │
+│ Element Plus · Pinia · Vue Router · Nginx · SSE 流式消费      │
+└──────────────────────────────┬───────────────────────────────┘
+                               │ /api 反向代理
+┌──────────────────────────────▼───────────────────────────────┐
+│                     Spring Boot 3 后端                        │
+│ 认证 · AI 编排 · 菜谱 · 库存 · 周菜单 · 评价 · 管理员运营       │
+└───────────────┬───────────────────────────┬───────────────────┘
+                │                           │
+        ┌───────▼────────┐          ┌───────▼────────────────┐
+        │ MySQL / H2     │          │ 千问兼容 API / 阿里云短信 │
+        │ Flyway 迁移     │          │ 文本、视觉、验证码服务     │
+        └────────────────┘          └────────────────────────┘
+```
 
 ## 项目结构
 
 ```text
-backend/   Spring Boot 3 后端服务
-frontend/  Vue 3 构建应用与 Nginx 静态托管配置
-docs/      需求设计与阶段计划
+AI-Search-food/
+├─ backend/
+│  ├─ src/main/java/com/example/food/
+│  │  ├─ ai/             # 菜谱生成、流式输出、图像识别和 AI 配置
+│  │  ├─ auth/           # 用户/管理员认证、验证码、密码策略
+│  │  ├─ admin/          # 管理员概览、操作日志和异常日志
+│  │  ├─ recipe/         # 菜谱保存、搜索历史和推荐反馈
+│  │  ├─ pantry/         # 用户库存、入库、消耗和准备度
+│  │  ├─ weekly/         # 一周菜单和采购状态
+│  │  ├─ user/           # 健康档案和饮食偏好
+│  │  ├─ review/         # 成品图片评价
+│  │  └─ security/       # JWT、角色和 Spring Security 配置
+│  ├─ src/main/resources/db/migration/  # Flyway 数据库迁移
+│  ├─ src/test/                         # 后端单元、控制器和集成测试
+│  ├─ Dockerfile
+│  └─ pom.xml
+├─ frontend/
+│  ├─ src/
+│  │  ├─ api/            # 后端 API 封装
+│  │  ├─ components/     # 可复用业务组件
+│  │  ├─ stores/         # Pinia 状态
+│  │  ├─ utils/          # 流式解析、业务计算和测试
+│  │  └─ views/          # 首页、登录、用户和管理员页面
+│  ├─ nginx/             # 本地和容器 Nginx 配置
+│  ├─ scripts/           # Nginx 启停脚本
+│  ├─ Dockerfile
+│  └─ package.json
+├─ docs/                 # 设计文档、阶段计划和本地接入说明
+├─ docker-compose.yml
+├─ docker-compose.debug.yml
+├─ .env.example
+├─ README.md
+└─ README.en.md
 ```
 
 ## 环境要求
 
-- Java 17+
-- Maven 3.8+
-- Node.js 20+
-- MySQL 8+
+- Java 17 或更高版本
+- Maven 3.8 或更高版本
+- Node.js 20 或更高版本
+- MySQL 8 或更高版本（本地默认可使用 H2）
+- Docker Desktop（仅 Docker Compose 部署需要）
 
-## 后端配置
+## 快速开始
 
-默认本地启动配置：
+### 启动后端
+
+默认启动使用 H2 临时数据库，适合本地开发和功能演示：
+
+```powershell
+mvn "-Dmaven.repo.local=D:\AI-Search-food\.m2" -f backend/pom.xml spring-boot:run
+```
+
+后端默认运行在 `http://localhost:7068`。
+
+### 启动前端
+
+正式本地演示使用 Nginx 托管构建产物，并代理 `/api` 请求：
+
+```powershell
+cd frontend
+npm install
+npm start
+```
+
+默认访问地址为 `http://localhost:5173`。源码热更新使用 `npm run dev`。停止由本项目启动的 Nginx：
+
+```powershell
+npm run stop
+```
+
+Windows 用户如未安装 Nginx，可执行 `winget install -e --id nginxinc.nginx`。
+
+## 配置说明
+
+### AI 与本地开发
 
 ```env
 JWT_SECRET=change-this-secret-change-this-secret-32
@@ -29,111 +142,108 @@ DASHSCOPE_MODEL=qwen-plus
 DASHSCOPE_VISION_MODEL=qwen-vl-plus
 ```
 
-默认启动使用内置 H2 临时数据库，方便前端和 AI 功能开发时不依赖 MySQL。注册数据会写入当前启用的数据源；H2 数据在应用重启后会清空，需要长期保存用户数据时应启用 MySQL 配置。生产或演示部署时必须替换 `JWT_SECRET`。`DASHSCOPE_API_KEY` 可作为兜底环境变量；管理员后台保存的 AI 接入配置会优先生效。图片食材识别默认使用 `DASHSCOPE_VISION_MODEL`，并复用千问兼容模式接口。Flyway 会自动创建业务表和初始配置。
+`DASHSCOPE_API_KEY` 仅作为兜底配置；管理员端保存的 AI 接入配置优先级更高。生产环境必须替换 `JWT_SECRET`，并使用至少 32 字节的随机值。
 
-短信验证码默认使用 `mock` 模式：后端随机生成 6 位验证码并在接口响应中返回，前端会自动填入，仅用于本地开发。验证码有效期为 5 分钟，60 秒内不能重复获取，连续输错 5 次后失效。注册和登录使用不同用途的验证码，验证码使用后立即失效。
+### H2 与 MySQL
 
-如果没有企业短信资质，建议使用阿里云号码认证服务的短信认证模式。将 `SMS_PROVIDER` 改为 `aliyun-pnvs`，并配置号码认证服务控制台提供的系统签名和系统验证码模板：
-
-```env
-SMS_PROVIDER=aliyun-pnvs
-ALIBABA_CLOUD_ACCESS_KEY_ID=你的 AccessKey ID
-ALIBABA_CLOUD_ACCESS_KEY_SECRET=你的 AccessKey Secret
-ALIYUN_PNVS_SIGN_NAME=恒创联众
-ALIYUN_PNVS_TEMPLATE_CODE=100001
-ALIYUN_PNVS_ENDPOINT=dypnsapi.aliyuncs.com
-ALIYUN_PNVS_SCHEME_NAME=可选的方案名称
-```
-
-PNVS 模式使用 `SendSmsVerifyCode` 发送验证码，并使用 `CheckSmsVerifyCode` 校验验证码。系统签名必须和系统模板配套使用，不能与普通短信服务的自定义签名或模板混用。真实短信模式不会在接口响应或日志中回显验证码。以上敏感配置只应放在 IDEA 环境变量、系统环境变量或未提交的本地配置中。
-
-生产部署必须同时启用 `prod` profile，例如 `SPRING_PROFILES_ACTIVE=mysql,prod`。该 profile 会禁用模拟发送器并默认选择 PNVS；缺少真实短信配置时应用将拒绝启动，避免公共接口回显有效验证码。
-
-如果希望本地每次启动都自动带千问 Key，可以复制示例文件：
+H2 数据会在应用重启后清空。如需持久化数据，可以复制本地配置模板并设置 `SPRING_PROFILES_ACTIVE=local`：
 
 ```powershell
 Copy-Item backend/src/main/resources/application-local.example.yml backend/src/main/resources/application-local.yml
 ```
 
-然后在 `application-local.yml` 中填写自己的 MySQL 连接信息和千问 Key，并在 IDEA 启动配置中设置：
+也可以启用 `mysql` profile：
 
 ```env
-SPRING_PROFILES_ACTIVE=local
-```
-
-IDEA 路径：`Run/Debug Configurations` -> `FoodApplication` -> `Environment variables`。
-
-`application-local.yml` 已被 Git 忽略，不会提交到 GitHub。管理员后台保存的 AI 接入配置仍然优先生效。后续迁移到服务器数据库时，只需要把 `application-local.yml` 里的 `spring.datasource.url` 从 `localhost` 改成服务器地址。
-
-需要接入 MySQL 时启用 `mysql` profile，并配置：
-
-```powershell
 SPRING_PROFILES_ACTIVE=mysql
 MYSQL_URL=jdbc:mysql://localhost:3306/ai_smart_recipe?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
 MYSQL_USERNAME=root
 MYSQL_PASSWORD=你的 MySQL 密码
 ```
 
-当前 AI 接口：
+Flyway 会在启动时自动执行数据库迁移。不要修改已经执行过的迁移文件，应新增版本迁移。
 
-- `POST /api/ai/recipes/generate`：根据文字食材生成菜谱。
-- `POST /api/ai/ingredients/recognize`：上传 JPG、PNG 或 WebP 图片识别食材，最大 5MB。
-- `GET/PUT /api/users/me/weekly-menu`：读取或保存当前用户的一周菜单。
-- `POST /api/users/me/weekly-menu/auto-generate`：结合用户已保存菜谱、健康档案、饮食偏好和已有食材，调用 AI 自动安排一周 21 个餐次；覆盖已有菜单时传入 `overwrite=true`。
-- `PUT /api/users/me/weekly-menu/shopping-status`：更新本周采购清单中的食材状态。
+### 短信验证码
 
-PowerShell 临时配置千问 Key：
+本地默认使用 `mock` 模式，验证码会在接口响应中返回并由前端自动填入，仅用于开发。验证码有效期为 5 分钟，60 秒内不能重复发送，连续输错 5 次后失效。
 
-```powershell
-$env:DASHSCOPE_API_KEY="你的千问 API Key"
+真实短信使用阿里云 PNVS：
+
+```env
+SMS_PROVIDER=aliyun-pnvs
+ALIBABA_CLOUD_ACCESS_KEY_ID=你的 AccessKey ID
+ALIBABA_CLOUD_ACCESS_KEY_SECRET=你的 AccessKey Secret
+ALIYUN_PNVS_SIGN_NAME=你的系统签名
+ALIYUN_PNVS_TEMPLATE_CODE=你的模板编号
+ALIYUN_PNVS_ENDPOINT=dypnsapi.aliyuncs.com
 ```
 
-## 本地启动
+生产部署必须启用 `mysql,prod` profile。生产模式禁用模拟发送器，缺少真实短信配置时会拒绝启动，避免公共接口回显验证码。敏感配置只应放在环境变量或未提交的本地配置中。
 
-后端：
+## 认证说明
 
-```powershell
-mvn "-Dmaven.repo.local=D:\AI-Search-food\.m2" -f backend/pom.xml spring-boot:run
-```
+普通用户支持手机号验证码登录和手机号密码登录。新用户注册时需要设置密码；已有历史账号如果尚未设置密码，仍可使用验证码登录，并通过“忘记密码”流程设置密码。
 
-前端默认使用 Nginx 启动：
+密码规则为 8–64 个字符，且同时包含字母和数字。连续输错 5 次后，密码登录锁定 15 分钟；验证码登录和密码重置不受影响。密码不会保存在浏览器本地存储中。
 
-```powershell
-cd frontend
-npm install
-npm start
-```
-
-可使用 `winget install -e --id nginxinc.nginx` 安装官方 Windows 版 Nginx；启动脚本会自动识别 WinGet、`C:\nginx` 或 `NGINX_HOME` 指向的安装目录。`npm start` 会先执行构建，再由 Nginx 托管 `dist` 并将 `/api` 反向代理到后端 `7068` 端口。
-
-默认访问：
-
-```text
-http://localhost:5173
-```
-
-停止本项目启动的 Nginx：
-
-```powershell
-npm run stop
-```
-
-`npm run dev` 仅保留给前端源码开发时的热更新调试；正式本地演示和部署使用 `npm start`。
-
-## 登录说明
-
-新手机号需要先在“用户注册”页面获取验证码并完成注册，之后才能使用“手机号登录”。模拟短信模式会自动填入本次随机验证码；PNVS 真实短信模式需要输入手机收到的验证码。
-
-管理员登录：
+管理员初始账号：
 
 ```text
 账号：admin
 密码：Admin@123456
 ```
 
-正式部署后应在 MySQL 中修改初始管理员密码。
+正式部署后必须修改初始管理员密码。
 
-## 验证命令
+## 主要 API
+
+### AI 与菜谱
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `POST` | `/api/ai/recipes/generate` | 一次性生成菜谱 |
+| `POST` | `/api/ai/recipes/generate/stream` | SSE 流式生成菜谱 |
+| `POST` | `/api/ai/ingredients/recognize` | 上传 JPG、PNG 或 WebP 图片识别食材，最大 5MB |
+| `POST` | `/api/ai/finished-dish-reviews` | 上传成品图片并请求 AI 评价 |
+
+### 认证
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `POST` | `/api/auth/user/register/code` | 获取注册验证码 |
+| `POST` | `/api/auth/user/register` | 用户注册并登录 |
+| `POST` | `/api/auth/user/code` | 获取登录验证码 |
+| `POST` | `/api/auth/user/login` | 验证码登录 |
+| `POST` | `/api/auth/user/password-login` | 密码登录 |
+| `POST` | `/api/auth/user/password/reset/code` | 获取密码重置验证码 |
+| `POST` | `/api/auth/user/password/reset` | 重置用户密码 |
+| `POST` | `/api/auth/admin/login` | 管理员登录 |
+| `GET` | `/api/auth/me` | 获取当前登录身份 |
+
+### 用户数据与管理员
+
+- `/api/users/me/pantry`：库存、临期提醒、库存准备度、入库、烹饪消耗和操作撤销。
+- `/api/users/me/health-profile`：健康档案。
+- `/api/users/me/diet-preferences`：饮食偏好。
+- `/api/users/me/weekly-menu`：一周菜单、AI 自动生成和采购状态。
+- `/api/recipes/saved`：已保存菜谱。
+- `/api/search-history/recent`：最近搜索记录。
+- `/api/recommendation-feedbacks/{searchLogId}`：推荐反馈和已烹饪标记。
+- `/api/admin/dashboard/overview`：运营概览、趋势、输入来源和热门食材。
+- `/api/admin/ai-config/text-recipe`：文本菜谱 AI 配置。
+- `/api/admin/operation-logs`：管理员操作日志。
+- `/api/admin/error-logs`：系统异常日志。
+- `/api/stats/hot-ingredients`：热门食材统计。
+
+受保护接口使用 JWT：
+
+```http
+Authorization: Bearer <token>
+```
+
+完整的本地启动、API 调用、千问和阿里云 PNVS 配置说明见：[本地启动、API 与阿里云短信配置](docs/local-run-api-and-aliyun-sms.md)。
+
+## 测试与构建
 
 后端测试：
 
@@ -148,13 +258,11 @@ cd frontend
 npm run build
 ```
 
+后端测试覆盖认证、密码策略、错误锁定、验证码、AI 客户端、控制器、权限和主要业务服务；前端业务工具测试与源码放在同目录，并通过生产构建检查 Vue、路由和静态资源。
+
 ## Docker Compose 部署
 
-完整的本地启动、API 调用、千问和阿里云 PNVS 配置说明见：[本地启动、API 与阿里云短信配置](docs/local-run-api-and-aliyun-sms.md)。
-
-Docker Compose 用于本地演示、测试环境和毕业设计展示。安装 Docker Desktop（包含 Compose）后，宿主机不需要安装 Java、Maven、Node.js、MySQL 或 Nginx。
-
-首次使用：
+在项目根目录执行：
 
 ```powershell
 Copy-Item .env.example .env
@@ -163,62 +271,31 @@ docker compose up -d --build
 docker compose ps
 ```
 
-配置完成后的日常启动：
+前端默认入口为 `http://localhost`。端口冲突时，在 `.env` 中设置 `FRONTEND_PORT=8080`，然后访问 `http://localhost:8080`。
 
-```powershell
-docker compose up -d
-docker compose ps
-```
-
-前端默认入口为 `http://localhost`。端口冲突时，在 `.env` 中设置 `FRONTEND_PORT=8080` 后访问 `http://localhost:8080`。前端容器通过 Nginx 将 `/api/*` 转发到后端，后端和 MySQL 默认不会绑定到宿主机端口。
-
-查看日志：
+常用命令：
 
 ```powershell
 docker compose logs -f backend
 docker compose logs -f frontend
-docker compose logs -f mysql
-```
-
-临时停止和再次启动（保留容器和数据库数据）：
-
-```powershell
 docker compose stop
 docker compose start
-```
-
-关闭本项目并移除容器（保留数据库数据卷）：
-
-```powershell
 docker compose down
 ```
 
-仅需重启服务时：
+普通 `docker compose down` 会保留 `mysql_data` 和 `review_uploads` 数据卷。只有明确需要清空数据时才使用 `docker compose down -v`。
 
-```powershell
-docker compose restart
-```
+## 安全与开发约定
 
-普通 `docker compose down` 会保留 `mysql_data` 和 `review_uploads` 数据卷；只有明确需要清空数据时才执行危险命令：
+- 不提交 `.env`、API Key、短信密钥、数据库密码或真实用户数据。
+- 用户密码只保存为 BCrypt 哈希，密码和验证码不得写入日志。
+- 生产环境使用真实短信服务、随机 JWT 密钥和 MySQL，不使用 `mock` 验证码。
+- 管理员接口由角色权限保护；用户资源按当前登录用户隔离。
+- 数据库结构通过 Flyway 版本迁移管理，不修改已执行的历史迁移。
+- 前端页面以中文为主，新增用户可见文案应保持现有产品语气和交互习惯。
 
-```powershell
-docker compose down -v
-```
+## 项目文档
 
-需要从宿主机调试后端时，使用仅绑定回环地址的调试覆盖文件：
-
-```powershell
-docker compose -f docker-compose.yml -f docker-compose.debug.yml up -d --build
-```
-
-调试后端地址为 `http://127.0.0.1:7068`（可通过 `BACKEND_DEBUG_PORT` 修改）。生产 Docker 模式固定使用真实 PNVS，不会自动回退为模拟短信；真实短信调用可能产生费用。
-
-常见问题：
-
-- 数据库未健康：查看 `docker compose logs mysql`，确认 `MYSQL_*` 配置后等待健康检查完成。
-- Flyway 迁移失败：查看 `docker compose logs backend`，确认数据库账号有建表权限；不要修改既有迁移文件。
-- 千问或短信配置缺失：后端启动日志只会列出缺失的变量名，不会输出密钥值。
-- 端口冲突：修改 `FRONTEND_PORT`；不要停止其他项目正在使用的进程。
-- 重新构建镜像：执行 `docker compose build --no-cache` 后再 `docker compose up -d`。
-
-Docker 配置不会改变原有的 `npm run dev`、`npm start` 和 `mvn spring-boot:run` 本地开发方式。
+- [本地启动、API 与阿里云短信配置](docs/local-run-api-and-aliyun-sms.md)
+- [设计文档与阶段计划](docs/superpowers/)
+- [English README](README.en.md)
