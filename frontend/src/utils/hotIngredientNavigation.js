@@ -5,17 +5,22 @@ const OPERATION_LOGS_PANEL = 'operation-logs'
 const ERROR_LOGS_PANEL = 'error-logs'
 const USER_MANAGEMENT_PANEL = 'user-management'
 
+export const ADMIN_PANEL_NAVIGATION = Object.freeze([
+  { panel: OVERVIEW_PANEL, label: '运营概览' },
+  { panel: SETTINGS_PANEL, label: '系统设置' },
+  { panel: HOT_INGREDIENT_PANEL, label: '热门分析' },
+  { panel: OPERATION_LOGS_PANEL, label: '操作日志' },
+  { panel: ERROR_LOGS_PANEL, label: '异常日志' },
+  { panel: USER_MANAGEMENT_PANEL, label: '用户管理' }
+])
+
+const ADMIN_PANEL_VALUES = ADMIN_PANEL_NAVIGATION.map(({ panel }) => panel)
+
 export function shouldShowSavedRecipesNavigation(role) {
   return role === 'USER'
 }
 
-export function getHotIngredientNavigation(isAdmin) {
-  if (isAdmin) {
-    return {
-      label: '热门分析',
-      to: { name: 'admin', query: { panel: HOT_INGREDIENT_PANEL } }
-    }
-  }
+export function getHotIngredientNavigation() {
   return {
     label: '热门食材',
     to: { name: 'hot-ingredients' }
@@ -24,9 +29,11 @@ export function getHotIngredientNavigation(isAdmin) {
 
 export function resolveAdminPanel(panel) {
   const value = Array.isArray(panel) ? panel[0] : panel
-  return [OVERVIEW_PANEL, SETTINGS_PANEL, HOT_INGREDIENT_PANEL, OPERATION_LOGS_PANEL, ERROR_LOGS_PANEL, USER_MANAGEMENT_PANEL].includes(value)
-    ? value
-    : OVERVIEW_PANEL
+  return ADMIN_PANEL_VALUES.includes(value) ? value : OVERVIEW_PANEL
+}
+
+export function isAdminPanelActive(currentPanel, panel) {
+  return resolveAdminPanel(currentPanel) === panel
 }
 
 export function buildAdminPanelQuery(currentQuery, panel) {
