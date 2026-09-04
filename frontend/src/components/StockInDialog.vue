@@ -44,6 +44,7 @@
 
 <script setup>
 import { reactive, ref, watch } from 'vue'
+import { INGREDIENT_UNIT_OPTIONS } from '../utils/ingredientUnits'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -52,26 +53,7 @@ const props = defineProps({
 })
 const emit = defineEmits(['update:modelValue', 'confirm'])
 
-const units = [
-  { value: 'g', label: '克（g）' },
-  { value: 'kg', label: '千克（kg）' },
-  { value: 'ml', label: '毫升（ml）' },
-  { value: 'l', label: '升（l）' },
-  { value: '个', label: '个' },
-  { value: '只', label: '只' },
-  { value: '枚', label: '枚' },
-  { value: '颗', label: '颗' },
-  { value: '片', label: '片' },
-  { value: '根', label: '根' },
-  { value: '瓣', label: '瓣' },
-  { value: '包', label: '包' },
-  { value: '袋', label: '袋' },
-  { value: '盒', label: '盒' },
-  { value: '杯', label: '杯' },
-  { value: '把', label: '把' },
-  { value: '条', label: '条' },
-  { value: '碗', label: '碗' }
-]
+const units = INGREDIENT_UNIT_OPTIONS
 const visible = ref(props.modelValue)
 const form = reactive({ quantity: null, unit: '', category: '', expireDate: '' })
 

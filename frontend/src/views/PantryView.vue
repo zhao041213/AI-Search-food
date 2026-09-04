@@ -244,7 +244,14 @@
           <el-input-number v-model="form.quantity" :min="0.01" :precision="2" :step="1" controls-position="right" />
         </el-form-item>
         <el-form-item label="单位">
-          <el-input v-model="form.unit" maxlength="32" placeholder="例如：个、克、包" />
+          <el-select v-model="form.unit" clearable filterable placeholder="选择单位">
+            <el-option
+              v-for="unit in INGREDIENT_UNIT_OPTIONS"
+              :key="unit.value"
+              :label="unit.label"
+              :value="unit.value"
+            />
+          </el-select>
         </el-form-item>
       </div>
     </el-form>
@@ -317,6 +324,7 @@ import {
   hasAvailableQuantity,
   summarizePantryExpiry
 } from '../utils/pantryExpiry'
+import { INGREDIENT_UNIT_OPTIONS } from '../utils/ingredientUnits'
 
 const items = ref([])
 const statusFilter = ref('all')
