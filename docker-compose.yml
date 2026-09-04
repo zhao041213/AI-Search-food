@@ -51,8 +51,10 @@ services:
       PNVS_CONNECT_TIMEOUT: ${PNVS_CONNECT_TIMEOUT:-5s}
       PNVS_READ_TIMEOUT: ${PNVS_READ_TIMEOUT:-10s}
       FINISHED_DISH_REVIEW_STORAGE_DIR: /app/data/finished-dish-reviews
+      USER_AVATAR_STORAGE_DIR: /app/data/user-avatars
     volumes:
       - review_uploads:/app/data/finished-dish-reviews
+      - user_avatars:/app/data/user-avatars
     networks:
       - app_network
       - database_network
@@ -90,6 +92,7 @@ services:
 volumes:
   mysql_data:
   review_uploads:
+  user_avatars:
 
 networks:
   app_network:

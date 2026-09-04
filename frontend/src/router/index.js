@@ -9,6 +9,7 @@ import HotIngredientsView from '../views/HotIngredientsView.vue'
 import PantryView from '../views/PantryView.vue'
 import HealthProfileView from '../views/HealthProfileView.vue'
 import WeeklyMenuView from '../views/WeeklyMenuView.vue'
+import UserAccountView from '../views/UserAccountView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -51,6 +52,12 @@ const router = createRouter({
       path: '/weekly-menu',
       name: 'weekly-menu',
       component: WeeklyMenuView,
+      meta: { requiresUser: true }
+    },
+    {
+      path: '/account',
+      name: 'user-account',
+      component: UserAccountView,
       meta: { requiresUser: true }
     },
     {

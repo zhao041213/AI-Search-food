@@ -9,51 +9,20 @@
       </RouterLink>
 
       <div class="account">
-        <el-popover
-          placement="bottom-end"
-          trigger="click"
-          :width="320"
-          popper-class="theme-popover"
-        >
-          <template #reference>
-            <button class="theme-trigger" type="button" aria-label="主题设置">
-              <Palette :size="16" aria-hidden="true" />
-              <span>{{ activeThemeLabel }}</span>
-            </button>
-          </template>
-
-          <div class="theme-panel">
-            <div class="theme-panel-head">
-              <strong>主题设置</strong>
-              <span>选择后立即保存到本地</span>
-            </div>
-
-            <button
-              v-for="theme in themeOptions"
-              :key="theme.key"
-              class="theme-option"
-              :class="{ active: theme.key === activeTheme }"
-              type="button"
-              :aria-pressed="theme.key === activeTheme"
-              @click="setTheme(theme.key)"
-            >
-              <span class="theme-swatch" aria-hidden="true">
-                <i
-                  v-for="color in theme.preview"
-                  :key="color"
-                  :style="{ background: color }"
-                />
-              </span>
-              <span class="theme-option-copy">
-                <strong>{{ theme.label }}</strong>
-                <em>{{ theme.description }}</em>
-              </span>
-            </button>
-          </div>
-        </el-popover>
-
         <template v-if="auth.isLoggedIn">
-          <span class="account-name">{{ auth.displayName || roleDisplay }}</span>
+          <RouterLink
+            v-if="auth.isUser"
+            class="account-profile"
+            to="/account"
+            :aria-label="`打开${auth.displayName || roleDisplay}的账号中心`"
+          >
+            <span class="account-name">{{ auth.displayName || roleDisplay }}</span>
+            <span class="account-avatar" aria-hidden="true">
+              <img v-if="headerAvatarUrl" :src="headerAvatarUrl" alt="" />
+              <UserCircle v-else :size="19" stroke-width="2.2" />
+            </span>
+          </RouterLink>
+          <span v-else class="account-name">{{ auth.displayName || roleDisplay }}</span>
           <el-button class="header-button" type="primary" plain @click="logout">
             <LogOut :size="16" aria-hidden="true" />
             <span>退出登录</span>
@@ -85,6 +54,10 @@
           <HeartPulse :size="17" aria-hidden="true" />
           <span>健康档案</span>
         </RouterLink>
+        <RouterLink v-if="auth.isUser" class="sidebar-link" to="/account">
+          <UserCircle :size="17" aria-hidden="true" />
+          <span>账号中心</span>
+        </RouterLink>
 
         <div class="sidebar-caption sidebar-caption-spaced">功能扩展</div>
         <RouterLink class="sidebar-link" :to="hotIngredientNavigation.to">
@@ -109,13 +82,59 @@
         <RouterView />
       </el-main>
     </el-container>
+
+    <div class="floating-theme-control">
+      <el-popover
+        placement="top-end"
+        trigger="click"
+        :width="320"
+        popper-class="theme-popover"
+      >
+        <template #reference>
+          <button class="theme-trigger" type="button" aria-label="主题设置">
+            <Palette :size="16" aria-hidden="true" />
+            <span>{{ activeThemeLabel }}</span>
+          </button>
+        </template>
+
+        <div class="theme-panel">
+          <div class="theme-panel-head">
+            <strong>主题设置</strong>
+            <span>选择后立即保存到本地</span>
+          </div>
+
+          <button
+            v-for="theme in themeOptions"
+            :key="theme.key"
+            class="theme-option"
+            :class="{ active: theme.key === activeTheme }"
+            type="button"
+            :aria-pressed="theme.key === activeTheme"
+            @click="setTheme(theme.key)"
+          >
+            <span class="theme-swatch" aria-hidden="true">
+              <i
+                v-for="color in theme.preview"
+                :key="color"
+                :style="{ background: color }"
+              />
+            </span>
+            <span class="theme-option-copy">
+              <strong>{{ theme.label }}</strong>
+              <em>{{ theme.description }}</em>
+            </span>
+          </button>
+        </div>
+      </el-popover>
+    </div>
   </el-container>
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
-import { Bookmark, CalendarDays, Circle, Flame, HeartPulse, Home, LogIn, LogOut, Package, Palette, ShieldCheck, Utensils } from 'lucide-vue-next'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { Bookmark, CalendarDays, Circle, Flame, HeartPulse, Home, LogIn, LogOut, Package, Palette, ShieldCheck, UserCircle, Utensils } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
+import { getMyAccount, loadMyAvatar } from './api/userAccount'
 import { useAuthStore } from './stores/auth'
 import { getHotIngredientNavigation, shouldShowSavedRecipesNavigation } from './utils/hotIngredientNavigation'
 
@@ -277,11 +296,13 @@ const auth = useAuthStore()
 const router = useRouter()
 const hotIngredientNavigation = computed(() => getHotIngredientNavigation(auth.isAdmin))
 const activeTheme = ref(getInitialTheme())
+const headerAvatarUrl = ref('')
 const roleDisplay = computed(() => ({ ADMIN: '管理员', USER: '普通用户' })[auth.role] || auth.role)
 const activeThemeConfig = computed(
   () => themeOptions.find((theme) => theme.key === activeTheme.value) || themeOptions[0]
 )
 const activeThemeLabel = computed(() => activeThemeConfig.value.label)
+let headerAvatarRequestId = 0
 
 watch(
   activeThemeConfig,
@@ -291,9 +312,50 @@ watch(
   { immediate: true }
 )
 
+watch(
+  () => [auth.token, auth.avatarVersion, auth.isUser],
+  () => {
+    void loadHeaderAvatar()
+  },
+  { immediate: true }
+)
+
+onBeforeUnmount(() => {
+  revokeHeaderAvatar()
+})
+
 function logout() {
   auth.logout()
   router.push({ name: 'login' })
+}
+
+async function loadHeaderAvatar() {
+  const requestId = ++headerAvatarRequestId
+  if (!auth.isUser) {
+    revokeHeaderAvatar()
+    return
+  }
+
+  try {
+    const accountResponse = await getMyAccount()
+    if (requestId !== headerAvatarRequestId || !accountResponse.data.data?.avatarUrl) {
+      if (requestId === headerAvatarRequestId) revokeHeaderAvatar()
+      return
+    }
+
+    const avatarResponse = await loadMyAvatar()
+    if (requestId !== headerAvatarRequestId) return
+
+    revokeHeaderAvatar()
+    headerAvatarUrl.value = URL.createObjectURL(avatarResponse.data)
+  } catch {
+    if (requestId === headerAvatarRequestId) revokeHeaderAvatar()
+  }
+}
+
+function revokeHeaderAvatar() {
+  if (headerAvatarUrl.value) URL.revokeObjectURL(headerAvatarUrl.value)
+  headerAvatarUrl.value = ''
 }
 
 function getInitialTheme() {
@@ -576,6 +638,27 @@ function applyTheme(theme) {
   min-width: 150px;
 }
 
+.account-profile {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 38px;
+  padding: 3px 0 3px 8px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: inherit;
+  transition:
+    border-color 180ms ease,
+    background-color 180ms ease;
+}
+
+.account-profile:hover,
+.account-profile:focus-visible {
+  border-color: var(--app-line-strong);
+  background: var(--app-surface-strong);
+  outline: none;
+}
+
 .account-name {
   max-width: 180px;
   overflow: hidden;
@@ -586,6 +669,27 @@ function applyTheme(theme) {
   white-space: nowrap;
 }
 
+.account-avatar {
+  display: inline-grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--app-line-strong);
+  border-radius: 50%;
+  color: #ffffff;
+  background: #a8b0ba;
+  box-shadow: 0 3px 10px rgba(38, 50, 56, 0.12);
+}
+
+.account-avatar img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .header-button {
   --el-button-text-color: #000000;
   --el-button-hover-text-color: #000000;
@@ -594,20 +698,28 @@ function applyTheme(theme) {
   font-weight: 700;
 }
 
+.floating-theme-control {
+  position: fixed;
+  right: clamp(16px, 2.8vw, 36px);
+  bottom: clamp(16px, 3vw, 32px);
+  z-index: 40;
+}
+
 .theme-trigger {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   min-height: 36px;
-  padding: 0 10px;
+  padding: 0 14px;
   border: 1px solid var(--app-line-strong);
-  border-radius: 6px;
+  border-radius: 999px;
   color: var(--app-text);
   background: var(--app-surface);
   font: inherit;
   font-size: 14px;
   font-weight: 800;
   cursor: pointer;
+  box-shadow: 0 10px 26px rgba(38, 50, 56, 0.14);
   transition:
     border-color 180ms ease,
     background-color 180ms ease,

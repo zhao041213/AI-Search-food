@@ -19,10 +19,12 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY --from=build --chown=app:app /workspace/target/ai-smart-recipe-backend-0.0.1-SNAPSHOT.jar /app/app.jar
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod 755 /usr/local/bin/docker-entrypoint.sh
 
-USER app
+USER root
 EXPOSE 7068
 HEALTHCHECK --interval=15s --timeout=5s --start-period=45s --retries=5 \
     CMD curl --fail --silent http://127.0.0.1:7068/actuator/health || exit 1
 
-ENTRYPOINT ["java", "-jar", "/app/app.jar"]
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]

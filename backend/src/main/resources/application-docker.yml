@@ -35,6 +35,8 @@ app:
       endpoint: ${DASHSCOPE_BASE_URL:${DASHSCOPE_ENDPOINT:https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions}}
   finished-dish-reviews:
     storage-dir: ${FINISHED_DISH_REVIEW_STORAGE_DIR:/app/data/finished-dish-reviews}
+  user-avatars:
+    storage-dir: ${USER_AVATAR_STORAGE_DIR:/app/data/user-avatars}
 
 management:
   endpoints:

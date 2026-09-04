@@ -2,6 +2,7 @@ package com.example.food.security;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
+import io.jsonwebtoken.JwtBuilder;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
@@ -34,14 +35,16 @@ public class JwtService {
     public String generateToken(AuthPrincipal principal) {
         Instant now = Instant.now();
         Instant expiresAt = now.plusSeconds(expirationMinutes * 60);
-        return Jwts.builder()
+        JwtBuilder builder = Jwts.builder()
                 .subject(principal.username())
                 .claim("id", principal.id())
                 .claim("role", principal.role().name())
                 .issuedAt(Date.from(now))
-                .expiration(Date.from(expiresAt))
-                .signWith(secretKey)
-                .compact();
+                .expiration(Date.from(expiresAt));
+        if (principal.authVersion() != null) {
+            builder.claim("authVersion", principal.authVersion());
+        }
+        return builder.signWith(secretKey).compact();
     }
 
     public AuthPrincipal parseToken(String token) {
@@ -64,12 +67,18 @@ public class JwtService {
         Number id = claims.get("id", Number.class);
         String username = claims.getSubject();
         String role = claims.get("role", String.class);
+        Number authVersion = claims.get("authVersion", Number.class);
 
         if (id == null || !StringUtils.hasText(username) || !StringUtils.hasText(role)) {
             throw invalidToken();
         }
 
-        return new AuthPrincipal(id.longValue(), username, AppRole.valueOf(role));
+        return new AuthPrincipal(
+                id.longValue(),
+                username,
+                AppRole.valueOf(role),
+                authVersion == null ? null : authVersion.longValue()
+        );
     }
 
     private BadCredentialsException invalidToken() {

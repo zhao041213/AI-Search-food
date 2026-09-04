@@ -8,7 +8,8 @@ export const useAuthStore = defineStore('auth', {
   state: () => ({
     token: localStorage.getItem(TOKEN_KEY) || '',
     role: localStorage.getItem(ROLE_KEY) || '',
-    displayName: localStorage.getItem(DISPLAY_NAME_KEY) || ''
+    displayName: localStorage.getItem(DISPLAY_NAME_KEY) || '',
+    avatarVersion: 0
   }),
   getters: {
     isLoggedIn: (state) => Boolean(state.token),
@@ -24,6 +25,7 @@ export const useAuthStore = defineStore('auth', {
       this.token = token
       this.role = role
       this.displayName = displayName
+      this.avatarVersion += 1
 
       localStorage.setItem(TOKEN_KEY, token)
       localStorage.setItem(ROLE_KEY, role)
@@ -31,7 +33,7 @@ export const useAuthStore = defineStore('auth', {
     },
     setPrincipal(principal) {
       const role = principal?.role || ''
-      const displayName = principal?.username || this.displayName || ''
+      const displayName = this.displayName || principal?.username || ''
 
       this.role = role
       this.displayName = displayName
@@ -39,10 +41,18 @@ export const useAuthStore = defineStore('auth', {
       localStorage.setItem(ROLE_KEY, role)
       localStorage.setItem(DISPLAY_NAME_KEY, displayName)
     },
+    setDisplayName(displayName) {
+      this.displayName = displayName || ''
+      localStorage.setItem(DISPLAY_NAME_KEY, this.displayName)
+    },
+    refreshAvatar() {
+      this.avatarVersion += 1
+    },
     logout() {
       this.token = ''
       this.role = ''
       this.displayName = ''
+      this.avatarVersion += 1
 
       localStorage.removeItem(TOKEN_KEY)
       localStorage.removeItem(ROLE_KEY)
