@@ -237,7 +237,10 @@
               @toggle-reaction="toggleRecommendationReaction"
             />
 
-            <NutritionEstimateCard :nutrition="selected.recipe.nutritionEstimate" />
+            <NutritionEstimateCard
+              :nutrition="selected.recipe.nutritionEstimate"
+              :nutrition-target="nutritionTarget"
+            />
 
             <div class="recipe-pages">
               <div class="page-tabs" role="tablist" aria-label="菜谱详情分页">
@@ -514,6 +517,7 @@ import {
 } from '../api/savedRecipes'
 import { getPantryItems, stockInPantry } from '../api/pantry'
 import { getShoppingItemChecks, saveShoppingItemCheck } from '../api/shoppingChecks'
+import { getNutritionTarget } from '../api/nutritionTargets'
 import CookingModeDialog from '../components/CookingModeDialog.vue'
 import CookingVideoSearch from '../components/CookingVideoSearch.vue'
 import FinishedDishReviewDialog from '../components/FinishedDishReviewDialog.vue'
@@ -532,6 +536,7 @@ import {
   shoppingChecklistKey
 } from '../utils/recipeEnhancements'
 import { getIngredientImage } from '../utils/ingredientImages'
+import { emptyNutritionTarget, normalizeNutritionTarget } from '../utils/nutritionTarget'
 import {
   nextRecommendationReaction,
   normalizeRecommendationFeedback
@@ -589,6 +594,8 @@ const stockInItem = ref(null)
 const feedbackReaction = ref(null)
 const feedbackCooked = ref(false)
 const feedbackLoading = ref(false)
+const nutritionTarget = ref(emptyNutritionTarget())
+const nutritionTargetLoading = ref(false)
 const auth = useAuthStore()
 let listRequestId = 0
 let detailRequestId = 0
@@ -650,10 +657,27 @@ const recipePages = computed(() => {
 
 onMounted(async () => {
   loadPantryItems()
+  loadNutritionTarget()
   await loadCollections()
   await loadTags()
   await loadRecipes()
 })
+
+async function loadNutritionTarget() {
+  if (nutritionTargetLoading.value) {
+    return
+  }
+  nutritionTargetLoading.value = true
+  try {
+    const response = await getNutritionTarget()
+    nutritionTarget.value = normalizeNutritionTarget(response.data.data)
+  } catch {
+    nutritionTarget.value = emptyNutritionTarget()
+    ElMessage.warning('每日营养目标加载失败，菜谱仍可正常使用')
+  } finally {
+    nutritionTargetLoading.value = false
+  }
+}
 
 async function loadRecipes(preferredId = null) {
   const requestId = ++listRequestId

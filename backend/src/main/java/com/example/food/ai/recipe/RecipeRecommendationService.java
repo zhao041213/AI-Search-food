@@ -8,6 +8,7 @@ import com.example.food.recipe.SearchLogService;
 import com.example.food.security.AppRole;
 import com.example.food.security.AuthPrincipal;
 import com.example.food.user.health.UserHealthProfileService;
+import com.example.food.user.nutrition.UserNutritionTargetService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,6 +30,7 @@ public class RecipeRecommendationService {
     private final SearchLogService searchLogService;
     private final UserPantryService userPantryService;
     private final UserHealthProfileService userHealthProfileService;
+    private final UserNutritionTargetService userNutritionTargetService;
     private final com.example.food.recipe.RecommendationFeedbackService recommendationFeedbackService;
 
     @Autowired
@@ -37,13 +39,32 @@ public class RecipeRecommendationService {
             SearchLogService searchLogService,
             UserPantryService userPantryService,
             UserHealthProfileService userHealthProfileService,
-            com.example.food.recipe.RecommendationFeedbackService recommendationFeedbackService
+            com.example.food.recipe.RecommendationFeedbackService recommendationFeedbackService,
+            UserNutritionTargetService userNutritionTargetService
     ) {
         this.qwenRecipeClient = qwenRecipeClient;
         this.searchLogService = searchLogService;
         this.userPantryService = userPantryService;
         this.userHealthProfileService = userHealthProfileService;
         this.recommendationFeedbackService = recommendationFeedbackService;
+        this.userNutritionTargetService = userNutritionTargetService;
+    }
+
+    public RecipeRecommendationService(
+            QwenRecipeClient qwenRecipeClient,
+            SearchLogService searchLogService,
+            UserPantryService userPantryService,
+            UserHealthProfileService userHealthProfileService,
+            com.example.food.recipe.RecommendationFeedbackService recommendationFeedbackService
+    ) {
+        this(
+                qwenRecipeClient,
+                searchLogService,
+                userPantryService,
+                userHealthProfileService,
+                recommendationFeedbackService,
+                null
+        );
     }
 
     public RecipeRecommendationService(
@@ -70,8 +91,9 @@ public class RecipeRecommendationService {
 
     public String promptFor(RecipeGenerateRequest request, AuthPrincipal principal) {
         UserHealthProfileService.RecommendationContext healthProfile = healthProfile(principal);
+        UserNutritionTargetService.RecommendationContext nutritionTarget = nutritionTarget(principal);
         String feedbackContext = feedbackContext(principal);
-        return buildPrompt(request, pantryIngredients(principal), healthProfile, feedbackContext);
+        return buildPrompt(request, pantryIngredients(principal), healthProfile, nutritionTarget, feedbackContext);
     }
 
     public RecipeGenerateResponse persist(
@@ -88,6 +110,7 @@ public class RecipeRecommendationService {
             RecipeGenerateRequest request,
             List<String> pantryIngredients,
             UserHealthProfileService.RecommendationContext healthProfile,
+            UserNutritionTargetService.RecommendationContext nutritionTarget,
             String feedbackContext
     ) {
         return """
@@ -144,7 +167,7 @@ public class RecipeRecommendationService {
                 safeText(request.mealType()),
                 safeText(resolveGoal(request)),
                 safeText(request.searchMode()),
-                requestContext(request, healthProfile),
+                requestContext(request, healthProfile, nutritionTarget),
                 hasText(feedbackContext) ? feedbackContext : ""
         );
     }
@@ -179,6 +202,20 @@ public class RecipeRecommendationService {
         return userHealthProfileService.getRecommendationContext(principal.id());
     }
 
+    private UserNutritionTargetService.RecommendationContext nutritionTarget(AuthPrincipal principal) {
+        if (userNutritionTargetService == null
+                || principal == null
+                || principal.role() != AppRole.USER) {
+            return null;
+        }
+        try {
+            return userNutritionTargetService.getRecommendationContext(principal.id());
+        } catch (RuntimeException exception) {
+            log.warn("读取每日营养目标失败，继续使用原推荐流程，userId={}", principal.id(), exception);
+            return null;
+        }
+    }
+
     private String resolveGoal(RecipeGenerateRequest request) {
         if (hasText(request.goal())) {
             return request.goal();
@@ -191,7 +228,8 @@ public class RecipeRecommendationService {
 
     private String requestContext(
             RecipeGenerateRequest request,
-            UserHealthProfileService.RecommendationContext healthProfile
+            UserHealthProfileService.RecommendationContext healthProfile,
+            UserNutritionTargetService.RecommendationContext nutritionTarget
     ) {
         String regenerationContext = regenerationContext(request);
         String dietPreferenceContext = dietPreferenceContext(request.dietPreference());
@@ -202,6 +240,10 @@ public class RecipeRecommendationService {
         String healthProfileContext = healthProfileContext(healthProfile);
         if (hasText(healthProfileContext)) {
             context += "\n" + healthProfileContext;
+        }
+        String nutritionTargetContext = nutritionTargetContext(nutritionTarget);
+        if (hasText(nutritionTargetContext)) {
+            context += "\n" + nutritionTargetContext;
         }
         return context;
     }
@@ -264,6 +306,25 @@ public class RecipeRecommendationService {
                 formatNumber(healthProfile.weightKg()),
                 formatNumber(healthProfile.bmi()),
                 activityLevelLabel(healthProfile.activityLevel())
+        ).strip();
+    }
+
+    private String nutritionTargetContext(UserNutritionTargetService.RecommendationContext nutritionTarget) {
+        if (nutritionTarget == null) {
+            return "";
+        }
+        return """
+                用户设定的每日营养目标（软偏好，仅用于调整菜谱搭配与分量）：
+                热量：%s 千卡
+                蛋白质：%s 克
+                脂肪：%s 克
+                碳水：%s 克
+                请在不违反本次输入、忌口和过敏等更高优先级约束的前提下参考这些目标；营养数值仍是 AI 估算，仅供一般饮食参考，不保证精确达到目标，也不是诊断或治疗建议。
+                """.formatted(
+                formatNumber(nutritionTarget.caloriesKcal()),
+                formatNumber(nutritionTarget.proteinG()),
+                formatNumber(nutritionTarget.fatG()),
+                formatNumber(nutritionTarget.carbohydrateG())
         ).strip();
     }
 

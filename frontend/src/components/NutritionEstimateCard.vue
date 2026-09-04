@@ -9,11 +9,14 @@
       <HeartPulse :size="20" aria-hidden="true" />
     </header>
 
-    <div v-if="estimate" class="nutrition-metrics">
-      <div v-for="metric in metrics" :key="metric.key" class="nutrition-metric">
-        <span>{{ metric.label }}</span>
-        <strong>{{ formatNutritionValue(estimate[metric.key]) }}<small>{{ metric.unit }}</small></strong>
-      </div>
+      <div v-if="estimate" class="nutrition-metrics">
+        <div v-for="metric in metrics" :key="metric.key" class="nutrition-metric">
+          <span>{{ metric.label }}</span>
+          <strong>{{ formatNutritionValue(estimate[metric.key]) }}<small>{{ metric.unit }}</small></strong>
+          <small v-if="comparisons[metric.key]" class="nutrition-target-comparison">
+            {{ formatNutritionValue(comparisons[metric.key].current) }} / {{ formatNutritionValue(comparisons[metric.key].target) }} {{ metric.unit }} · {{ formatNutritionValue(comparisons[metric.key].percentage) }}%
+          </small>
+        </div>
     </div>
     <p v-else class="nutrition-empty">暂无营养估算</p>
     <p class="nutrition-disclosure">{{ NUTRITION_DISCLOSURE }}</p>
@@ -28,15 +31,21 @@ import {
   normalizeNutritionEstimate,
   NUTRITION_DISCLOSURE
 } from '../utils/nutrition'
+import { compareNutritionToTarget, normalizeNutritionTarget } from '../utils/nutritionTarget'
 
 const props = defineProps({
   nutrition: {
+    type: Object,
+    default: null
+  },
+  nutritionTarget: {
     type: Object,
     default: null
   }
 })
 
 const estimate = computed(() => normalizeNutritionEstimate(props.nutrition))
+const comparisons = computed(() => compareNutritionToTarget(estimate.value, normalizeNutritionTarget(props.nutritionTarget)))
 const metrics = [
   { key: 'caloriesKcal', label: '热量', unit: '千卡' },
   { key: 'proteinG', label: '蛋白质', unit: '克' },
@@ -124,6 +133,15 @@ const metrics = [
   color: var(--app-text-muted);
   font-size: 11px;
   font-weight: 700;
+}
+
+.nutrition-metric .nutrition-target-comparison {
+  display: block;
+  margin: 0;
+  color: var(--app-accent);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.4;
 }
 
 @media (max-width: 560px) {

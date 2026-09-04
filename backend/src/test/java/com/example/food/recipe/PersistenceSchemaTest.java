@@ -78,6 +78,17 @@ class PersistenceSchemaTest {
     }
 
     @Test
+    void nutritionTargetTableIsCreatedByFlyway() {
+        assertThat(tableExists("user_nutrition_targets")).isTrue();
+        assertThat(columnExists("user_nutrition_targets", "user_id")).isTrue();
+        assertThat(columnExists("user_nutrition_targets", "enabled")).isTrue();
+        assertThat(columnExists("user_nutrition_targets", "calories_kcal")).isTrue();
+        assertThat(columnExists("user_nutrition_targets", "protein_g")).isTrue();
+        assertThat(columnExists("user_nutrition_targets", "fat_g")).isTrue();
+        assertThat(columnExists("user_nutrition_targets", "carbohydrate_g")).isTrue();
+    }
+
+    @Test
     void recommendationFeedbackTableAndSearchResultSnapshotsAreCreatedByFlyway() {
         assertThat(columnExists("search_logs", "result_title")).isTrue();
         assertThat(columnExists("search_logs", "result_ingredients")).isTrue();

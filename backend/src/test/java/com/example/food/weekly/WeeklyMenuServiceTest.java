@@ -10,6 +10,7 @@ import com.example.food.recipe.RecipeRecordMapper;
 import com.example.food.shopping.ShoppingItemStatus;
 import com.example.food.stats.IngredientNormalizer;
 import com.example.food.user.health.UserHealthProfileService;
+import com.example.food.user.nutrition.UserNutritionTargetService;
 import com.example.food.user.preference.UserDietPreferenceService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.example.food.weekly.dto.WeeklyMenuItemRequest;
@@ -68,6 +69,9 @@ class WeeklyMenuServiceTest {
     private UserHealthProfileService userHealthProfileService;
 
     @Mock
+    private UserNutritionTargetService userNutritionTargetService;
+
+    @Mock
     private UserDietPreferenceService userDietPreferenceService;
 
     private WeeklyMenuService service;
@@ -84,6 +88,7 @@ class WeeklyMenuServiceTest {
                 new IngredientNormalizer(),
                 qwenRecipeClient,
                 userHealthProfileService,
+                userNutritionTargetService,
                 userDietPreferenceService,
                 new ObjectMapper()
         );
@@ -194,7 +199,41 @@ class WeeklyMenuServiceTest {
                 .contains("番茄炒蛋")
                 .contains("年龄段=30-44岁")
                 .contains("目标=fat_loss")
+                .contains("每日营养目标：未设置")
                 .contains("不得输出疾病诊断、治疗方案或疗效保证");
+    }
+
+    @Test
+    void autoGenerationPromptIncludesEnabledNutritionTarget() {
+        LocalDate monday = LocalDate.of(2026, 8, 31);
+        when(planMapper.findByUserIdAndWeekStart(7L, monday)).thenReturn(null);
+        when(recipeRecordMapper.findSavedRecipes(7L, null, null, null, 30, 0))
+                .thenReturn(List.of(recipe(1L, "番茄炒蛋")));
+        when(recipeIngredientMapper.selectList(any(QueryWrapper.class))).thenReturn(List.of());
+        when(userHealthProfileService.getRecommendationContext(7L)).thenReturn(null);
+        when(userDietPreferenceService.get(7L)).thenReturn(
+                com.example.food.user.preference.dto.DietPreferenceResponse.empty()
+        );
+        when(userNutritionTargetService.getRecommendationContext(7L)).thenReturn(
+                new UserNutritionTargetService.RecommendationContext(
+                        new java.math.BigDecimal("2000"),
+                        new java.math.BigDecimal("80"),
+                        new java.math.BigDecimal("60"),
+                        new java.math.BigDecimal("260")
+                )
+        );
+        when(userPantryService.listIngredientNames(7L)).thenReturn(List.of());
+        when(qwenRecipeClient.generateWeeklyMenu(anyString())).thenReturn(List.of(
+                new QwenRecipeClient.WeeklyMenuSelection(monday.toString(), "BREAKFAST", 1L)
+        ));
+        when(recipeRecordMapper.selectList(any(QueryWrapper.class))).thenReturn(List.of(recipe(1L, "番茄炒蛋")));
+        service.autoGenerate(7L, new WeeklyMenuAutoGenerateRequest(monday, false));
+
+        ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(qwenRecipeClient).generateWeeklyMenu(promptCaptor.capture());
+        assertThat(promptCaptor.getValue())
+                .contains("每日营养目标：每日热量=2000千卡，蛋白质=80克，脂肪=60克，碳水=260克")
+                .contains("软偏好，仅供一般饮食参考");
     }
 
     @Test
