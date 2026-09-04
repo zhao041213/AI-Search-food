@@ -1,14 +1,5 @@
 <template>
-  <main class="kitchen-world-page" aria-labelledby="kitchen-world-title">
-    <header class="kitchen-world-heading">
-      <h1 id="kitchen-world-title" class="sr-only">AI 智能厨房</h1>
-      <div class="kitchen-heading-spacer" aria-hidden="true"></div>
-      <div class="kitchen-world-status" aria-label="厨房状态">
-        <span><i class="status-dot status-dot-live" />厨房营业中</span>
-        <span>点击人物开始</span>
-      </div>
-    </header>
-
+  <main class="kitchen-world-page" aria-label="AI 智能厨房">
     <section class="kitchen-world-stage" aria-label="厨房功能入口">
       <KitchenScene @select-station="openStation" />
       <div class="scene-caption">
@@ -67,61 +58,6 @@ function openStation(stationId) {
   padding: 22px clamp(16px, 2.6vw, 34px) 42px;
   color: #3b2b21;
   background: linear-gradient(180deg, rgba(242, 226, 190, 0.18), transparent 180px);
-}
-
-.kitchen-world-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  min-height: 28px;
-  max-width: 1520px;
-  margin: 0 auto 10px;
-}
-
-.kitchen-heading-spacer {
-  min-height: 24px;
-  flex: 1;
-}
-
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-
-.kitchen-world-status {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding-bottom: 5px;
-  color: #806345;
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.kitchen-world-status span {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.status-dot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-}
-
-.status-dot-live {
-  background: #5c9d63;
-  box-shadow: 0 0 0 4px rgba(92, 157, 99, 0.16);
 }
 
 .kitchen-world-stage {
@@ -222,10 +158,6 @@ function openStation(stationId) {
 }
 
 @media (max-width: 720px) {
-  .kitchen-world-status {
-    padding-bottom: 0;
-  }
-
   .station-guide {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
