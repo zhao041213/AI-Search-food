@@ -12,6 +12,17 @@
         <template v-if="auth.isLoggedIn">
           <RouterLink
             v-if="auth.isUser"
+            class="notification-link"
+            to="/notifications"
+            :aria-label="notificationUnreadCount > 0 ? `消息中心，有${notificationUnreadCount}条未读消息` : '消息中心'"
+          >
+            <Bell :size="17" aria-hidden="true" />
+            <span v-if="notificationUnreadCount > 0" class="notification-count" aria-hidden="true">
+              {{ notificationUnreadCount > 99 ? '99+' : notificationUnreadCount }}
+            </span>
+          </RouterLink>
+          <RouterLink
+            v-if="auth.isUser"
             class="account-profile"
             to="/account"
             :aria-label="`打开${auth.displayName || roleDisplay}的账号中心`"
@@ -155,9 +166,10 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { Bookmark, CalendarDays, Circle, CircleAlert, ClipboardList, Flame, Gauge, HeartPulse, Home, LogIn, LogOut, Package, Palette, Settings, ShieldCheck, Users, UserCircle, Utensils } from 'lucide-vue-next'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { Bell, Bookmark, CalendarDays, Circle, CircleAlert, ClipboardList, Flame, Gauge, HeartPulse, Home, LogIn, LogOut, Package, Palette, Settings, ShieldCheck, Users, UserCircle, Utensils } from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
+import { getUnreadNotificationCount } from './api/notifications'
 import { getMyAccount, loadMyAvatar } from './api/userAccount'
 import { useAuthStore } from './stores/auth'
 import {
@@ -346,7 +358,9 @@ const activeThemeConfig = computed(
   () => themeOptions.find((theme) => theme.key === activeTheme.value) || themeOptions[0]
 )
 const activeThemeLabel = computed(() => activeThemeConfig.value.label)
+const notificationUnreadCount = ref(0)
 let headerAvatarRequestId = 0
+let notificationCountTimer = null
 
 watch(
   activeThemeConfig,
@@ -364,8 +378,28 @@ watch(
   { immediate: true }
 )
 
+watch(
+  () => [auth.token, auth.isUser],
+  () => {
+    clearNotificationCountTimer()
+    if (!auth.isUser) {
+      notificationUnreadCount.value = 0
+      return
+    }
+    void loadNotificationUnreadCount()
+    notificationCountTimer = window.setInterval(loadNotificationUnreadCount, 60_000)
+  },
+  { immediate: true }
+)
+
+onMounted(() => {
+  window.addEventListener('notifications-updated', loadNotificationUnreadCount)
+})
+
 onBeforeUnmount(() => {
   revokeHeaderAvatar()
+  clearNotificationCountTimer()
+  window.removeEventListener('notifications-updated', loadNotificationUnreadCount)
 })
 
 function logout() {
@@ -407,6 +441,24 @@ async function loadHeaderAvatar() {
 function revokeHeaderAvatar() {
   if (headerAvatarUrl.value) URL.revokeObjectURL(headerAvatarUrl.value)
   headerAvatarUrl.value = ''
+}
+
+async function loadNotificationUnreadCount() {
+  if (!auth.isUser) {
+    notificationUnreadCount.value = 0
+    return
+  }
+  try {
+    const response = await getUnreadNotificationCount()
+    notificationUnreadCount.value = Number(response.data.data || 0)
+  } catch {
+    notificationUnreadCount.value = 0
+  }
+}
+
+function clearNotificationCountTimer() {
+  if (notificationCountTimer) window.clearInterval(notificationCountTimer)
+  notificationCountTimer = null
 }
 
 function getInitialTheme() {
@@ -687,6 +739,46 @@ function applyTheme(theme) {
   justify-content: flex-end;
   gap: 8px;
   min-width: 150px;
+}
+
+.notification-link {
+  position: relative;
+  display: inline-grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  color: var(--app-text-soft);
+  transition:
+    border-color 180ms ease,
+    background-color 180ms ease,
+    color 180ms ease;
+}
+
+.notification-link:hover,
+.notification-link:focus-visible,
+.notification-link.router-link-active {
+  border-color: var(--app-line-strong);
+  color: var(--app-text);
+  background: var(--app-surface-strong);
+  outline: none;
+}
+
+.notification-count {
+  position: absolute;
+  top: -2px;
+  right: -4px;
+  min-width: 17px;
+  padding: 1px 4px;
+  border: 2px solid var(--app-header-bg);
+  border-radius: 999px;
+  color: #ffffff;
+  background: #d3544b;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 14px;
+  text-align: center;
 }
 
 .account-profile {

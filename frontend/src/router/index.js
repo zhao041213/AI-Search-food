@@ -10,6 +10,7 @@ import PantryView from '../views/PantryView.vue'
 import HealthProfileView from '../views/HealthProfileView.vue'
 import WeeklyMenuView from '../views/WeeklyMenuView.vue'
 import UserAccountView from '../views/UserAccountView.vue'
+import NotificationsView from '../views/NotificationsView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -58,6 +59,12 @@ const router = createRouter({
       path: '/account',
       name: 'user-account',
       component: UserAccountView,
+      meta: { requiresUser: true }
+    },
+    {
+      path: '/notifications',
+      name: 'notifications',
+      component: NotificationsView,
       meta: { requiresUser: true }
     },
     {
