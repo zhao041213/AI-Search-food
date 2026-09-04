@@ -78,6 +78,57 @@
           <ul><li v-for="tip in recipe.tips" :key="tip">{{ tip }}</li></ul>
         </div>
       </section>
+
+      <section class="public-print-recipe" aria-label="打印菜谱">
+        <header class="public-print-heading">
+          <p class="shared-eyebrow">菜谱打印</p>
+          <h1>{{ recipe.title || '未命名菜谱' }}</h1>
+        </header>
+
+        <div class="public-print-sections">
+          <section class="public-print-section">
+            <div class="section-heading">
+              <span class="section-number">01</span>
+              <div><p>准备清单</p><h2>所需食材</h2></div>
+            </div>
+            <ul v-if="recipe.ingredients?.length" class="ingredient-list">
+              <li v-for="item in recipe.ingredients" :key="`${item.name}-${item.amount}`">
+                <span>{{ item.name || '未命名食材' }}</span>
+                <strong>{{ item.amount || '适量' }}</strong>
+              </li>
+            </ul>
+            <p v-else class="print-empty">暂无所需食材</p>
+          </section>
+
+          <section class="public-print-section">
+            <div class="section-heading">
+              <span class="section-number">02</span>
+              <div><p>按顺序完成</p><h2>烹饪步骤</h2></div>
+            </div>
+            <ol v-if="recipe.steps?.length" class="step-list">
+              <li v-for="(step, index) in recipe.steps" :key="`${step.order || index}-${step.title}`">
+                <div class="step-index">{{ step.order || index + 1 }}</div>
+                <div>
+                  <div class="step-title"><strong>{{ step.title || '烹饪步骤' }}</strong><span v-if="step.durationMinutes">约 {{ step.durationMinutes }} 分钟</span></div>
+                  <p>{{ step.description || '暂无步骤说明' }}</p>
+                </div>
+              </li>
+            </ol>
+            <p v-else class="print-empty">暂无烹饪步骤</p>
+          </section>
+
+          <section class="public-print-section">
+            <div class="section-heading">
+              <span class="section-number">03</span>
+              <div><p>最后检查</p><h2>烹饪建议</h2></div>
+            </div>
+            <ul v-if="recipe.tips?.length" class="tips-box-list">
+              <li v-for="tip in recipe.tips" :key="tip">{{ tip || '暂无烹饪建议' }}</li>
+            </ul>
+            <p v-else class="print-empty">暂无烹饪建议</p>
+          </section>
+        </div>
+      </section>
     </article>
   </main>
 </template>
@@ -156,6 +207,13 @@ function printRecipe() {
 .recipe-grid, .recipe-footer-grid { display: grid; grid-template-columns: minmax(220px, .72fr) minmax(0, 1.28fr); gap: 28px; margin-top: 28px; }
 .recipe-footer-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .recipe-section, .nutrition-box, .tips-box { min-width: 0; }
+.public-print-recipe { display: none; }
+.public-print-heading { padding-bottom: 18px; border-bottom: 1px solid var(--app-line); }
+.public-print-heading h1 { margin: 8px 0 0; font-size: 32px; }
+.public-print-sections { display: grid; gap: 24px; margin-top: 24px; }
+.public-print-section { break-inside: avoid; }
+.tips-box-list { display: grid; gap: 8px; margin: 18px 0 0; padding-left: 20px; color: var(--app-text-soft); line-height: 1.7; }
+.print-empty { margin: 14px 0 0; color: var(--app-text-muted); }
 .steps-section, .tips-box { padding-left: 28px; border-left: 1px solid var(--app-line); }
 .section-heading { display: flex; align-items: flex-start; gap: 12px; }
 .section-heading p, .section-heading h2 { margin: 0; }
@@ -187,12 +245,9 @@ function printRecipe() {
 
 @media print {
   .shared-page { padding: 0; }
-  .shared-header, .no-print { display: none !important; }
+  .shared-header, .no-print, .recipe-hero, .recipe-grid, .recipe-footer-grid { display: none !important; }
   .shared-card { max-width: none; padding: 0; border: 0; box-shadow: none; }
-  .recipe-hero { padding-top: 0; }
-  .recipe-hero h1 { font-size: 32px; }
-  .recipe-grid { gap: 20px; }
-  .steps-section, .tips-box { border-color: #bbb; }
+  .public-print-recipe { display: block; }
   :global(body), :global(.app-main) { background: #fff !important; }
 }
 </style>

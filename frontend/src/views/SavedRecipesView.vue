@@ -335,6 +335,58 @@
                 </div>
               </div>
             </div>
+
+            <section class="print-recipe" aria-label="打印菜谱">
+              <header class="print-recipe-heading">
+                <p class="eyebrow">菜谱打印</p>
+                <h2>{{ selected.recipe.title || '菜谱详情' }}</h2>
+              </header>
+
+              <div class="print-recipe-sections">
+                <section class="print-recipe-section">
+                  <div class="print-section-heading">
+                    <span class="print-section-number">01</span>
+                    <h3>所需食材</h3>
+                  </div>
+                  <ul v-if="selected.recipe.ingredients?.length" class="print-ingredient-list">
+                    <li v-for="item in selected.recipe.ingredients" :key="`${item.name}-${item.amount}`">
+                      <span>{{ item.name || '未命名食材' }}</span>
+                      <strong>{{ item.amount || '适量' }}</strong>
+                    </li>
+                  </ul>
+                  <p v-else class="print-empty">暂无所需食材</p>
+                </section>
+
+                <section class="print-recipe-section">
+                  <div class="print-section-heading">
+                    <span class="print-section-number">02</span>
+                    <h3>烹饪步骤</h3>
+                  </div>
+                  <ol v-if="selected.recipe.steps?.length" class="print-step-list">
+                    <li v-for="(step, index) in selected.recipe.steps" :key="step.order || index">
+                      <div class="print-step-index">{{ step.order || index + 1 }}</div>
+                      <div>
+                        <strong>{{ step.title || '烹饪步骤' }}</strong>
+                        <span v-if="step.durationMinutes" class="print-step-duration">约 {{ step.durationMinutes }} 分钟</span>
+                        <p>{{ step.description || '暂无步骤说明' }}</p>
+                      </div>
+                    </li>
+                  </ol>
+                  <p v-else class="print-empty">暂无烹饪步骤</p>
+                </section>
+
+                <section class="print-recipe-section">
+                  <div class="print-section-heading">
+                    <span class="print-section-number">03</span>
+                    <h3>烹饪建议</h3>
+                  </div>
+                  <ul v-if="selected.recipe.tips?.length" class="print-tip-list">
+                    <li v-for="tip in selected.recipe.tips" :key="tip">{{ tip || '暂无烹饪建议' }}</li>
+                  </ul>
+                  <p v-else class="print-empty">暂无烹饪建议</p>
+                </section>
+              </div>
+            </section>
           </div>
         </template>
       </section>
@@ -1626,6 +1678,125 @@ function getDeleteErrorMessage(error) {
   padding-top: 14px;
 }
 
+.print-recipe {
+  display: none;
+}
+
+.print-recipe-heading {
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--app-line);
+}
+
+.print-recipe-heading h2 {
+  margin: 6px 0 0;
+  font-size: 28px;
+}
+
+.print-recipe-sections {
+  display: grid;
+  gap: 24px;
+  margin-top: 24px;
+}
+
+.print-recipe-section {
+  break-inside: avoid;
+}
+
+.print-section-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid var(--app-line);
+}
+
+.print-section-heading h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.print-section-number {
+  color: var(--app-accent);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.print-ingredient-list,
+.print-step-list,
+.print-tip-list {
+  margin: 14px 0 0;
+  padding: 0;
+}
+
+.print-ingredient-list,
+.print-tip-list {
+  display: grid;
+  gap: 7px;
+  list-style: none;
+}
+
+.print-ingredient-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 0;
+  border-bottom: 1px dashed var(--app-line-strong);
+  color: var(--app-text-soft);
+}
+
+.print-ingredient-list strong {
+  color: var(--app-text);
+  font-weight: 800;
+}
+
+.print-step-list {
+  display: grid;
+  gap: 14px;
+  list-style: none;
+}
+
+.print-step-list li {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 10px;
+  break-inside: avoid;
+}
+
+.print-step-index {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border: 1px solid var(--app-line-strong);
+  border-radius: 50%;
+  color: var(--app-text);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.print-step-duration {
+  margin-left: 8px;
+  color: var(--app-text-muted);
+  font-size: 12px;
+}
+
+.print-step-list p {
+  margin: 4px 0 0;
+  color: var(--app-text-soft);
+  line-height: 1.7;
+}
+
+.print-tip-list {
+  padding-left: 20px;
+  color: var(--app-text-soft);
+  line-height: 1.7;
+}
+
+.print-empty {
+  margin: 14px 0 0;
+  color: var(--app-text-muted);
+}
+
 .step-list,
 .tip-list {
   display: grid;
@@ -1930,9 +2101,10 @@ function getDeleteErrorMessage(error) {
 
   .saved-heading,
   .history-panel,
+  .detail-heading,
+  .recipe-detail > :not(.print-recipe),
   .detail-heading-actions,
   .page-tabs,
-  .recipe-pages > :not(.recipe-window),
   :deep(.app-header),
   :deep(.app-sidebar) {
     display: none !important;
@@ -1950,7 +2122,11 @@ function getDeleteErrorMessage(error) {
   }
 
   .recipe-window {
-    padding-top: 0;
+    display: none;
+  }
+
+  .print-recipe {
+    display: block;
   }
 }
 
