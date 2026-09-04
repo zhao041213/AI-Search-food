@@ -321,7 +321,9 @@ function drawRoom(parent, station, x, y, w, h) {
   characters.forEach((character, index) => {
     const char = drawCharacter(parent, station, x + w * positions[index], y + h - 52, 0.94, character)
     characterVisuals.push(char)
-    const desk = drawWorkstation(parent, x + w * positions[index], y + h - 70, station.accent)
+    // Keep the workbench below the character's feet so it never overlaps the face
+    // when the scene is scaled down in a smaller desktop viewport.
+    const desk = drawWorkstation(parent, x + w * positions[index], y + h - 46, station.accent)
     workstationVisuals.push(desk)
   })
 
@@ -395,9 +397,16 @@ function drawCharacter(parent, station, x, feetY, scale, character = null) {
   if (spriteFrames.length) {
     const sprite = spriteFrames.length > 1 ? new AnimatedSprite(spriteFrames) : new Sprite(spriteFrames[0])
     sprite.anchor.set(0.5, 1)
-    const spriteScale = targetHeight / sprite.texture.height
-    sprite.scale.set(spriteScale)
+    const fitSpriteToHeight = () => {
+      if (sprite.texture?.height) {
+        sprite.scale.set(targetHeight / sprite.texture.height)
+      }
+    }
+    // The source frames use different transparent canvas sizes. Refit each
+    // frame to the same height so the character does not pulse while animating.
+    fitSpriteToHeight()
     if (sprite instanceof AnimatedSprite) {
+      sprite.onFrameChange = fitSpriteToHeight
       sprite.animationSpeed = 0.08
       sprite.play()
       animatedSprite = sprite
