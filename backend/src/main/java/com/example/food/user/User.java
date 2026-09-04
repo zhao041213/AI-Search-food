@@ -16,6 +16,8 @@ public class User {
     private String avatarUrl;
     private String role;
     private Boolean enabled;
+    private Integer authVersion;
+    private LocalDateTime deletedAt;
     private String passwordHash;
     private Integer passwordFailedAttempts;
     private LocalDateTime passwordLockedUntil;
@@ -69,6 +71,22 @@ public class User {
 
     public void setEnabled(Boolean enabled) {
         this.enabled = enabled;
+    }
+
+    public Integer getAuthVersion() {
+        return authVersion;
+    }
+
+    public void setAuthVersion(Integer authVersion) {
+        this.authVersion = authVersion;
+    }
+
+    public LocalDateTime getDeletedAt() {
+        return deletedAt;
+    }
+
+    public void setDeletedAt(LocalDateTime deletedAt) {
+        this.deletedAt = deletedAt;
     }
 
     public String getPasswordHash() {

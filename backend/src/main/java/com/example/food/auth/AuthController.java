@@ -10,7 +10,9 @@ import com.example.food.auth.dto.PasswordResetRequest;
 import com.example.food.auth.dto.UserPasswordLoginRequest;
 import com.example.food.auth.verification.SmsSendResult;
 import com.example.food.common.ApiResponse;
+import com.example.food.common.RequestIp;
 import jakarta.validation.Valid;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -59,8 +61,11 @@ public class AuthController {
     }
 
     @PostMapping("/user/password/reset")
-    public ApiResponse<Void> resetUserPassword(@Valid @RequestBody PasswordResetRequest request) {
-        authService.resetUserPassword(request);
+    public ApiResponse<Void> resetUserPassword(
+            @Valid @RequestBody PasswordResetRequest request,
+            HttpServletRequest httpRequest
+    ) {
+        authService.resetUserPassword(request, RequestIp.resolve(httpRequest));
         return ApiResponse.ok(null);
     }
 

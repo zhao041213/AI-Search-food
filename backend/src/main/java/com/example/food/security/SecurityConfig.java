@@ -1,10 +1,12 @@
 package com.example.food.security;
 
 import com.example.food.common.ApiResponse;
+import com.example.food.user.UserMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -37,7 +39,8 @@ public class SecurityConfig {
     SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             AuthenticationEntryPoint authenticationEntryPoint,
-            AccessDeniedHandler accessDeniedHandler
+            AccessDeniedHandler accessDeniedHandler,
+            ObjectProvider<UserMapper> userMapperProvider
     ) throws Exception {
         return http
                 .csrf(AbstractHttpConfigurer::disable)
@@ -68,7 +71,11 @@ public class SecurityConfig {
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(
-                        new JwtAuthenticationFilter(jwtService, authenticationEntryPoint),
+                        new JwtAuthenticationFilter(
+                                jwtService,
+                                authenticationEntryPoint,
+                                userMapperProvider.getIfAvailable()
+                        ),
                         UsernamePasswordAuthenticationFilter.class
                 )
                 .build();

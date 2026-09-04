@@ -19,6 +19,7 @@ import com.example.food.security.AuthPrincipal;
 import com.example.food.security.JwtService;
 import com.example.food.user.User;
 import com.example.food.user.UserMapper;
+import com.example.food.user.security.UserSecurityEventService;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -44,6 +45,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final VerificationCodeService verificationCodeService;
     private final AdminOperationLogService adminOperationLogService;
+    private final UserSecurityEventService userSecurityEventService;
 
     public AuthService(
             UserMapper userMapper,
@@ -51,7 +53,8 @@ public class AuthService {
             JwtService jwtService,
             PasswordEncoder passwordEncoder,
             VerificationCodeService verificationCodeService,
-            AdminOperationLogService adminOperationLogService
+            AdminOperationLogService adminOperationLogService,
+            UserSecurityEventService userSecurityEventService
     ) {
         this.userMapper = userMapper;
         this.adminMapper = adminMapper;
@@ -59,6 +62,7 @@ public class AuthService {
         this.passwordEncoder = passwordEncoder;
         this.verificationCodeService = verificationCodeService;
         this.adminOperationLogService = adminOperationLogService;
+        this.userSecurityEventService = userSecurityEventService;
     }
 
     public SmsSendResult issueRegistrationCode(String phone) {
@@ -74,9 +78,7 @@ public class AuthService {
     }
 
     public SmsSendResult issuePasswordResetCode(String phone) {
-        if (selectUserByPhone(phone) == null) {
-            throw new IllegalArgumentException("User not registered");
-        }
+        requireEnabledUser(phone);
         return verificationCodeService.issue(phone, VerificationCodePurpose.RESET_PASSWORD);
     }
 
@@ -140,7 +142,7 @@ public class AuthService {
             passwordEncoder.matches(request.password(), DUMMY_PASSWORD_HASH);
             throw invalidUserCredentials();
         }
-        if (!Boolean.TRUE.equals(user.getEnabled())) {
+        if (!Boolean.TRUE.equals(user.getEnabled()) || user.getDeletedAt() != null) {
             throw new IllegalArgumentException("User account disabled");
         }
 
@@ -189,6 +191,14 @@ public class AuthService {
             noRollbackFor = VerificationCodeException.class
     )
     public void resetUserPassword(PasswordResetRequest request) {
+        resetUserPassword(request, null);
+    }
+
+    @Transactional(
+            isolation = Isolation.READ_COMMITTED,
+            noRollbackFor = VerificationCodeException.class
+    )
+    public void resetUserPassword(PasswordResetRequest request, String ipAddress) {
         PasswordPolicy.validate(request.newPassword());
         verificationCodeService.verify(
                 request.phone(),
@@ -200,12 +210,23 @@ public class AuthService {
         if (user == null) {
             throw new IllegalArgumentException("User not registered");
         }
+        if (!Boolean.TRUE.equals(user.getEnabled()) || user.getDeletedAt() != null) {
+            throw new IllegalArgumentException("User account disabled");
+        }
         LocalDateTime now = LocalDateTime.now();
         user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
         user.setPasswordFailedAttempts(0);
         user.setPasswordLockedUntil(null);
+        user.setAuthVersion(currentAuthVersion(user) + 1);
         user.setUpdatedAt(now);
         userMapper.updatePasswordState(user);
+        userSecurityEventService.record(
+                user.getId(),
+                UserSecurityEventService.PASSWORD_RESET_SESSION_INVALIDATED,
+                UserSecurityEventService.SUCCESS,
+                ipAddress,
+                "密码重置后已使旧会话失效"
+        );
     }
 
     public AuthResponse loginAdmin(AdminLoginRequest request) {
@@ -251,7 +272,7 @@ public class AuthService {
         if (user == null) {
             throw new IllegalArgumentException("User not registered");
         }
-        if (!Boolean.TRUE.equals(user.getEnabled())) {
+        if (!Boolean.TRUE.equals(user.getEnabled()) || user.getDeletedAt() != null) {
             throw new IllegalArgumentException("User account disabled");
         }
         return user;
@@ -266,8 +287,14 @@ public class AuthService {
     }
 
     private AuthResponse userResponse(User user) {
-        String token = jwtService.generateToken(new AuthPrincipal(user.getId(), user.getPhone(), AppRole.USER));
+        String token = jwtService.generateToken(new AuthPrincipal(
+                user.getId(), user.getPhone(), AppRole.USER, (long) currentAuthVersion(user)
+        ));
         return new AuthResponse(token, user.getId(), displayName(user.getNickname(), user.getPhone()), AppRole.USER.name());
+    }
+
+    private int currentAuthVersion(User user) {
+        return user.getAuthVersion() == null ? 0 : user.getAuthVersion();
     }
 
     private AuthResponse adminResponse(AdminAccount admin) {
