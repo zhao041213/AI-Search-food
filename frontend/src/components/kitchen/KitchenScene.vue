@@ -17,7 +17,6 @@ const SCENE_HEIGHT = 760
 const MIN_SCENE_WIDTH = 1080
 const SPRITE_FRAMES = [1, 2, 3]
 const SPRITE_NUMS = [1, 2, 3, 4, 5, 6, 7, 8, 9]
-const SPRITE_DIRECTIONS = ['D', 'L', 'R']
 
 const stations = [
   {
@@ -34,7 +33,9 @@ const stations = [
     spriteNum: 1,
     characters: [
       { id: 'chef', name: '阿灶', role: 'AI 主厨', spriteNum: 1, action: 'cook' },
-      { id: 'chef-helper', name: '小灶', role: '备餐助手', spriteNum: 2, stationId: 'pantry', action: 'prep' }
+      { id: 'chef-helper', name: '小灶', role: '备餐助手', spriteNum: 2, stationId: 'pantry', action: 'prep' },
+      { id: 'chef-recipes', name: '小谱', role: '菜谱策划', spriteNum: 4, stationId: 'recipes', action: 'prep' },
+      { id: 'chef-nutrition', name: '小衡', role: '营养助手', spriteNum: 5, stationId: 'nutrition', action: 'prep' }
     ]
   },
   {
@@ -168,7 +169,6 @@ onMounted(async () => {
       item.container.rotation = item.action === 'cook' ? Math.sin(animationTick * 0.12 + index) * 0.025 : 0
       item.glow.alpha = item.hovered ? 0.94 : 0.2 + (Math.sin(animationTick * 0.06 + index) + 1) * 0.06
       item.container.scale.set(item.pressed ? 0.98 : item.hovered ? 1.045 : 1)
-      updateCharacterDirection(item)
     })
     workstationVisuals.forEach((item, index) => {
       item.screen.alpha = 0.65 + (Math.sin(animationTick * 0.08 + index * 0.8) + 1) * 0.12
@@ -186,35 +186,20 @@ onMounted(async () => {
 async function loadSpriteTextures() {
   const requests = []
   SPRITE_NUMS.forEach((spriteNum) => {
-    SPRITE_DIRECTIONS.forEach((direction) => {
-      const frames = direction === 'D' ? SPRITE_FRAMES : [1]
-      frames.forEach((frame) => {
-        const fileName = `${spriteNum}-${direction}-${frame}.png`
-        requests.push(
-          Assets.load(`/sprites/${fileName}`)
-            .then((texture) => spriteTextures.set(`${spriteNum}-${direction}-${frame}`, texture))
-            .catch(() => null)
-        )
-      })
+    SPRITE_FRAMES.forEach((frame) => {
+      const fileName = `${spriteNum}-D-${frame}.png`
+      requests.push(
+        Assets.load(`/sprites/${fileName}`)
+          .then((texture) => spriteTextures.set(`${spriteNum}-D-${frame}`, texture))
+          .catch(() => null)
+      )
     })
   })
   await Promise.all(requests)
 }
 
-function getSpriteFrames(spriteNum, direction) {
-  const frames = direction === 'D' ? SPRITE_FRAMES : [1]
-  return frames.map((frame) => spriteTextures.get(`${spriteNum}-${direction}-${frame}`)).filter(Boolean)
-}
-
-function updateCharacterDirection(item) {
-  if (!item.sprite || !item.directionFrames?.L?.length || !item.directionFrames?.R?.length) return
-  const phase = Math.floor(animationTick / 210) % 3
-  const direction = phase === 1 ? 'L' : phase === 2 ? 'R' : 'D'
-  if (direction === item.direction) return
-  const frames = item.directionFrames[direction]
-  item.sprite.textures = frames
-  item.sprite.gotoAndPlay(0)
-  item.direction = direction
+function getSpriteFrames(spriteNum) {
+  return SPRITE_FRAMES.map((frame) => spriteTextures.get(`${spriteNum}-D-${frame}`)).filter(Boolean)
 }
 
 onBeforeUnmount(() => {
@@ -306,16 +291,16 @@ function drawHeroRoom(parent, x, y, w, h) {
   island.roundRect(x + w * 0.56 + 58, y + 72, 26, 8, 3).fill(0x222225)
   parent.addChild(island)
 
-  const chefPositions = [x + w * 0.46, x + w * 0.54]
+  const chefPositions = [0.34, 0.445, 0.555, 0.66].map((ratio) => x + w * ratio)
   stations[0].characters.forEach((character, index) => {
     const visual = drawCharacter(parent, stations[0], chefPositions[index], y + 114, 0.94, character)
     characterVisuals.push(visual)
   })
-  addText(parent, '点击人物开始料理', x + w * 0.46, y + 32, 8, 0xf1c36a, true, true)
-  addSpeechBubble(parent, x + w * 0.46 + 26, y + 46, '今天想吃什么？', 120)
+  addText(parent, '点击人物开始料理', x + w * 0.5, y + 32, 8, 0xf1c36a, true, true)
+  addSpeechBubble(parent, x + w * 0.69, y + 44, '今天想吃什么？', 104)
 
   drawPantryShelf(parent, x + 24, y + 95, 84, 22)
-  const cooking = drawCookingPan(parent, x + w * 0.68, y + 76)
+  const cooking = drawCookingPan(parent, x + w * 0.76, y + 76)
   cookingVisuals.push(cooking)
 }
 
@@ -395,12 +380,7 @@ function drawCharacter(parent, station, x, feetY, scale, character = null) {
   const actor = character || station
   const targetHeight = 58 * scale
   const spriteNum = actor.spriteNum || station.spriteNum
-  const directionFrames = {
-    D: getSpriteFrames(spriteNum, 'D'),
-    L: getSpriteFrames(spriteNum, 'L'),
-    R: getSpriteFrames(spriteNum, 'R')
-  }
-  const spriteFrames = directionFrames.D
+  const spriteFrames = getSpriteFrames(spriteNum)
   const container = new Container()
   container.position.set(x, feetY)
   container.eventMode = 'static'
@@ -482,9 +462,7 @@ function drawCharacter(parent, station, x, feetY, scale, character = null) {
     hovered: false,
     pressed: false,
     action: actor.action || 'work',
-    sprite: animatedSprite,
-    directionFrames,
-    direction: 'D'
+    sprite: animatedSprite
   }
   container.on('pointerover', () => {
     visual.hovered = true
