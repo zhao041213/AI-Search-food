@@ -320,19 +320,12 @@
                   <li v-for="tip in selected.recipe.tips" :key="tip">{{ tip }}</li>
                 </ul>
 
-                <div v-else class="video-keywords">
-                  <a
-                    v-for="keyword in videoKeywords"
-                    :key="keyword"
-                    :href="buildBilibiliSearchLink(keyword)"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <Video :size="15" aria-hidden="true" />
-                    {{ keyword }}
-                    <ExternalLink :size="13" aria-hidden="true" />
-                  </a>
-                </div>
+                <CookingVideoSearch
+                  v-else
+                  :recipe-title="selected.recipe.title"
+                  :keywords="videoKeywords"
+                  :recipe-ready="Boolean(selected.recipe?.title)"
+                />
               </div>
             </div>
 
@@ -484,7 +477,6 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   ArrowLeft,
   ChefHat,
-  ExternalLink,
   Flame,
   FolderInput,
   HeartPulse,
@@ -495,8 +487,7 @@ import {
   Share2,
   Sparkles,
   Tags,
-  Trash2,
-  Video
+  Trash2
 } from 'lucide-vue-next'
 import {
   clearRecommendationReaction,
@@ -524,6 +515,7 @@ import {
 import { getPantryItems, stockInPantry } from '../api/pantry'
 import { getShoppingItemChecks, saveShoppingItemCheck } from '../api/shoppingChecks'
 import CookingModeDialog from '../components/CookingModeDialog.vue'
+import CookingVideoSearch from '../components/CookingVideoSearch.vue'
 import FinishedDishReviewDialog from '../components/FinishedDishReviewDialog.vue'
 import ShoppingChecklistTable from '../components/ShoppingChecklistTable.vue'
 import StockInDialog from '../components/StockInDialog.vue'
@@ -532,7 +524,6 @@ import RecommendationFeedbackButtons from '../components/RecommendationFeedbackB
 import { useAuthStore } from '../stores/auth'
 import {
   buildPurchaseLinks,
-  buildBilibiliSearchLink,
   buildShoppingList,
   copyIngredientName,
   filterVideoKeywords,
@@ -653,7 +644,7 @@ const recipePages = computed(() => {
     explanationItems.value.length ? { key: 'explanation', label: 'AI 解释' } : null,
     recipe.steps?.length ? { key: 'steps', label: '烹饪步骤' } : null,
     recipe.tips?.length ? { key: 'tips', label: '烹饪建议' } : null,
-    videoKeywords.value.length ? { key: 'videos', label: '视频关键词' } : null
+    { key: 'videos', label: '相关烹饪视频' }
   ].filter(Boolean)
 })
 

@@ -363,7 +363,7 @@
           <div v-if="!hasSearch" class="empty-stage">
             <ChefHat :size="44" aria-hidden="true" />
             <strong>等待食材信号</strong>
-            <span>输入食材后，系统会在右侧生成菜谱、功效、步骤和视频关键词。</span>
+            <span>输入食材后，系统会在右侧生成菜谱、功效、步骤和相关烹饪视频。</span>
           </div>
 
           <div v-else class="result-content">
@@ -655,7 +655,7 @@
                       <span class="section-index">04</span>
                       <h3 id="recipe-more-title">更多信息</h3>
                     </div>
-                    <span>相关视频关键词</span>
+                    <span>相关烹饪视频</span>
                   </div>
                   <div v-if="recipe.tips?.length" class="tips-card">
                     <div class="detail-card-head">
@@ -666,20 +666,11 @@
                       <li v-for="tip in recipe.tips" :key="tip">{{ tip }}</li>
                     </ul>
                   </div>
-                  <div v-if="videoKeywords.length" class="video-keywords">
-                    <a
-                      v-for="keyword in videoKeywords"
-                      :key="keyword"
-                      :href="buildBilibiliSearchLink(keyword)"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      <Video :size="15" aria-hidden="true" />
-                      {{ keyword }}
-                      <ExternalLink :size="13" aria-hidden="true" />
-                    </a>
-                  </div>
-                  <el-empty v-else description="暂无更多辅助信息" :image-size="56" />
+                  <CookingVideoSearch
+                    :recipe-title="recipe.title"
+                    :keywords="videoKeywords"
+                    :recipe-ready="recipeComplete"
+                  />
                 </section>
               </div>
 
@@ -1019,6 +1010,7 @@ import { getPantryExpiryAlerts, getPantryItems, getPantryReadiness, stockInPantr
 import { getShoppingItemChecks, saveShoppingItemCheck } from '../api/shoppingChecks'
 import CameraIngredientCapture from '../components/CameraIngredientCapture.vue'
 import CookingModeDialog from '../components/CookingModeDialog.vue'
+import CookingVideoSearch from '../components/CookingVideoSearch.vue'
 import { getPantryReadinessErrorMessage } from '../utils/pantryReadiness'
 import DietPreferenceDialog from '../components/DietPreferenceDialog.vue'
 import FinishedDishReviewDialog from '../components/FinishedDishReviewDialog.vue'
@@ -1269,7 +1261,7 @@ const detailDescriptions = {
   overview: 'AI 解释与营养摘要',
   ingredients: '食材与采购清单',
   steps: '完整烹饪步骤',
-  more: '建议与视频关键词'
+  more: '建议与相关烹饪视频'
 }
 const recipePages = computed(() => {
   if (!recipe.value) {
@@ -1283,7 +1275,7 @@ const recipePages = computed(() => {
     explanationItems.value.length ? { key: 'explanation', label: 'AI 解释' } : null,
     recipe.value.steps?.length ? { key: 'steps', label: '烹饪步骤' } : null,
     recipe.value.tips?.length ? { key: 'tips', label: '烹饪建议' } : null,
-    videoKeywords.value.length ? { key: 'videos', label: '视频关键词' } : null
+    videoKeywords.value.length ? { key: 'videos', label: '相关烹饪视频' } : null
   ].filter(Boolean)
 })
 const activeRecipePageIndex = computed(() => {

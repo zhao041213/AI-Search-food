@@ -11,6 +11,9 @@ import com.example.food.stats.image.IngredientImageService;
 import com.example.food.user.preference.UserDietPreferenceController;
 import com.example.food.user.preference.UserDietPreferenceService;
 import com.example.food.user.preference.dto.DietPreferenceResponse;
+import com.example.food.video.VideoSearchController;
+import com.example.food.video.VideoSearchService;
+import com.example.food.video.dto.VideoSearchResponse;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -33,7 +36,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         SecurityConfigTest.TestController.class,
         HotIngredientStatsController.class,
         UserDietPreferenceController.class,
-        IngredientImageController.class
+        IngredientImageController.class,
+        VideoSearchController.class
 })
 @Import(SecurityConfig.class)
 class SecurityConfigTest {
@@ -55,6 +59,9 @@ class SecurityConfigTest {
 
     @MockBean
     private IngredientNormalizer ingredientNormalizer;
+
+    @MockBean
+    private VideoSearchService videoSearchService;
 
     @Test
     void unauthenticatedProtectedEndpointReturnsJsonUnauthorized() throws Exception {
@@ -118,6 +125,35 @@ class SecurityConfigTest {
         mockMvc.perform(get("/api/users/me/diet-preferences"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value(401));
+    }
+
+    @Test
+    void unauthenticatedVideoSearchRequestIsRejected() throws Exception {
+        mockMvc.perform(get("/api/videos/search").param("recipeTitle", "Tomato Egg"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(401));
+    }
+
+    @Test
+    void authenticatedUserCanSearchVideos() throws Exception {
+        when(jwtService.parseToken("user-token"))
+                .thenReturn(new AuthPrincipal(7L, "13800138000", AppRole.USER));
+        when(videoSearchService.search(
+                7L,
+                new AuthPrincipal(7L, "13800138000", AppRole.USER),
+                "Tomato Egg",
+                null,
+                1,
+                null
+        )).thenReturn(new VideoSearchResponse(java.util.List.of(), 1, false, false, true,
+                "https://search.bilibili.com/all?keyword=Tomato%20Egg", "degraded"));
+
+        mockMvc.perform(get("/api/videos/search")
+                        .param("recipeTitle", "Tomato Egg")
+                        .header("Authorization", "Bearer user-token"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.degraded").value(true))
+                .andExpect(jsonPath("$.data.page").value(1));
     }
 
     @Test

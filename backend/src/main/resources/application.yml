@@ -36,6 +36,18 @@ app:
       enabled: ${NOTIFICATION_SCHEDULER_ENABLED:true}
       fixed-delay: ${NOTIFICATION_SCHEDULER_FIXED_DELAY:PT1H}
       initial-delay: ${NOTIFICATION_SCHEDULER_INITIAL_DELAY:PT30S}
+  videos:
+    bilibili:
+      # Experimental web search dependency; it may change or be rate limited by Bilibili.
+      enabled: ${BILIBILI_VIDEO_SEARCH_ENABLED:true}
+      base-url: ${BILIBILI_VIDEO_SEARCH_BASE_URL:https://api.bilibili.com/x/web-interface/search/type}
+      cache-ttl: ${BILIBILI_VIDEO_SEARCH_CACHE_TTL:PT45M}
+      cache-max-entries: ${BILIBILI_VIDEO_SEARCH_CACHE_MAX_ENTRIES:256}
+      connect-timeout: ${BILIBILI_VIDEO_SEARCH_CONNECT_TIMEOUT:PT3S}
+      read-timeout: ${BILIBILI_VIDEO_SEARCH_READ_TIMEOUT:PT5S}
+      max-results: ${BILIBILI_VIDEO_SEARCH_MAX_RESULTS:6}
+      rate-limit-window: ${BILIBILI_VIDEO_SEARCH_RATE_LIMIT_WINDOW:PT1M}
+      rate-limit-max-requests: ${BILIBILI_VIDEO_SEARCH_RATE_LIMIT_MAX_REQUESTS:12}
   jwt:
     secret: ${JWT_SECRET:change-this-secret-change-this-secret-32}
     expiration-minutes: ${JWT_EXPIRATION_MINUTES:1440}

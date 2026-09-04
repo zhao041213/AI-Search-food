@@ -37,6 +37,17 @@ app:
     storage-dir: ${FINISHED_DISH_REVIEW_STORAGE_DIR:/app/data/finished-dish-reviews}
   user-avatars:
     storage-dir: ${USER_AVATAR_STORAGE_DIR:/app/data/user-avatars}
+  videos:
+    bilibili:
+      enabled: ${BILIBILI_VIDEO_SEARCH_ENABLED:true}
+      base-url: ${BILIBILI_VIDEO_SEARCH_BASE_URL:https://api.bilibili.com/x/web-interface/search/type}
+      cache-ttl: ${BILIBILI_VIDEO_SEARCH_CACHE_TTL:PT45M}
+      cache-max-entries: ${BILIBILI_VIDEO_SEARCH_CACHE_MAX_ENTRIES:256}
+      connect-timeout: ${BILIBILI_VIDEO_SEARCH_CONNECT_TIMEOUT:PT3S}
+      read-timeout: ${BILIBILI_VIDEO_SEARCH_READ_TIMEOUT:PT5S}
+      max-results: ${BILIBILI_VIDEO_SEARCH_MAX_RESULTS:6}
+      rate-limit-window: ${BILIBILI_VIDEO_SEARCH_RATE_LIMIT_WINDOW:PT1M}
+      rate-limit-max-requests: ${BILIBILI_VIDEO_SEARCH_RATE_LIMIT_MAX_REQUESTS:12}
 
 management:
   endpoints:
