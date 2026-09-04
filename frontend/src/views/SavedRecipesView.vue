@@ -6,10 +6,16 @@
         <h1>我的菜谱</h1>
         <p>查看你主动保存的 AI 菜谱，重新打开时不会再次调用模型。</p>
       </div>
-      <RouterLink class="back-link" to="/">
+      <div class="saved-heading-actions">
+        <el-button class="print-button" plain type="button" @click="printRecipe">
+          <Printer :size="16" aria-hidden="true" />
+          <span>打印菜谱</span>
+        </el-button>
+        <RouterLink class="back-link" to="/">
         <ArrowLeft :size="16" aria-hidden="true" />
         <span>返回工作台</span>
-      </RouterLink>
+        </RouterLink>
+      </div>
     </header>
 
     <div class="history-layout">
@@ -19,7 +25,32 @@
             <span class="panel-kicker">已保存菜谱</span>
             <h2>已保存</h2>
           </div>
-          <span class="count-badge">{{ recipes.length }}</span>
+          <div class="panel-heading-actions">
+            <span class="count-badge">{{ totalRecipes }}</span>
+            <el-button class="manage-button" plain type="button" @click="batchMode = !batchMode">
+              {{ batchMode ? '退出批量' : '批量管理' }}
+            </el-button>
+            <el-button class="manage-button" plain type="button" @click="openShareManager">分享管理</el-button>
+          </div>
+        </div>
+
+        <div class="collection-list" aria-label="收藏夹">
+          <button
+            v-for="collection in collections"
+            :key="collection.id"
+            class="collection-filter"
+            :class="{ active: selectedCollectionId === collection.id }"
+            type="button"
+            @click="selectCollection(collection.id)"
+          >
+            <span>{{ collection.name }}</span>
+            <span>{{ collection.recipeCount }}</span>
+          </button>
+          <div class="collection-actions">
+            <el-button link type="primary" @click="openCollectionDialog()">新建收藏夹</el-button>
+            <el-button link :disabled="!selectedCustomCollection" @click="openCollectionDialog(selectedCustomCollection)">重命名</el-button>
+            <el-button link type="danger" :disabled="!selectedCustomCollection" @click="confirmDeleteCollection(selectedCustomCollection)">删除</el-button>
+          </div>
         </div>
 
         <form class="recipe-filters" role="search" @submit.prevent="applyFilters">
@@ -59,20 +90,58 @@
               <el-option label="控糖" value="low_sugar" />
             </el-select>
           </div>
+          <div class="filter-select-row">
+            <el-select v-model="tagFilter" aria-label="按标签筛选" placeholder="全部标签" clearable @change="applyFilters">
+              <el-option v-for="tag in tags" :key="tag.id" :label="tag.name" :value="tag.name" />
+            </el-select>
+            <el-select v-model="sortOrder" aria-label="排序方式" @change="applyFilters">
+              <el-option label="最近保存" value="desc" />
+              <el-option label="最早保存" value="asc" />
+            </el-select>
+          </div>
         </form>
+
+        <div v-if="batchMode" class="bulk-toolbar">
+          <label class="select-all-control">
+            <input type="checkbox" :checked="allVisibleSelected" @change="toggleSelectAll" />
+            <span>全选当前页（{{ selectedRecipeIds.length }}）</span>
+          </label>
+          <div class="bulk-actions">
+            <el-button size="small" :disabled="!selectedRecipeIds.length" @click="openBatchMove">移动收藏夹</el-button>
+            <el-button size="small" :disabled="!selectedRecipeIds.length" @click="openBatchTagDialog('add')">添加标签</el-button>
+            <el-button size="small" :disabled="!selectedRecipeIds.length" @click="openBatchTagDialog('remove')">移除标签</el-button>
+            <el-button size="small" type="danger" plain :disabled="!selectedRecipeIds.length" @click="confirmBatchDelete">批量删除</el-button>
+          </div>
+        </div>
 
         <el-skeleton v-if="loading" :rows="5" animated />
         <el-empty v-else-if="!recipes.length" description="还没有保存菜谱" />
-        <div v-else class="history-items">
+        <div v-else class="history-items" :class="{ 'batch-active': batchMode }">
           <div
             v-for="item in recipes"
             :key="item.id"
             class="history-item-row"
             :class="{ active: selected?.id === item.id }"
           >
+            <input
+              v-if="batchMode"
+              class="recipe-checkbox"
+              type="checkbox"
+              :checked="selectedRecipeIds.includes(item.id)"
+              :aria-label="`选择菜谱 ${item.title}`"
+              @click.stop
+              @change="toggleRecipeSelection(item.id)"
+            />
+            <span class="recipe-cover" aria-hidden="true">
+              <img v-if="recipeCoverUrl(item)" :src="recipeCoverUrl(item)" alt="" />
+              <ChefHat v-else :size="21" />
+            </span>
             <button class="history-item" type="button" @click="openRecipe(item.id)">
               <span class="history-item-title">{{ item.title }}</span>
               <span class="history-item-ingredients">{{ item.searchIngredients || '未记录食材' }}</span>
+              <span v-if="item.tags?.length" class="history-item-tags">
+                <span v-for="tag in item.tags" :key="tag" class="recipe-tag">#{{ tag }}</span>
+              </span>
               <span class="history-item-meta">
                 <span>{{ mealLabel(item.mealType) }}</span>
                 <span>{{ formatDate(item.savedAt) }}</span>
@@ -91,6 +160,16 @@
             </el-tooltip>
           </div>
         </div>
+        <el-pagination
+          v-if="totalRecipes > pageSize"
+          class="recipe-pagination"
+          background
+          layout="prev, pager, next"
+          :current-page="currentPage"
+          :page-size="pageSize"
+          :total="totalRecipes"
+          @current-change="handlePageChange"
+        />
       </section>
 
       <section class="detail-panel" aria-label="菜谱详情">
@@ -122,11 +201,27 @@
                 <Play :size="16" aria-hidden="true" />
                 <span>开始烹饪</span>
               </el-button>
+              <el-button v-if="selected.recipe" plain size="small" @click="openShareDialog(selected.id)">
+                <Share2 :size="15" aria-hidden="true" />
+                <span>分享</span>
+              </el-button>
+              <el-button v-if="selected.recipe" plain size="small" @click="openTagEditor">
+                <Tags :size="15" aria-hidden="true" />
+                <span>标签</span>
+              </el-button>
+              <el-button v-if="selected.recipe" plain size="small" @click="openMoveSelected">
+                <FolderInput :size="15" aria-hidden="true" />
+                <span>移动</span>
+              </el-button>
               <span class="detail-id">#{{ selected.id }}</span>
             </div>
           </header>
 
           <div v-if="selected.recipe" class="recipe-detail">
+            <div class="detail-collection-meta">
+              <span>收藏夹：{{ selectedListItem?.collectionName || defaultCollectionName }}</span>
+              <span v-if="selectedListItem?.tags?.length">标签：{{ selectedListItem.tags.join('、') }}</span>
+            </div>
             <p class="summary">{{ selected.recipe.summary || '暂无菜谱简介' }}</p>
             <div v-if="selected.recipe.effects?.length" class="tag-row" aria-label="菜谱功效">
               <span v-for="effect in selected.recipe.effects" :key="effect" class="system-tag">
@@ -265,6 +360,70 @@
     :recipe="selected.recipe"
     :recipe-id="selected.id"
   />
+
+  <el-dialog v-model="collectionDialogVisible" :title="collectionDialogMode === 'create' ? '新建收藏夹' : '重命名收藏夹'" width="420px">
+    <el-input v-model="collectionDraft" maxlength="64" show-word-limit placeholder="请输入收藏夹名称" @keyup.enter="submitCollection" />
+    <template #footer>
+      <el-button @click="collectionDialogVisible = false">取消</el-button>
+      <el-button type="primary" :loading="collectionSaving" @click="submitCollection">保存</el-button>
+    </template>
+  </el-dialog>
+
+  <el-dialog v-model="batchMoveDialogVisible" title="移动到收藏夹" width="420px">
+    <el-select v-model="batchMoveCollectionId" class="dialog-control" placeholder="选择收藏夹">
+      <el-option v-for="collection in collections" :key="collection.id" :label="collection.name" :value="collection.id" />
+    </el-select>
+    <template #footer>
+      <el-button @click="batchMoveDialogVisible = false">取消</el-button>
+      <el-button type="primary" :loading="batchSaving" @click="submitBatchMove">移动</el-button>
+    </template>
+  </el-dialog>
+
+  <el-dialog v-model="tagEditorVisible" title="编辑菜谱标签" width="460px">
+    <el-input v-model="tagEditorDraft" type="textarea" :rows="3" maxlength="200" show-word-limit placeholder="多个标签用逗号或空格分隔，最多 10 个" />
+    <template #footer>
+      <el-button @click="tagEditorVisible = false">取消</el-button>
+      <el-button type="primary" :loading="tagSaving" @click="submitTagEditor">保存标签</el-button>
+    </template>
+  </el-dialog>
+
+  <el-dialog v-model="batchTagDialogVisible" :title="batchTagMode === 'add' ? '批量添加标签' : '批量移除标签'" width="460px">
+    <el-input v-model="batchTagDraft" type="textarea" :rows="3" maxlength="200" placeholder="多个标签用逗号、空格或 # 分隔" />
+    <template #footer>
+      <el-button @click="batchTagDialogVisible = false">取消</el-button>
+      <el-button type="primary" :loading="batchSaving" @click="submitBatchTags">确认</el-button>
+    </template>
+  </el-dialog>
+
+  <el-dialog v-model="shareDialogVisible" title="创建分享链接" width="430px">
+    <el-radio-group v-model="shareValidity">
+      <el-radio-button label="1">1 天</el-radio-button>
+      <el-radio-button label="7">7 天</el-radio-button>
+      <el-radio-button label="30">30 天</el-radio-button>
+      <el-radio-button label="PERMANENT">永久</el-radio-button>
+    </el-radio-group>
+    <template #footer>
+      <el-button @click="shareDialogVisible = false">取消</el-button>
+      <el-button type="primary" :loading="shareSaving" @click="submitShare">创建并复制链接</el-button>
+    </template>
+  </el-dialog>
+
+  <el-dialog v-model="shareManagerVisible" title="我的分享链接" width="680px">
+    <el-skeleton v-if="sharesLoading" :rows="3" animated />
+    <el-empty v-else-if="!shares.length" description="暂无分享记录" />
+    <div v-else class="share-list">
+      <div v-for="share in shares" :key="share.id" class="share-item">
+        <div>
+          <strong>{{ share.recipeTitle || '已删除菜谱' }}</strong>
+          <p>{{ share.shareUrl }} · {{ shareStatusLabel(share.status) }}</p>
+        </div>
+        <div class="share-actions">
+          <el-button size="small" @click="copyShare(share)">复制</el-button>
+          <el-button v-if="share.status === 'ACTIVE'" size="small" type="danger" plain @click="disableShare(share)">失效</el-button>
+        </div>
+      </div>
+    </div>
+  </el-dialog>
 </template>
 
 <script setup>
@@ -272,13 +431,18 @@ import { computed, markRaw, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   ArrowLeft,
+  ChefHat,
   ExternalLink,
   Flame,
+  FolderInput,
   HeartPulse,
   Network,
   Play,
+  Printer,
   Search,
+  Share2,
   Sparkles,
+  Tags,
   Trash2,
   Video
 } from 'lucide-vue-next'
@@ -287,9 +451,24 @@ import {
   deleteSavedRecipe,
   getRecommendationFeedback,
   getSavedRecipe,
-  getSavedRecipes,
   setRecommendationReaction
 } from '../api/recipes'
+import {
+  batchDeleteSavedRecipes,
+  batchMoveSavedRecipes,
+  batchTagSavedRecipes,
+  createRecipeCollection,
+  createRecipeShare,
+  deleteRecipeCollection,
+  disableRecipeShare,
+  getEnhancedSavedRecipes,
+  getRecipeCollections,
+  getRecipeShares,
+  getRecipeTags,
+  moveSavedRecipe,
+  renameRecipeCollection,
+  replaceSavedRecipeTags
+} from '../api/savedRecipes'
 import { getPantryItems, stockInPantry } from '../api/pantry'
 import { getShoppingItemChecks, saveShoppingItemCheck } from '../api/shoppingChecks'
 import CookingModeDialog from '../components/CookingModeDialog.vue'
@@ -309,12 +488,44 @@ import {
   parseIngredientNames,
   shoppingChecklistKey
 } from '../utils/recipeEnhancements'
+import { getIngredientImage } from '../utils/ingredientImages'
 import {
   nextRecommendationReaction,
   normalizeRecommendationFeedback
 } from '../utils/recommendationFeedback'
 
 const recipes = ref([])
+const totalRecipes = ref(0)
+const collections = ref([])
+const tags = ref([])
+const selectedCollectionId = ref(null)
+const tagFilter = ref('')
+const sortOrder = ref('desc')
+const currentPage = ref(1)
+const pageSize = 20
+const batchMode = ref(false)
+const selectedRecipeIds = ref([])
+const collectionDialogVisible = ref(false)
+const collectionDialogMode = ref('create')
+const collectionDraft = ref('')
+const collectionEditing = ref(null)
+const collectionSaving = ref(false)
+const batchMoveDialogVisible = ref(false)
+const batchMoveCollectionId = ref(null)
+const batchTagDialogVisible = ref(false)
+const batchTagMode = ref('add')
+const batchTagDraft = ref('')
+const tagEditorVisible = ref(false)
+const tagEditorDraft = ref('')
+const tagSaving = ref(false)
+const batchSaving = ref(false)
+const shareDialogVisible = ref(false)
+const shareValidity = ref('7')
+const shareRecipeId = ref(null)
+const shareSaving = ref(false)
+const shareManagerVisible = ref(false)
+const shares = ref([])
+const sharesLoading = ref(false)
 const selected = ref(null)
 const loading = ref(false)
 const detailLoading = ref(false)
@@ -326,8 +537,6 @@ const keywordDraft = ref('')
 const keyword = ref('')
 const mealType = ref('')
 const goal = ref('')
-const limit = 50
-const offset = ref(0)
 const pantryItems = ref([])
 const shoppingCheckOverrides = ref({})
 const shoppingCheckSavingKey = ref('')
@@ -340,6 +549,17 @@ const feedbackLoading = ref(false)
 const auth = useAuthStore()
 let listRequestId = 0
 let detailRequestId = 0
+
+const selectedListItem = computed(() => recipes.value.find((item) => item.id === selected.value?.id) || null)
+const defaultCollection = computed(() => collections.value.find((item) => item.defaultCollection) || null)
+const defaultCollectionName = computed(() => defaultCollection.value?.name || '默认收藏夹')
+const selectedCustomCollection = computed(() => {
+  const collection = collections.value.find((item) => item.id === selectedCollectionId.value)
+  return collection && !collection.defaultCollection ? collection : null
+})
+const allVisibleSelected = computed(() => (
+  recipes.value.length > 0 && recipes.value.every((item) => selectedRecipeIds.value.includes(item.id))
+))
 
 const ownedIngredients = computed(() => [
   selected.value?.searchIngredients || '',
@@ -385,28 +605,35 @@ const recipePages = computed(() => {
   ].filter(Boolean)
 })
 
-onMounted(() => {
+onMounted(async () => {
   loadPantryItems()
-  loadRecipes()
+  await loadCollections()
+  await loadTags()
+  await loadRecipes()
 })
 
 async function loadRecipes(preferredId = null) {
   const requestId = ++listRequestId
   loading.value = true
   try {
-    const response = await getSavedRecipes({
+    const response = await getEnhancedSavedRecipes({
+      collectionId: selectedCollectionId.value,
       keyword: keyword.value,
       mealType: mealType.value,
       goal: goal.value,
-      limit,
-      offset: offset.value
+      tag: tagFilter.value,
+      sort: sortOrder.value === 'asc' ? 'savedAtAsc' : 'savedAtDesc',
+      page: currentPage.value,
+      size: pageSize
     })
     if (requestId !== listRequestId) {
       return
     }
 
-    const nextRecipes = response.data.data || []
+    const payload = response.data.data || {}
+    const nextRecipes = payload.items || []
     recipes.value = nextRecipes
+    totalRecipes.value = payload.total || 0
     if (!nextRecipes.length) {
       detailRequestId += 1
       detailLoading.value = false
@@ -433,8 +660,297 @@ async function loadRecipes(preferredId = null) {
 
 function applyFilters() {
   keyword.value = keywordDraft.value.trim()
-  offset.value = 0
+  currentPage.value = 1
+  selectedRecipeIds.value = []
   loadRecipes()
+}
+
+async function loadCollections() {
+  try {
+    const response = await getRecipeCollections()
+    collections.value = response.data.data || []
+    if (!selectedCollectionId.value && collections.value.length) {
+      selectedCollectionId.value = collections.value.find((item) => item.defaultCollection)?.id || collections.value[0].id
+    }
+  } catch (error) {
+    ElMessage.warning(getErrorMessage(error))
+  }
+}
+
+async function loadTags() {
+  try {
+    const response = await getRecipeTags()
+    tags.value = response.data.data || []
+  } catch (error) {
+    tags.value = []
+    ElMessage.warning(getErrorMessage(error))
+  }
+}
+
+function selectCollection(collectionId) {
+  selectedCollectionId.value = collectionId
+  currentPage.value = 1
+  selectedRecipeIds.value = []
+  loadRecipes()
+}
+
+function handlePageChange(page) {
+  currentPage.value = page
+  selectedRecipeIds.value = []
+  loadRecipes()
+}
+
+function recipeCoverUrl(item) {
+  const ingredient = item?.coverIngredient || parseIngredientNames([item?.searchIngredients])[0]
+  return getIngredientImage(ingredient)
+}
+
+function toggleRecipeSelection(recipeId) {
+  selectedRecipeIds.value = selectedRecipeIds.value.includes(recipeId)
+    ? selectedRecipeIds.value.filter((id) => id !== recipeId)
+    : [...selectedRecipeIds.value, recipeId]
+}
+
+function toggleSelectAll(event) {
+  selectedRecipeIds.value = event.target.checked
+    ? [...new Set([...selectedRecipeIds.value, ...recipes.value.map((item) => item.id)])]
+    : selectedRecipeIds.value.filter((id) => !recipes.value.some((item) => item.id === id))
+}
+
+function openCollectionDialog(collection = null) {
+  collectionDialogMode.value = collection ? 'rename' : 'create'
+  collectionEditing.value = collection
+  collectionDraft.value = collection?.name || ''
+  collectionDialogVisible.value = true
+}
+
+async function submitCollection() {
+  const name = collectionDraft.value.trim()
+  if (!name || collectionSaving.value) return
+  collectionSaving.value = true
+  try {
+    if (collectionEditing.value) {
+      await renameRecipeCollection(collectionEditing.value.id, name)
+    } else {
+      const response = await createRecipeCollection(name)
+      selectedCollectionId.value = response.data.data?.id || selectedCollectionId.value
+    }
+    collectionDialogVisible.value = false
+    await loadCollections()
+    await loadRecipes()
+    ElMessage.success(collectionEditing.value ? '收藏夹已重命名' : '收藏夹已创建')
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.message || '收藏夹操作失败')
+  } finally {
+    collectionSaving.value = false
+  }
+}
+
+async function confirmDeleteCollection(collection) {
+  if (!collection || collection.defaultCollection) return
+  try {
+    await ElMessageBox.confirm('删除收藏夹后，菜谱会移动到默认收藏夹。确定继续吗？', '删除收藏夹', {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+    await deleteRecipeCollection(collection.id, true)
+    selectedCollectionId.value = defaultCollection.value?.id || null
+    await loadCollections()
+    await loadRecipes()
+    ElMessage.success('收藏夹已删除')
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') {
+      ElMessage.error(error?.response?.data?.message || '收藏夹删除失败')
+    }
+  }
+}
+
+function openMoveSelected() {
+  if (!selected.value?.id) return
+  selectedRecipeIds.value = [selected.value.id]
+  openBatchMove()
+}
+
+function openBatchMove() {
+  batchMoveCollectionId.value = selectedCollectionId.value || defaultCollection.value?.id || null
+  batchMoveDialogVisible.value = true
+}
+
+async function submitBatchMove() {
+  if (!selectedRecipeIds.value.length || !batchMoveCollectionId.value || batchSaving.value) return
+  batchSaving.value = true
+  try {
+    const response = await batchMoveSavedRecipes(selectedRecipeIds.value, batchMoveCollectionId.value)
+    await showBatchResult(response.data.data)
+    batchMoveDialogVisible.value = false
+    selectedRecipeIds.value = []
+    await Promise.all([loadCollections(), loadRecipes()])
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.message || '移动菜谱失败')
+  } finally {
+    batchSaving.value = false
+  }
+}
+
+function openBatchTagDialog(mode) {
+  batchTagMode.value = mode
+  batchTagDraft.value = ''
+  batchTagDialogVisible.value = true
+}
+
+function splitTags(value) {
+  return [...new Set(value.split(/[\s,，、#]+/).map((tag) => tag.trim()).filter(Boolean))]
+}
+
+async function submitBatchTags() {
+  if (!selectedRecipeIds.value.length || batchSaving.value) return
+  const tagNames = splitTags(batchTagDraft.value)
+  if (!tagNames.length) return
+  batchSaving.value = true
+  try {
+    const response = await batchTagSavedRecipes(
+      selectedRecipeIds.value,
+      batchTagMode.value === 'add' ? tagNames : [],
+      batchTagMode.value === 'remove' ? tagNames : []
+    )
+    await showBatchResult(response.data.data)
+    batchTagDialogVisible.value = false
+    selectedRecipeIds.value = []
+    await Promise.all([loadTags(), loadRecipes(selected.value?.id)])
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.message || '标签操作失败')
+  } finally {
+    batchSaving.value = false
+  }
+}
+
+async function showBatchResult(result) {
+  const failures = result?.failures || []
+  const suffix = failures.length ? `，${failures.length} 条未处理` : ''
+  ElMessage.success(`成功处理 ${result?.successCount || 0} 条${suffix}`)
+}
+
+async function confirmBatchDelete() {
+  if (!selectedRecipeIds.value.length) return
+  try {
+    await ElMessageBox.confirm(`将删除选中的 ${selectedRecipeIds.value.length} 道菜谱，且无法恢复。确定继续吗？`, '批量删除菜谱', {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+    const response = await batchDeleteSavedRecipes(selectedRecipeIds.value)
+    await showBatchResult(response.data.data)
+    selectedRecipeIds.value = []
+    await Promise.all([loadCollections(), loadRecipes()])
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') {
+      ElMessage.error(error?.response?.data?.message || '批量删除失败')
+    }
+  }
+}
+
+function openTagEditor() {
+  if (!selected.value?.id) return
+  tagEditorDraft.value = selectedListItem.value?.tags?.join(', ') || ''
+  tagEditorVisible.value = true
+}
+
+async function submitTagEditor() {
+  if (!selected.value?.id || tagSaving.value) return
+  tagSaving.value = true
+  try {
+    await replaceSavedRecipeTags(selected.value.id, splitTags(tagEditorDraft.value))
+    tagEditorVisible.value = false
+    await Promise.all([loadTags(), loadRecipes(selected.value.id)])
+    ElMessage.success('菜谱标签已更新')
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.message || '标签保存失败')
+  } finally {
+    tagSaving.value = false
+  }
+}
+
+function printRecipe() {
+  if (!selected.value?.recipe) {
+    ElMessage.info('请先选择一道菜谱')
+    return
+  }
+  window.print()
+}
+
+function openShareDialog(recipeId) {
+  shareRecipeId.value = recipeId
+  shareValidity.value = '7'
+  shareDialogVisible.value = true
+}
+
+async function submitShare() {
+  if (!shareRecipeId.value || shareSaving.value) return
+  shareSaving.value = true
+  try {
+    const response = await createRecipeShare(shareRecipeId.value, shareValidity.value)
+    const share = response.data.data
+    await copyShare(share)
+    shareDialogVisible.value = false
+    ElMessage.success('分享链接已创建并复制')
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.message || '分享链接创建失败')
+  } finally {
+    shareSaving.value = false
+  }
+}
+
+async function openShareManager() {
+  shareManagerVisible.value = true
+  sharesLoading.value = true
+  try {
+    const response = await getRecipeShares()
+    shares.value = response.data.data || []
+  } catch (error) {
+    shares.value = []
+    ElMessage.error(error?.response?.data?.message || '分享记录加载失败')
+  } finally {
+    sharesLoading.value = false
+  }
+}
+
+async function copyShare(share) {
+  const url = share?.shareUrl?.startsWith('http')
+    ? share.shareUrl
+    : `${window.location.origin}${share?.shareUrl || ''}`
+  try {
+    await navigator.clipboard.writeText(url)
+    ElMessage.success('链接已复制')
+  } catch {
+    ElMessage.warning(url)
+  }
+}
+
+async function disableShare(share) {
+  try {
+    await ElMessageBox.confirm('链接失效后将无法继续访问，确定让它失效吗？', '分享链接管理', {
+      confirmButtonText: '确认失效',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+    await disableRecipeShare(share.id)
+    await openShareManager()
+    ElMessage.success('分享链接已失效')
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') {
+      ElMessage.error(error?.response?.data?.message || '分享链接操作失败')
+    }
+  }
+}
+
+function shareStatusLabel(status) {
+  return {
+    ACTIVE: '有效',
+    EXPIRED: '已过期',
+    DISABLED: '已失效',
+    INVALID: '菜谱已删除'
+  }[status] || '未知状态'
 }
 
 async function openRecipe(id) {
@@ -1203,6 +1719,239 @@ function getDeleteErrorMessage(error) {
   margin-top: 5px;
   color: var(--app-text-soft);
   line-height: 1.65;
+}
+
+.saved-heading-actions,
+.panel-heading-actions,
+.collection-actions,
+.bulk-actions,
+.share-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.saved-heading-actions {
+  justify-content: flex-end;
+}
+
+.panel-heading-actions {
+  justify-content: flex-end;
+}
+
+.manage-button,
+.print-button {
+  min-height: 32px;
+}
+
+.collection-list {
+  display: grid;
+  gap: 5px;
+  margin-top: 15px;
+  padding-bottom: 13px;
+  border-bottom: 1px solid var(--app-line);
+}
+
+.collection-filter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--app-text-soft);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.collection-filter:hover,
+.collection-filter.active {
+  border-color: var(--app-accent);
+  color: var(--app-text);
+  background: var(--app-surface-soft);
+}
+
+.collection-filter span:last-child {
+  color: var(--app-text-faint);
+  font-size: 11px;
+}
+
+.collection-actions {
+  padding: 2px 3px 0;
+}
+
+.collection-actions :deep(.el-button) {
+  padding: 0;
+  font-size: 12px;
+}
+
+.bulk-toolbar {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid var(--app-line);
+  border-radius: 6px;
+  background: var(--app-surface-soft);
+}
+
+.select-all-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--app-text-soft);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.recipe-checkbox {
+  width: 16px;
+  height: 16px;
+  margin: 0 2px 0 10px;
+  accent-color: var(--app-accent);
+  cursor: pointer;
+}
+
+.history-item-row {
+  grid-template-columns: 38px minmax(0, 1fr) 34px;
+  align-items: center;
+}
+
+.history-item-row:has(.recipe-checkbox) {
+  grid-template-columns: auto 38px minmax(0, 1fr) 34px;
+}
+
+.recipe-cover {
+  display: inline-grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--app-line-strong);
+  border-radius: 6px;
+  color: var(--app-text-muted);
+  background: var(--app-surface-soft);
+}
+
+.recipe-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.history-item-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.recipe-tag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 18px;
+  padding: 0 5px;
+  border: 1px solid color-mix(in srgb, var(--app-accent) 35%, var(--app-line));
+  border-radius: 3px;
+  color: var(--app-accent);
+  background: var(--app-surface-soft);
+  font-size: 10px;
+}
+
+.history-items.batch-active .delete-button {
+  display: none;
+}
+
+.recipe-pagination {
+  justify-content: center;
+  margin-top: 14px;
+}
+
+.detail-collection-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px 16px;
+  margin-bottom: 10px;
+  color: var(--app-text-muted);
+  font-size: 12px;
+}
+
+.detail-heading-actions :deep(.el-button) {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.dialog-control {
+  width: 100%;
+}
+
+.share-list {
+  display: grid;
+  gap: 9px;
+}
+
+.share-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 11px;
+  border: 1px solid var(--app-line);
+  border-radius: 6px;
+  background: var(--app-surface-soft);
+}
+
+.share-item strong,
+.share-item p {
+  display: block;
+  max-width: 100%;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.share-item p {
+  margin-top: 4px;
+  color: var(--app-text-muted);
+  font-size: 12px;
+}
+
+@media print {
+  .saved-page {
+    padding: 0;
+  }
+
+  .saved-heading,
+  .history-panel,
+  .detail-heading-actions,
+  .page-tabs,
+  .recipe-pages > :not(.recipe-window),
+  :deep(.app-header),
+  :deep(.app-sidebar) {
+    display: none !important;
+  }
+
+  .history-layout,
+  .detail-panel,
+  .recipe-detail {
+    display: block;
+    max-width: none;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    box-shadow: none;
+  }
+
+  .recipe-window {
+    padding-top: 0;
+  }
 }
 
 @media (max-width: 900px) {

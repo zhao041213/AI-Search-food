@@ -208,6 +208,32 @@ class PersistenceSchemaTest {
         assertThat(indexExists("idx_user_notifications_user_status_created")).isTrue();
     }
 
+    @Test
+    void savedRecipeCollectionTablesAreCreatedByFlyway() {
+        assertThat(tableExists("recipe_collections")).isTrue();
+        assertThat(columnExists("recipe_collections", "user_id")).isTrue();
+        assertThat(columnExists("recipe_collections", "name")).isTrue();
+        assertThat(columnExists("recipe_collections", "is_default")).isTrue();
+        assertThat(tableExists("recipe_collection_items")).isTrue();
+        assertThat(columnExists("recipe_collection_items", "collection_id")).isTrue();
+        assertThat(columnExists("recipe_collection_items", "recipe_id")).isTrue();
+        assertThat(tableExists("recipe_tags")).isTrue();
+        assertThat(columnExists("recipe_tags", "user_id")).isTrue();
+        assertThat(columnExists("recipe_tags", "name")).isTrue();
+        assertThat(tableExists("recipe_record_tags")).isTrue();
+        assertThat(columnExists("recipe_record_tags", "recipe_id")).isTrue();
+        assertThat(columnExists("recipe_record_tags", "tag_id")).isTrue();
+        assertThat(tableExists("recipe_shares")).isTrue();
+        assertThat(columnExists("recipe_shares", "token")).isTrue();
+        assertThat(columnExists("recipe_shares", "validity_type")).isTrue();
+        assertThat(columnExists("recipe_shares", "expires_at")).isTrue();
+        assertThat(tableExists("user_security_logs")).isTrue();
+        assertThat(columnExists("user_security_logs", "action_type")).isTrue();
+        assertThat(columnExists("user_security_logs", "request_path")).isTrue();
+        assertThat(indexExists("idx_recipe_shares_user_created")).isTrue();
+        assertThat(indexExists("idx_recipe_collections_user_default")).isTrue();
+    }
+
     private boolean tableExists(String tableName) {
         Integer count = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE LOWER(TABLE_NAME) = ?",

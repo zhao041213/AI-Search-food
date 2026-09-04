@@ -11,6 +11,7 @@ import HealthProfileView from '../views/HealthProfileView.vue'
 import WeeklyMenuView from '../views/WeeklyMenuView.vue'
 import UserAccountView from '../views/UserAccountView.vue'
 import NotificationsView from '../views/NotificationsView.vue'
+import PublicSharedRecipeView from '../views/PublicSharedRecipeView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -66,6 +67,11 @@ const router = createRouter({
       name: 'notifications',
       component: NotificationsView,
       meta: { requiresUser: true }
+    },
+    {
+      path: '/shared/recipes/:token',
+      name: 'shared-recipe',
+      component: PublicSharedRecipeView
     },
     {
       path: '/stats/hot-ingredients',
