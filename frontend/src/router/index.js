@@ -1,7 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { getMe } from '../api/auth'
 import { useAuthStore } from '../stores/auth'
-import HomeView from '../views/HomeView.vue'
+import KitchenWorldView from '../views/KitchenWorldView.vue'
 import LoginView from '../views/LoginView.vue'
 import AdminDashboardView from '../views/AdminDashboardView.vue'
 import SavedRecipesView from '../views/SavedRecipesView.vue'
@@ -20,7 +20,7 @@ const router = createRouter({
     {
       path: '/',
       name: 'home',
-      component: HomeView
+      component: KitchenWorldView
     },
     {
       path: '/login',
