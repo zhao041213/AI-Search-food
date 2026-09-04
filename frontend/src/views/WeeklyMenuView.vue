@@ -148,20 +148,45 @@
               <div>
                 <p class="panel-kicker">每周营养参考</p>
                 <h3>本周营养总览</h3>
-                <p>已统计 {{ nutritionSummary.validEstimateMealCount }} / {{ nutritionSummary.assignedMealCount }} 个餐次</p>
+                <p>已统计 {{ nutritionSummary.validEstimateMealCount }} / {{ nutritionSummary.assignedMealCount }} 个餐次；仅统计已有估算，缺失估算不按 0 计入</p>
               </div>
               <p class="nutrition-disclosure">{{ NUTRITION_DISCLOSURE }}</p>
             </header>
 
+            <div v-if="nutritionTargetUsable" class="nutrition-target-strip">
+              <span>每日目标</span>
+              <div>
+                <span v-for="metric in nutritionMetrics" :key="metric.key">
+                  {{ metric.label }} {{ formatNutritionValue(nutritionTarget[metric.key]) }} {{ metric.unit }}
+                </span>
+              </div>
+            </div>
+            <div v-else class="nutrition-target-strip nutrition-target-strip-muted">
+              <span>每日目标</span>
+              <span>未设置，当前仅展示已有营养估算</span>
+            </div>
+
             <div class="weekly-nutrition-total">
-              <span>整周合计</span>
+              <span>整周合计（已有估算）</span>
               <div v-if="nutritionSummary.weekly" class="nutrition-total-metrics">
-                <span>热量<strong>{{ formatNutritionValue(nutritionSummary.weekly.caloriesKcal) }} 千卡</strong></span>
-                <span>蛋白质<strong>{{ formatNutritionValue(nutritionSummary.weekly.proteinG) }} 克</strong></span>
-                <span>脂肪<strong>{{ formatNutritionValue(nutritionSummary.weekly.fatG) }} 克</strong></span>
-                <span>碳水<strong>{{ formatNutritionValue(nutritionSummary.weekly.carbohydrateG) }} 克</strong></span>
+                <span v-for="metric in nutritionMetrics" :key="metric.key">
+                  {{ metric.label }}
+                  <strong>{{ formatNutritionValue(nutritionSummary.weekly[metric.key]) }} {{ metric.unit }}</strong>
+                  <small v-if="weeklyComparisons[metric.key]">
+                    目标 {{ formatNutritionValue(weeklyComparisons[metric.key].target) }} {{ metric.unit }} · 占目标 {{ formatNutritionValue(weeklyComparisons[metric.key].percentage) }}%
+                  </small>
+                </span>
               </div>
               <p v-else class="nutrition-empty">暂无营养估算</p>
+            </div>
+
+            <div v-if="nutritionTargetUsable" class="weekly-target-line">
+              <span>本周目标（每日目标 × 7）</span>
+              <div>
+                <span v-for="metric in nutritionMetrics" :key="metric.key">
+                  {{ metric.label }} {{ formatNutritionValue(weeklyTarget[metric.key]) }} {{ metric.unit }}
+                </span>
+              </div>
             </div>
 
             <div class="daily-nutrition-grid">
@@ -171,10 +196,13 @@
                   <span>已统计 {{ day.validEstimateMealCount }} / {{ day.assignedMealCount }} 个餐次</span>
                 </header>
                 <div v-if="day.totals" class="daily-nutrition-values">
-                  <span>热量<strong>{{ formatNutritionValue(day.totals.caloriesKcal) }} 千卡</strong></span>
-                  <span>蛋白质<strong>{{ formatNutritionValue(day.totals.proteinG) }} 克</strong></span>
-                  <span>脂肪<strong>{{ formatNutritionValue(day.totals.fatG) }} 克</strong></span>
-                  <span>碳水<strong>{{ formatNutritionValue(day.totals.carbohydrateG) }} 克</strong></span>
+                  <span v-for="metric in nutritionMetrics" :key="metric.key">
+                    {{ metric.label }}
+                    <strong>{{ formatNutritionValue(day.totals[metric.key]) }} {{ metric.unit }}</strong>
+                    <small v-if="dailyComparisons(day)[metric.key]">
+                      目标 {{ formatNutritionValue(dailyComparisons(day)[metric.key].target) }} {{ metric.unit }} · 占目标 {{ formatNutritionValue(dailyComparisons(day)[metric.key].percentage) }}%
+                    </small>
+                  </span>
                 </div>
                 <p v-else class="nutrition-empty">暂无营养估算</p>
               </article>
@@ -248,6 +276,7 @@ import {
   saveWeeklyMenu,
   saveWeeklyShoppingStatus
 } from '../api/weeklyMenu'
+import { getNutritionTarget } from '../api/nutritionTargets'
 import ShoppingChecklistTable from '../components/ShoppingChecklistTable.vue'
 import StockInDialog from '../components/StockInDialog.vue'
 import {
@@ -255,6 +284,15 @@ import {
   normalizeNutritionSummary,
   NUTRITION_DISCLOSURE
 } from '../utils/nutrition'
+import {
+  compareNutritionToTarget,
+  compareNutritionValues,
+  emptyNutritionTarget,
+  isNutritionTargetUsable,
+  normalizeNutritionTarget,
+  weeklyNutritionTarget,
+  NUTRITION_TARGET_FIELDS
+} from '../utils/nutritionTarget'
 import {
   buildPurchaseLinks,
   copyIngredientName,
@@ -289,6 +327,8 @@ const stockInKey = ref('')
 const stockInDialogVisible = ref(false)
 const stockInItem = ref(null)
 const nutritionSummary = ref(normalizeNutritionSummary())
+const nutritionTarget = ref(emptyNutritionTarget())
+const nutritionTargetLoading = ref(false)
 const slotSelections = reactive({})
 let requestId = 0
 
@@ -302,6 +342,13 @@ const weekRangeLabel = computed(() => {
   const formatter = new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' })
   return `${formatter.format(start)} - ${formatter.format(end)}`
 })
+const nutritionMetrics = NUTRITION_TARGET_FIELDS
+const nutritionTargetUsable = computed(() => isNutritionTargetUsable(nutritionTarget.value))
+const weeklyTarget = computed(() => weeklyNutritionTarget(nutritionTarget.value))
+const weeklyComparisons = computed(() => compareNutritionValues(
+  nutritionSummary.value.weekly,
+  weeklyTarget.value
+))
 
 function formatNutritionDate(value) {
   if (!value) {
@@ -316,7 +363,28 @@ function formatNutritionDate(value) {
 onMounted(() => {
   loadRecipes()
   loadWeeklyMenu()
+  loadNutritionTarget()
 })
+
+async function loadNutritionTarget() {
+  if (nutritionTargetLoading.value) {
+    return
+  }
+  nutritionTargetLoading.value = true
+  try {
+    const response = await getNutritionTarget()
+    nutritionTarget.value = normalizeNutritionTarget(response.data.data)
+  } catch {
+    nutritionTarget.value = emptyNutritionTarget()
+    ElMessage.warning('每日营养目标加载失败，周菜单仍可正常使用')
+  } finally {
+    nutritionTargetLoading.value = false
+  }
+}
+
+function dailyComparisons(day) {
+  return compareNutritionToTarget(day?.totals, nutritionTarget.value)
+}
 
 async function loadRecipes() {
   recipesLoading.value = true
@@ -809,6 +877,36 @@ function getErrorMessage(error, fallback) {
   padding: 16px;
 }
 
+.nutrition-target-strip,
+.weekly-target-line {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 16px;
+  border: 1px solid color-mix(in srgb, var(--app-accent) 28%, var(--app-line));
+  border-radius: 8px;
+  color: var(--app-text);
+  background: var(--app-accent-soft);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.nutrition-target-strip > div,
+.weekly-target-line > div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px 16px;
+  color: var(--app-accent);
+}
+
+.nutrition-target-strip-muted {
+  border-color: var(--app-line);
+  color: var(--app-text-muted);
+  background: var(--app-surface-soft);
+}
+
 .nutrition-overview-heading h3 {
   margin: 0;
   color: var(--app-text);
@@ -851,6 +949,14 @@ function getErrorMessage(error, fallback) {
 .daily-nutrition-values strong {
   color: var(--app-text);
   font-size: 16px;
+}
+
+.nutrition-total-metrics small,
+.daily-nutrition-values small {
+  color: var(--app-accent);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.4;
 }
 
 .daily-nutrition-grid {
@@ -935,8 +1041,15 @@ function getErrorMessage(error, fallback) {
   }
 
   .nutrition-overview-heading,
-  .weekly-nutrition-total {
+  .weekly-nutrition-total,
+  .nutrition-target-strip,
+  .weekly-target-line {
     flex-direction: column;
+  }
+
+  .nutrition-target-strip > div,
+  .weekly-target-line > div {
+    justify-content: flex-start;
   }
 
   .nutrition-total-metrics,

@@ -439,6 +439,7 @@
               <NutritionEstimateCard
                 v-if="!detailViewOpen"
                 :nutrition="recipe.nutritionEstimate"
+                :nutrition-target="nutritionTarget"
               />
 
               <nav v-if="false" class="recipe-entry-nav" aria-label="菜谱详情入口">
@@ -505,7 +506,7 @@
                       </div>
                     </article>
                   </div>
-                  <NutritionEstimateCard :nutrition="recipe.nutritionEstimate" />
+                  <NutritionEstimateCard :nutrition="recipe.nutritionEstimate" :nutrition-target="nutritionTarget" />
                   <el-empty v-if="!explanationItems.length" description="暂无额外说明" :image-size="56" />
                 </section>
 
@@ -1006,6 +1007,7 @@ import {
 } from '../api/recipes'
 import { getRecentSearches } from '../api/searchHistory'
 import { getDietPreference, saveDietPreference } from '../api/userPreferences'
+import { getNutritionTarget } from '../api/nutritionTargets'
 import { getPantryExpiryAlerts, getPantryItems, getPantryReadiness, stockInPantry } from '../api/pantry'
 import { getShoppingItemChecks, saveShoppingItemCheck } from '../api/shoppingChecks'
 import CameraIngredientCapture from '../components/CameraIngredientCapture.vue'
@@ -1049,6 +1051,7 @@ import {
   RecipeStreamError,
   shouldSubmitIngredientsKey
 } from '../utils/recipeStream'
+import { emptyNutritionTarget, normalizeNutritionTarget } from '../utils/nutritionTarget'
 
 const ingredients = ref('')
 const mealType = ref('any')
@@ -1089,6 +1092,8 @@ const preferenceDialogVisible = ref(false)
 const preferenceLoaded = ref(false)
 const preferenceLoading = ref(false)
 const preferenceSaving = ref(false)
+const nutritionTarget = ref(emptyNutritionTarget())
+const nutritionTargetLoading = ref(false)
 const recentSearches = ref([])
 const recentSearchLoading = ref(false)
 const recentSearchLoaded = ref(false)
@@ -1402,6 +1407,7 @@ onMounted(() => {
   }
   if (auth.isUser) {
     loadDietPreference()
+    loadNutritionTarget()
     loadPantryItems()
   }
 })
@@ -1412,6 +1418,7 @@ watch(() => [auth.token, auth.role], () => {
   clearPantryState()
   if (auth.isUser) {
     loadDietPreference()
+    loadNutritionTarget()
     loadPantryItems()
   }
 })
@@ -1771,6 +1778,31 @@ async function loadDietPreference() {
   }
 }
 
+async function loadNutritionTarget() {
+  if (!auth.isUser || nutritionTargetLoading.value) {
+    return
+  }
+
+  const token = auth.token
+  nutritionTargetLoading.value = true
+  try {
+    const response = await getNutritionTarget()
+    if (!auth.isUser || auth.token !== token) {
+      return
+    }
+    nutritionTarget.value = normalizeNutritionTarget(response.data.data)
+  } catch {
+    if (auth.isUser && auth.token === token) {
+      nutritionTarget.value = emptyNutritionTarget()
+      ElMessage.warning('每日营养目标加载失败，菜谱仍可正常使用')
+    }
+  } finally {
+    if (auth.token === token) {
+      nutritionTargetLoading.value = false
+    }
+  }
+}
+
 async function persistDietPreference(value) {
   if (!auth.isUser || preferenceSaving.value) {
     return
@@ -1854,6 +1886,8 @@ function clearPersonalizationState() {
   preferenceLoaded.value = false
   preferenceLoading.value = false
   preferenceSaving.value = false
+  nutritionTarget.value = emptyNutritionTarget()
+  nutritionTargetLoading.value = false
   recentSearches.value = []
   recentSearchLoading.value = false
   recentSearchLoaded.value = false

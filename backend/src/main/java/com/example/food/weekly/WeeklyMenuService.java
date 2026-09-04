@@ -11,6 +11,7 @@ import com.example.food.recipe.RecipeRecordMapper;
 import com.example.food.shopping.ShoppingItemStatus;
 import com.example.food.stats.IngredientNormalizer;
 import com.example.food.user.health.UserHealthProfileService;
+import com.example.food.user.nutrition.UserNutritionTargetService;
 import com.example.food.user.preference.UserDietPreferenceService;
 import com.example.food.user.preference.dto.DietPreferenceResponse;
 import com.example.food.weekly.dto.WeeklyMenuAutoGenerateRequest;
@@ -66,8 +67,38 @@ public class WeeklyMenuService {
     private final IngredientNormalizer ingredientNormalizer;
     private final QwenRecipeClient qwenRecipeClient;
     private final UserHealthProfileService userHealthProfileService;
+    private final UserNutritionTargetService userNutritionTargetService;
     private final UserDietPreferenceService userDietPreferenceService;
     private final ObjectMapper objectMapper;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public WeeklyMenuService(
+            WeeklyMenuPlanMapper planMapper,
+            WeeklyMenuItemMapper itemMapper,
+            WeeklyMenuShoppingCheckMapper shoppingCheckMapper,
+            RecipeRecordMapper recipeRecordMapper,
+            RecipeIngredientMapper recipeIngredientMapper,
+            UserPantryService userPantryService,
+            IngredientNormalizer ingredientNormalizer,
+            QwenRecipeClient qwenRecipeClient,
+            UserHealthProfileService userHealthProfileService,
+            UserNutritionTargetService userNutritionTargetService,
+            UserDietPreferenceService userDietPreferenceService,
+            ObjectMapper objectMapper
+    ) {
+        this.planMapper = planMapper;
+        this.itemMapper = itemMapper;
+        this.shoppingCheckMapper = shoppingCheckMapper;
+        this.recipeRecordMapper = recipeRecordMapper;
+        this.recipeIngredientMapper = recipeIngredientMapper;
+        this.userPantryService = userPantryService;
+        this.ingredientNormalizer = ingredientNormalizer;
+        this.qwenRecipeClient = qwenRecipeClient;
+        this.userHealthProfileService = userHealthProfileService;
+        this.userNutritionTargetService = userNutritionTargetService;
+        this.userDietPreferenceService = userDietPreferenceService;
+        this.objectMapper = objectMapper;
+    }
 
     public WeeklyMenuService(
             WeeklyMenuPlanMapper planMapper,
@@ -82,17 +113,20 @@ public class WeeklyMenuService {
             UserDietPreferenceService userDietPreferenceService,
             ObjectMapper objectMapper
     ) {
-        this.planMapper = planMapper;
-        this.itemMapper = itemMapper;
-        this.shoppingCheckMapper = shoppingCheckMapper;
-        this.recipeRecordMapper = recipeRecordMapper;
-        this.recipeIngredientMapper = recipeIngredientMapper;
-        this.userPantryService = userPantryService;
-        this.ingredientNormalizer = ingredientNormalizer;
-        this.qwenRecipeClient = qwenRecipeClient;
-        this.userHealthProfileService = userHealthProfileService;
-        this.userDietPreferenceService = userDietPreferenceService;
-        this.objectMapper = objectMapper;
+        this(
+                planMapper,
+                itemMapper,
+                shoppingCheckMapper,
+                recipeRecordMapper,
+                recipeIngredientMapper,
+                userPantryService,
+                ingredientNormalizer,
+                qwenRecipeClient,
+                userHealthProfileService,
+                null,
+                userDietPreferenceService,
+                objectMapper
+        );
     }
 
     public WeeklyMenuResponse get(Long userId, LocalDate requestedWeekStart) {
@@ -277,6 +311,7 @@ public class WeeklyMenuService {
                 计划周起始日：%s（周一）
                 健康档案：%s
                 饮食偏好：%s
+                每日营养目标：%s
                 用户已有食材：%s
                 候选菜谱（只能使用其中的 recipeId）：
                 %s
@@ -286,12 +321,14 @@ public class WeeklyMenuService {
                 2. recipeId 必须来自候选菜谱，禁止虚构 ID 或菜名。
                 3. 同一天尽量不要重复同一道菜；候选不足时允许跨天重复。
                 4. 结合健康档案、饮食偏好和已有食材安排，避免使用明确忌口或过敏食材。
-                5. 只输出以下结构：{"items":[{"menuDate":"YYYY-MM-DD","mealType":"BREAKFAST|LUNCH|DINNER","recipeId":1}]}。
-                6. 健康档案只用于一般饮食推荐，不得输出疾病诊断、治疗方案或疗效保证。
+                5. 每日营养目标只是软偏好，用于平衡一周菜谱搭配；明确忌口和过敏食材优先级更高。
+                6. 只输出以下结构：{"items":[{"menuDate":"YYYY-MM-DD","mealType":"BREAKFAST|LUNCH|DINNER","recipeId":1}]}。
+                7. 健康档案和营养目标只用于一般饮食推荐，不得输出疾病诊断、治疗方案或疗效保证。
                 """.formatted(
                 weekStart,
                 healthProfilePrompt(userId),
                 dietPreferencePrompt(userId),
+                nutritionTargetPrompt(userId),
                 safeIngredients(userPantryService.listIngredientNames(userId)),
                 candidateJson
         ).strip();
@@ -383,6 +420,26 @@ public class WeeklyMenuService {
                 + "，目标=" + preference.defaultGoal()
                 + "，忌口=" + safeIngredients(preference.avoidIngredients())
                 + "，过敏食材=" + safeIngredients(preference.allergenIngredients());
+    }
+
+    private String nutritionTargetPrompt(Long userId) {
+        if (userNutritionTargetService == null) {
+            return "未设置";
+        }
+        try {
+            UserNutritionTargetService.RecommendationContext target =
+                    userNutritionTargetService.getRecommendationContext(userId);
+            if (target == null) {
+                return "未设置";
+            }
+            return "每日热量=" + formatNumber(target.caloriesKcal()) + "千卡"
+                    + "，蛋白质=" + formatNumber(target.proteinG()) + "克"
+                    + "，脂肪=" + formatNumber(target.fatG()) + "克"
+                    + "，碳水=" + formatNumber(target.carbohydrateG()) + "克"
+                    + "（软偏好，仅供一般饮食参考）";
+        } catch (RuntimeException exception) {
+            return "未设置";
+        }
     }
 
     private String ageRangeLabel(String value) {

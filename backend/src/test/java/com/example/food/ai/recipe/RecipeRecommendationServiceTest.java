@@ -9,6 +9,7 @@ import com.example.food.recipe.SearchLogService;
 import com.example.food.security.AppRole;
 import com.example.food.security.AuthPrincipal;
 import com.example.food.user.health.UserHealthProfileService;
+import com.example.food.user.nutrition.UserNutritionTargetService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -41,6 +42,9 @@ class RecipeRecommendationServiceTest {
 
     @Mock
     private UserHealthProfileService userHealthProfileService;
+
+    @Mock
+    private UserNutritionTargetService userNutritionTargetService;
 
     @Mock
     private RecommendationFeedbackService recommendationFeedbackService;
@@ -176,6 +180,33 @@ class RecipeRecommendationServiceTest {
                 .contains("不得输出疾病诊断、治疗方案、处方")
                 .doesNotContain("化验指标解读：");
         verify(userHealthProfileService).getRecommendationContext(7L);
+    }
+
+    @Test
+    void generationPromptIncludesEnabledNutritionTargetAsSoftPreference() {
+        RecipeGenerateRequest request = new RecipeGenerateRequest("番茄", "dinner", "balanced", "text");
+        AuthPrincipal principal = new AuthPrincipal(7L, "13800138000", AppRole.USER);
+        when(userNutritionTargetService.getRecommendationContext(7L)).thenReturn(
+                new UserNutritionTargetService.RecommendationContext(
+                        new BigDecimal("2000"),
+                        new BigDecimal("80"),
+                        new BigDecimal("60"),
+                        new BigDecimal("260")
+                )
+        );
+        when(qwenRecipeClient.generateRecipe(anyString())).thenReturn(recipeResponse());
+
+        recipeRecommendationService.generate(request, principal, null);
+
+        ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(qwenRecipeClient).generateRecipe(promptCaptor.capture());
+        assertThat(promptCaptor.getValue())
+                .contains("用户设定的每日营养目标（软偏好")
+                .contains("热量：2000 千卡")
+                .contains("蛋白质：80 克")
+                .contains("不保证精确达到目标")
+                .contains("本次输入、忌口和过敏等更高优先级约束");
+        verify(userNutritionTargetService).getRecommendationContext(7L);
     }
 
     @Test
