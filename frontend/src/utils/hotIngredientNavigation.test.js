@@ -35,6 +35,7 @@ test('管理后台根据查询参数解析和更新面板', () => {
   assert.equal(resolveAdminPanel('settings'), 'settings')
   assert.equal(resolveAdminPanel('operation-logs'), 'operation-logs')
   assert.equal(resolveAdminPanel('error-logs'), 'error-logs')
+  assert.equal(resolveAdminPanel('user-management'), 'user-management')
   assert.equal(resolveAdminPanel('unknown'), 'overview')
   assert.deepEqual(buildAdminPanelQuery({ source: 'sidebar' }, 'hot-ingredients'), {
     source: 'sidebar',

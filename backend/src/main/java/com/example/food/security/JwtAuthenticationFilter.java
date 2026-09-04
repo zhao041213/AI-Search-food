@@ -71,12 +71,17 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     }
 
     private boolean isCurrentUserSession(AuthPrincipal principal) {
-        if (principal.role() != AppRole.USER || principal.authVersion() == null || userMapper == null) {
-            // Tokens issued before V20 omit authVersion and remain a legacy-compatible session.
+        if (principal.role() != AppRole.USER || userMapper == null) {
             return true;
         }
         User user = userMapper.selectById(principal.id());
         int currentVersion = user == null || user.getAuthVersion() == null ? -1 : user.getAuthVersion();
+        if (principal.authVersion() == null) {
+            // Keep legacy tokens usable for untouched accounts, but never restore one after an admin invalidates it.
+            return user == null || (Boolean.TRUE.equals(user.getEnabled())
+                    && user.getDeletedAt() == null
+                    && currentVersion == 0);
+        }
         return user != null
                 && Boolean.TRUE.equals(user.getEnabled())
                 && user.getDeletedAt() == null
