@@ -100,6 +100,10 @@
             <CalendarDays :size="17" aria-hidden="true" />
             <span>一周菜单</span>
           </RouterLink>
+          <RouterLink v-if="auth.isUser" class="sidebar-link" :to="nutritionTargetNavigation.to">
+            <Target :size="17" aria-hidden="true" />
+            <span>{{ nutritionTargetNavigation.label }}</span>
+          </RouterLink>
           <button class="sidebar-placeholder" type="button" disabled title="功能暂未开放">
             <Circle :size="17" aria-hidden="true" />
           </button>
@@ -167,7 +171,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Bell, Bookmark, CalendarDays, Circle, CircleAlert, ClipboardList, Flame, Gauge, HeartPulse, Home, LogIn, LogOut, Package, Palette, Settings, ShieldCheck, Users, UserCircle, Utensils } from 'lucide-vue-next'
+import { Bell, Bookmark, CalendarDays, Circle, CircleAlert, ClipboardList, Flame, Gauge, HeartPulse, Home, LogIn, LogOut, Package, Palette, Settings, ShieldCheck, Target, Users, UserCircle, Utensils } from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
 import { getUnreadNotificationCount } from './api/notifications'
 import { getMyAccount, loadMyAvatar } from './api/userAccount'
@@ -176,6 +180,7 @@ import {
   ADMIN_PANEL_NAVIGATION,
   buildAdminPanelQuery,
   getHotIngredientNavigation,
+  getNutritionTargetNavigation,
   resolveAdminPanel,
   shouldShowSavedRecipesNavigation
 } from './utils/hotIngredientNavigation'
@@ -338,6 +343,7 @@ const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
 const hotIngredientNavigation = computed(() => getHotIngredientNavigation())
+const nutritionTargetNavigation = computed(() => getNutritionTargetNavigation())
 const activeAdminPanel = computed(() => resolveAdminPanel(route.query.panel))
 const adminPanelIcons = {
   overview: Gauge,

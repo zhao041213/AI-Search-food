@@ -8,6 +8,7 @@ import SavedRecipesView from '../views/SavedRecipesView.vue'
 import HotIngredientsView from '../views/HotIngredientsView.vue'
 import PantryView from '../views/PantryView.vue'
 import HealthProfileView from '../views/HealthProfileView.vue'
+import NutritionTargetView from '../views/NutritionTargetView.vue'
 import WeeklyMenuView from '../views/WeeklyMenuView.vue'
 import UserAccountView from '../views/UserAccountView.vue'
 import NotificationsView from '../views/NotificationsView.vue'
@@ -48,6 +49,12 @@ const router = createRouter({
       path: '/health-profile',
       name: 'health-profile',
       component: HealthProfileView,
+      meta: { requiresUser: true }
+    },
+    {
+      path: '/nutrition-targets',
+      name: 'nutrition-targets',
+      component: NutritionTargetView,
       meta: { requiresUser: true }
     },
     {

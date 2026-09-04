@@ -27,6 +27,13 @@ export function getHotIngredientNavigation() {
   }
 }
 
+export function getNutritionTargetNavigation() {
+  return {
+    label: '营养目标',
+    to: { name: 'nutrition-targets' }
+  }
+}
+
 export function resolveAdminPanel(panel) {
   const value = Array.isArray(panel) ? panel[0] : panel
   return ADMIN_PANEL_VALUES.includes(value) ? value : OVERVIEW_PANEL
