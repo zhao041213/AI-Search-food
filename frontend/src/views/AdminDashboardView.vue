@@ -13,6 +13,7 @@
             <el-radio-button value="hot-ingredients">热门分析</el-radio-button>
             <el-radio-button value="operation-logs">操作日志</el-radio-button>
             <el-radio-button value="error-logs">异常日志</el-radio-button>
+            <el-radio-button value="user-management">用户管理</el-radio-button>
           </el-radio-group>
           <el-button type="primary" plain @click="logout">
             <LogOut :size="16" aria-hidden="true" />
@@ -105,6 +106,7 @@
       </div>
       <AdminHotIngredientsPanel v-else-if="activePanel === 'hot-ingredients'" />
       <AdminErrorLogs v-else-if="activePanel === 'error-logs'" />
+      <AdminUserManagement v-else-if="activePanel === 'user-management'" />
       <AdminOperationLogs v-else />
     </section>
   </main>
@@ -120,6 +122,7 @@ import AdminHotIngredientsPanel from '../components/AdminHotIngredientsPanel.vue
 import AdminErrorLogs from '../components/AdminErrorLogs.vue'
 import AdminOperationLogs from '../components/AdminOperationLogs.vue'
 import AdminOperationsOverview from '../components/AdminOperationsOverview.vue'
+import AdminUserManagement from '../components/AdminUserManagement.vue'
 import { useAuthStore } from '../stores/auth'
 import { buildAdminPanelQuery, resolveAdminPanel } from '../utils/hotIngredientNavigation'
 

@@ -21,6 +21,7 @@ public class AdminOperationLogInterceptor implements HandlerInterceptor {
 
     private static final String PRINCIPAL_ATTRIBUTE = AdminOperationLogInterceptor.class.getName() + ".principal";
     private static final String LOG_ENDPOINT = "/api/admin/operation-logs";
+    private static final String USER_STATUS_PATH = "/api/admin/users/";
     private static final Logger log = LoggerFactory.getLogger(AdminOperationLogInterceptor.class);
 
     private final AdminOperationLogService service;
@@ -47,7 +48,7 @@ public class AdminOperationLogInterceptor implements HandlerInterceptor {
             Exception exception
     ) {
         String requestPath = request.getRequestURI();
-        if (LOG_ENDPOINT.equals(requestPath)) {
+        if (LOG_ENDPOINT.equals(requestPath) || isExplicitUserManagementPath(requestPath)) {
             return;
         }
         Object principalValue = request.getAttribute(PRINCIPAL_ATTRIBUTE);
@@ -83,10 +84,19 @@ public class AdminOperationLogInterceptor implements HandlerInterceptor {
         if ("GET".equalsIgnoreCase(method) && "/api/admin/ai-config/text-recipe".equals(path)) {
             return AdminOperationLogService.VIEW_AI_CONFIG;
         }
+        if ("GET".equalsIgnoreCase(method) && "/api/admin/users".equals(path)) {
+            return AdminOperationLogService.VIEW_USERS;
+        }
         if ("PUT".equalsIgnoreCase(method) && "/api/admin/ai-config/text-recipe".equals(path)) {
             return AdminOperationLogService.UPDATE_AI_CONFIG;
         }
         return AdminOperationLogService.ADMIN_API_ACCESS;
+    }
+
+    private boolean isExplicitUserManagementPath(String path) {
+        return path != null
+                && path.startsWith(USER_STATUS_PATH)
+                && (path.endsWith("/status") || path.endsWith("/password-lock/clear"));
     }
 
     private String clientIp(HttpServletRequest request) {

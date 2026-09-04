@@ -1,5 +1,6 @@
 package com.example.food.admin.operation;
 
+import com.example.food.admin.error.AdminErrorLogService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -21,11 +22,14 @@ class AdminOperationLogServiceTest {
     @Mock
     private AdminOperationLogMapper mapper;
 
+    @Mock
+    private AdminErrorLogService errorLogService;
+
     private AdminOperationLogService service;
 
     @BeforeEach
     void setUp() {
-        service = new AdminOperationLogService(mapper);
+        service = new AdminOperationLogService(mapper, errorLogService);
     }
 
     @Test
@@ -82,6 +86,18 @@ class AdminOperationLogServiceTest {
                 200,
                 "127.0.0.1",
                 null
+        );
+
+        verify(errorLogService).recordFailure(
+                org.mockito.ArgumentMatchers.eq(AdminErrorLogService.DATABASE),
+                org.mockito.ArgumentMatchers.eq("AdminOperationLogService.record"),
+                org.mockito.ArgumentMatchers.eq("管理员操作日志写入失败"),
+                any(RuntimeException.class),
+                any(com.example.food.security.AuthPrincipal.class),
+                org.mockito.ArgumentMatchers.eq("GET"),
+                org.mockito.ArgumentMatchers.eq("/api/admin/dashboard/overview"),
+                org.mockito.ArgumentMatchers.eq(200),
+                org.mockito.ArgumentMatchers.eq("127.0.0.1")
         );
     }
 }
