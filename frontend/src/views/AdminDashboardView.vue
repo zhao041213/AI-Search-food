@@ -6,20 +6,6 @@
           <p class="eyebrow">系统控制台</p>
           <h1 id="admin-title">管理后台</h1>
         </div>
-        <div class="admin-header-actions">
-          <el-radio-group v-model="activePanel" size="small" aria-label="后台功能">
-            <el-radio-button value="overview">运营概览</el-radio-button>
-            <el-radio-button value="settings">系统设置</el-radio-button>
-            <el-radio-button value="hot-ingredients">热门分析</el-radio-button>
-            <el-radio-button value="operation-logs">操作日志</el-radio-button>
-            <el-radio-button value="error-logs">异常日志</el-radio-button>
-            <el-radio-button value="user-management">用户管理</el-radio-button>
-          </el-radio-group>
-          <el-button type="primary" plain @click="logout">
-            <LogOut :size="16" aria-hidden="true" />
-            <span>退出登录</span>
-          </el-button>
-        </div>
       </header>
 
       <AdminOperationsOverview v-if="activePanel === 'overview'" />
@@ -115,8 +101,8 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { useRoute, useRouter } from 'vue-router'
-import { LogOut, PlugZap, Save } from 'lucide-vue-next'
+import { useRoute } from 'vue-router'
+import { PlugZap, Save } from 'lucide-vue-next'
 import { getTextRecipeAiConfig, saveTextRecipeAiConfig } from '../api/adminAiConfig'
 import AdminHotIngredientsPanel from '../components/AdminHotIngredientsPanel.vue'
 import AdminErrorLogs from '../components/AdminErrorLogs.vue'
@@ -124,22 +110,16 @@ import AdminOperationLogs from '../components/AdminOperationLogs.vue'
 import AdminOperationsOverview from '../components/AdminOperationsOverview.vue'
 import AdminUserManagement from '../components/AdminUserManagement.vue'
 import { useAuthStore } from '../stores/auth'
-import { buildAdminPanelQuery, resolveAdminPanel } from '../utils/hotIngredientNavigation'
+import { resolveAdminPanel } from '../utils/hotIngredientNavigation'
 
 const auth = useAuthStore()
 const route = useRoute()
-const router = useRouter()
 const roleLabel = computed(() => ({ ADMIN: '管理员', USER: '普通用户' })[auth.role] || auth.role)
 const configLoading = ref(false)
 const savingConfig = ref(false)
 const apiKeyConfigured = ref(false)
 const apiKeyPreview = ref('')
-const activePanel = computed({
-  get: () => resolveAdminPanel(route.query.panel),
-  set: (panel) => {
-    router.replace({ name: 'admin', query: buildAdminPanelQuery(route.query, panel) })
-  }
-})
+const activePanel = computed(() => resolveAdminPanel(route.query.panel))
 const aiConfig = ref({
   provider: 'qwen',
   modelName: 'qwen-plus',
@@ -211,10 +191,6 @@ function errorMessage(error, fallback) {
   return messages[message] || message || fallback
 }
 
-function logout() {
-  auth.logout()
-  router.push({ name: 'login' })
-}
 </script>
 
 <style scoped>
@@ -239,18 +215,6 @@ function logout() {
   align-items: end;
   justify-content: space-between;
   gap: 12px;
-}
-
-.admin-header :deep(.el-button span) {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.admin-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
 }
 
 .eyebrow {
@@ -416,12 +380,6 @@ h2 {
   }
 
   .admin-header {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .admin-header-actions {
-    width: 100%;
     align-items: flex-start;
     flex-direction: column;
   }

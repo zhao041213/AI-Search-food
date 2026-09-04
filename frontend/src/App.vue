@@ -60,21 +60,45 @@
         </RouterLink>
 
         <div class="sidebar-caption sidebar-caption-spaced">功能扩展</div>
-        <RouterLink class="sidebar-link" :to="hotIngredientNavigation.to">
-          <Flame :size="17" aria-hidden="true" />
-          <span>{{ hotIngredientNavigation.label }}</span>
-        </RouterLink>
-        <RouterLink v-if="auth.isUser" class="sidebar-link" to="/weekly-menu">
-          <CalendarDays :size="17" aria-hidden="true" />
-          <span>一周菜单</span>
-        </RouterLink>
-        <button class="sidebar-placeholder" type="button" disabled title="功能暂未开放">
-          <Circle :size="17" aria-hidden="true" />
-        </button>
+        <template v-if="auth.isAdmin">
+          <RouterLink
+            v-for="item in adminPanelNavigation"
+            :key="item.panel"
+            custom
+            :to="adminPanelRoute(item.panel)"
+            v-slot="{ href, navigate }"
+          >
+            <a
+              class="sidebar-link"
+              :class="{ 'sidebar-link-admin-active': activeAdminPanel === item.panel }"
+              :href="href"
+              :aria-current="activeAdminPanel === item.panel ? 'page' : undefined"
+              @click="navigate"
+            >
+              <component :is="item.icon" :size="17" aria-hidden="true" />
+              <span>{{ item.label }}</span>
+            </a>
+          </RouterLink>
+        </template>
+        <template v-else>
+          <RouterLink class="sidebar-link" :to="hotIngredientNavigation.to">
+            <Flame :size="17" aria-hidden="true" />
+            <span>{{ hotIngredientNavigation.label }}</span>
+          </RouterLink>
+          <RouterLink v-if="auth.isUser" class="sidebar-link" to="/weekly-menu">
+            <CalendarDays :size="17" aria-hidden="true" />
+            <span>一周菜单</span>
+          </RouterLink>
+          <button class="sidebar-placeholder" type="button" disabled title="功能暂未开放">
+            <Circle :size="17" aria-hidden="true" />
+          </button>
+        </template>
 
-        <RouterLink v-if="auth.isAdmin" class="sidebar-link sidebar-admin-link" to="/admin">
-          <ShieldCheck :size="17" aria-hidden="true" />
-          <span>管理后台</span>
+        <RouterLink v-if="auth.isAdmin" custom :to="adminPanelRoute('overview')" v-slot="{ href, navigate }">
+          <a class="sidebar-link sidebar-admin-link" :href="href" @click="navigate">
+            <ShieldCheck :size="17" aria-hidden="true" />
+            <span>管理后台</span>
+          </a>
         </RouterLink>
       </aside>
 
@@ -132,11 +156,17 @@
 
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { Bookmark, CalendarDays, Circle, Flame, HeartPulse, Home, LogIn, LogOut, Package, Palette, ShieldCheck, UserCircle, Utensils } from 'lucide-vue-next'
-import { useRouter } from 'vue-router'
+import { Bookmark, CalendarDays, Circle, CircleAlert, ClipboardList, Flame, Gauge, HeartPulse, Home, LogIn, LogOut, Package, Palette, Settings, ShieldCheck, Users, UserCircle, Utensils } from 'lucide-vue-next'
+import { useRoute, useRouter } from 'vue-router'
 import { getMyAccount, loadMyAvatar } from './api/userAccount'
 import { useAuthStore } from './stores/auth'
-import { getHotIngredientNavigation, shouldShowSavedRecipesNavigation } from './utils/hotIngredientNavigation'
+import {
+  ADMIN_PANEL_NAVIGATION,
+  buildAdminPanelQuery,
+  getHotIngredientNavigation,
+  resolveAdminPanel,
+  shouldShowSavedRecipesNavigation
+} from './utils/hotIngredientNavigation'
 
 const RECIPE_THEME_KEY = 'ai-recipe-theme'
 const themeOptions = [
@@ -293,8 +323,22 @@ const themeOptions = [
 ]
 
 const auth = useAuthStore()
+const route = useRoute()
 const router = useRouter()
-const hotIngredientNavigation = computed(() => getHotIngredientNavigation(auth.isAdmin))
+const hotIngredientNavigation = computed(() => getHotIngredientNavigation())
+const activeAdminPanel = computed(() => resolveAdminPanel(route.query.panel))
+const adminPanelIcons = {
+  overview: Gauge,
+  settings: Settings,
+  'hot-ingredients': Flame,
+  'operation-logs': ClipboardList,
+  'error-logs': CircleAlert,
+  'user-management': Users
+}
+const adminPanelNavigation = ADMIN_PANEL_NAVIGATION.map((item) => ({
+  ...item,
+  icon: adminPanelIcons[item.panel]
+}))
 const activeTheme = ref(getInitialTheme())
 const headerAvatarUrl = ref('')
 const roleDisplay = computed(() => ({ ADMIN: '管理员', USER: '普通用户' })[auth.role] || auth.role)
@@ -327,6 +371,13 @@ onBeforeUnmount(() => {
 function logout() {
   auth.logout()
   router.push({ name: 'login' })
+}
+
+function adminPanelRoute(panel) {
+  return {
+    name: 'admin',
+    query: buildAdminPanelQuery(route.query, panel)
+  }
 }
 
 async function loadHeaderAvatar() {
@@ -871,7 +922,8 @@ function applyTheme(theme) {
 }
 
 .sidebar-link:hover,
-.sidebar-link.router-link-active {
+.sidebar-link.router-link-active,
+.sidebar-link-admin-active {
   border-color: var(--app-line);
   color: var(--app-text);
   background: var(--app-surface-soft);
