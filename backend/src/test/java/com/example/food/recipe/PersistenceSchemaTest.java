@@ -190,6 +190,24 @@ class PersistenceSchemaTest {
         assertThat(columnExists("weekly_menu_shopping_checks", "status")).isTrue();
     }
 
+    @Test
+    void notificationTablesAreCreatedByFlyway() {
+        assertThat(tableExists("user_notifications")).isTrue();
+        assertThat(columnExists("user_notifications", "user_id")).isTrue();
+        assertThat(columnExists("user_notifications", "notification_type")).isTrue();
+        assertThat(columnExists("user_notifications", "dedupe_key")).isTrue();
+        assertThat(columnExists("user_notifications", "status")).isTrue();
+        assertThat(columnExists("user_notifications", "target_path")).isTrue();
+        assertThat(tableExists("user_notification_preferences")).isTrue();
+        assertThat(columnExists("user_notification_preferences", "pantry_expiring_enabled")).isTrue();
+        assertThat(columnExists("user_notification_preferences", "pantry_expired_enabled")).isTrue();
+        assertThat(columnExists("user_notification_preferences", "weekly_menu_preparation_enabled")).isTrue();
+        assertThat(tableExists("notification_scan_runs")).isTrue();
+        assertThat(columnExists("notification_scan_runs", "finished_at")).isTrue();
+        assertThat(columnExists("notification_scan_runs", "error_summary")).isTrue();
+        assertThat(indexExists("idx_user_notifications_user_status_created")).isTrue();
+    }
+
     private boolean tableExists(String tableName) {
         Integer count = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE LOWER(TABLE_NAME) = ?",

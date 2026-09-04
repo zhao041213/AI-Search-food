@@ -31,6 +31,11 @@ app:
     storage-dir: ${FINISHED_DISH_REVIEW_STORAGE_DIR:./data/finished-dish-reviews}
   user-avatars:
     storage-dir: ${USER_AVATAR_STORAGE_DIR:./data/user-avatars}
+  notifications:
+    scheduler:
+      enabled: ${NOTIFICATION_SCHEDULER_ENABLED:true}
+      fixed-delay: ${NOTIFICATION_SCHEDULER_FIXED_DELAY:PT1H}
+      initial-delay: ${NOTIFICATION_SCHEDULER_INITIAL_DELAY:PT30S}
   jwt:
     secret: ${JWT_SECRET:change-this-secret-change-this-secret-32}
     expiration-minutes: ${JWT_EXPIRATION_MINUTES:1440}

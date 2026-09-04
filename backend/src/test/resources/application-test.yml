@@ -11,6 +11,9 @@ spring:
 app:
   ingredient-images:
     enabled: false
+  notifications:
+    scheduler:
+      enabled: false
   jwt:
     secret: test-secret-test-secret-test-secret-32
     expiration-minutes: 1440
