@@ -25,17 +25,46 @@
           <strong>{{ item.label }}</strong>
         </div>
       </div>
+      <div class="station-entry-list" aria-label="功能入口">
+        <button
+          v-for="entry in station.entries"
+          :key="entry.label"
+          type="button"
+          class="station-entry-card"
+          :disabled="preferenceLoading && entry.action === 'diet-preference'"
+          @click="openStationEntry(entry)"
+        >
+          <span class="station-entry-mark" aria-hidden="true">{{ entry.icon || '→' }}</span>
+          <span class="station-entry-copy">
+            <strong>{{ entry.label }}</strong>
+            <small>{{ entry.description }}</small>
+          </span>
+          <span class="station-entry-arrow" aria-hidden="true">›</span>
+        </button>
+      </div>
       <div class="station-brief-actions">
         <el-button plain @click="emit('update:modelValue', false)">留在厨房</el-button>
-        <el-button type="primary" @click="openStationRoute">进入{{ station.entryLabel }}</el-button>
       </div>
     </div>
   </el-dialog>
+
+  <DietPreferenceDialog
+    v-if="auth.isUser"
+    v-model="preferenceDialogVisible"
+    :preference="dietPreference"
+    :saving="preferenceSaving"
+    @save="persistDietPreference"
+  />
 </template>
 
 <script setup>
-import { computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, ref } from 'vue'
+import { ElMessage } from 'element-plus'
+import { useRoute, useRouter } from 'vue-router'
+import { getDietPreference, saveDietPreference } from '../../api/userPreferences'
+import { useAuthStore } from '../../stores/auth'
+import { normalizeDietPreference } from '../../utils/personalization'
+import DietPreferenceDialog from '../DietPreferenceDialog.vue'
 import HomeView from '../../views/HomeView.vue'
 
 const props = defineProps({
@@ -44,7 +73,13 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['update:modelValue'])
+const auth = useAuthStore()
+const route = useRoute()
 const router = useRouter()
+const dietPreference = ref(normalizeDietPreference())
+const preferenceDialogVisible = ref(false)
+const preferenceLoading = ref(false)
+const preferenceSaving = ref(false)
 
 const stationMap = {
   pantry: {
@@ -54,8 +89,14 @@ const stationMap = {
     icon: '▣',
     accent: '#68a873',
     description: '集中管理冰箱库存、保质期和烹饪消耗，生成菜谱时会自动参与推荐。',
-    entryLabel: '我的食材',
-    route: '/pantry',
+    entries: [
+      {
+        label: '管理食材库存',
+        description: '查看库存、临期提醒、入库、消耗和撤销记录。',
+        route: '/pantry',
+        icon: '▣'
+      }
+    ],
     preview: [
       { value: '库存', label: '自动参与推荐' },
       { value: '临期', label: '及时提醒' },
@@ -69,8 +110,14 @@ const stationMap = {
     icon: '▤',
     accent: '#b083c7',
     description: '重新打开已保存的 AI 菜谱，整理收藏夹、标签和分享记录。',
-    entryLabel: '我的菜谱',
-    route: '/recipes/saved',
+    entries: [
+      {
+        label: '打开我的菜谱',
+        description: '查看已保存菜谱、收藏夹、标签和分享记录。',
+        route: '/recipes/saved',
+        icon: '▤'
+      }
+    ],
     preview: [
       { value: '保存', label: '不重复调用模型' },
       { value: '标签', label: '方便分类查找' },
@@ -84,8 +131,26 @@ const stationMap = {
     icon: '♥',
     accent: '#e2816c',
     description: '维护基础健康档案和每日营养目标，为菜谱搭配提供一般饮食参考。',
-    entryLabel: '健康管理',
-    route: '/health-profile',
+    entries: [
+      {
+        label: '健康档案',
+        description: '维护身高、体重、年龄和基础身体指标。',
+        route: '/health-profile',
+        icon: '♥'
+      },
+      {
+        label: '营养目标',
+        description: '设置每日热量、蛋白质、碳水和脂肪目标。',
+        route: '/nutrition-targets',
+        icon: '◎'
+      },
+      {
+        label: '饮食偏好',
+        description: '设置默认目标、口味、忌口和过敏食材。',
+        action: 'diet-preference',
+        icon: '◇'
+      }
+    ],
     preview: [
       { value: 'BMI', label: '基础指标' },
       { value: '目标', label: '每日营养参考' },
@@ -99,8 +164,14 @@ const stationMap = {
     icon: '▦',
     accent: '#6d9cc3',
     description: '从已保存菜谱中安排一周餐次，并自动汇总采购清单。',
-    entryLabel: '一周菜单',
-    route: '/weekly-menu',
+    entries: [
+      {
+        label: '安排一周菜单',
+        description: '编排每日餐次，并汇总需要采购的食材。',
+        route: '/weekly-menu',
+        icon: '▦'
+      }
+    ],
     preview: [
       { value: '21', label: '个餐次位置' },
       { value: 'AI', label: '自动安排' },
@@ -114,12 +185,66 @@ const stationMap = {
     icon: '♨',
     accent: '#d48c52',
     description: '观察全站食材搜索趋势，发现大家最近正在寻找什么。',
-    entryLabel: '热门食材',
-    route: '/stats/hot-ingredients',
+    entries: [
+      {
+        label: '查看热门食材',
+        description: '查看 7 天和 30 天的食材搜索趋势。',
+        route: '/stats/hot-ingredients',
+        icon: '♨'
+      }
+    ],
     preview: [
       { value: '7天', label: '短期趋势' },
       { value: '30天', label: '长期趋势' },
       { value: '排行', label: '食材热度' }
+    ]
+  },
+  review: {
+    id: 'review',
+    title: '成品品鉴台',
+    role: '成品品鉴员',
+    icon: '◆',
+    accent: '#c87a8a',
+    description: '从已保存菜谱进入成品评价，上传成品图并获取 AI 品鉴建议。',
+    entries: [
+      {
+        label: '选择菜谱开始品鉴',
+        description: '打开我的菜谱，选择菜谱后上传成品照片。',
+        route: '/recipes/saved',
+        icon: '◆'
+      }
+    ],
+    preview: [
+      { value: '图片', label: '上传成品' },
+      { value: 'AI', label: '品鉴建议' },
+      { value: '记录', label: '历史可查' }
+    ]
+  },
+  account: {
+    id: 'account',
+    title: '厨房服务台',
+    role: '厨房管家',
+    icon: '◈',
+    accent: '#8f8aa8',
+    description: '集中处理个人资料、头像、账号安全和厨房通知。',
+    entries: [
+      {
+        label: '账号中心',
+        description: '维护昵称、头像和账号安全设置。',
+        route: '/account',
+        icon: '◈'
+      },
+      {
+        label: '通知中心',
+        description: '查看库存提醒和系统消息，调整通知偏好。',
+        route: '/notifications',
+        icon: '●'
+      }
+    ],
+    preview: [
+      { value: '资料', label: '个人信息' },
+      { value: '通知', label: '及时提醒' },
+      { value: '安全', label: '账号管理' }
     ]
   }
 }
@@ -131,10 +256,64 @@ const station = computed(() => {
   return stationMap[props.stationId] || null
 })
 
-function openStationRoute() {
-  if (!station.value?.route) return
+async function openStationEntry(entry) {
+  if (entry.action === 'diet-preference') {
+    await openDietPreference()
+    return
+  }
+  if (!entry.route) return
   emit('update:modelValue', false)
-  router.push(station.value.route)
+  router.push(entry.route)
+}
+
+async function openDietPreference() {
+  if (!auth.isUser) {
+    emit('update:modelValue', false)
+    router.push({ name: 'login', query: { redirect: route.fullPath } })
+    return
+  }
+
+  if (preferenceLoading.value) return
+  preferenceLoading.value = true
+  try {
+    const response = await getDietPreference()
+    dietPreference.value = normalizeDietPreference(response.data.data)
+    emit('update:modelValue', false)
+    preferenceDialogVisible.value = true
+  } catch (error) {
+    handleAuthorizedError(error, '饮食偏好加载失败，请稍后重试')
+  } finally {
+    preferenceLoading.value = false
+  }
+}
+
+async function persistDietPreference(value) {
+  if (!auth.isUser || preferenceSaving.value) return
+  preferenceSaving.value = true
+  try {
+    const response = await saveDietPreference(normalizeDietPreference(value))
+    dietPreference.value = normalizeDietPreference(response.data.data)
+    preferenceDialogVisible.value = false
+    ElMessage.success('饮食偏好已保存')
+  } catch (error) {
+    handleAuthorizedError(error, '饮食偏好保存失败，请稍后重试')
+  } finally {
+    preferenceSaving.value = false
+  }
+}
+
+function handleAuthorizedError(error, fallback) {
+  if (error?.response?.status === 401) {
+    preferenceDialogVisible.value = false
+    emit('update:modelValue', false)
+    router.push({ name: 'login', query: { redirect: route.fullPath } })
+    return
+  }
+  ElMessage.error(getErrorMessage(error, fallback))
+}
+
+function getErrorMessage(error, fallback) {
+  return error?.response?.data?.message || fallback
 }
 </script>
 
@@ -244,6 +423,74 @@ function openStationRoute() {
   font-size: 12px;
 }
 
+.station-entry-list {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.station-entry-card {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 68px;
+  padding: 10px 12px;
+  border: 1px solid #c8aa7b;
+  color: #3c2b20;
+  background: #fffaf0;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms ease, background-color 160ms ease, transform 160ms ease;
+}
+
+.station-entry-card:hover,
+.station-entry-card:focus-visible {
+  border-color: var(--app-accent);
+  background: #fff4d9;
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.station-entry-card:disabled {
+  cursor: wait;
+  opacity: 0.68;
+  transform: none;
+}
+
+.station-entry-mark {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid #9e7b50;
+  color: #f4d37f;
+  background: #2b211d;
+  font-weight: 900;
+}
+
+.station-entry-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.station-entry-copy strong {
+  font-size: 13px;
+}
+
+.station-entry-copy small {
+  color: #80664a;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.station-entry-arrow {
+  color: #9e7444;
+  font-size: 24px;
+  font-weight: 900;
+}
+
 .station-brief-actions {
   display: flex;
   grid-column: 1 / -1;
@@ -253,7 +500,8 @@ function openStationRoute() {
 }
 
 @media (max-width: 620px) {
-  .station-preview-grid {
+  .station-preview-grid,
+  .station-entry-list {
     grid-template-columns: 1fr;
   }
 }

@@ -82,20 +82,20 @@ const stations = [
   },
   {
     id: 'weekly',
-    title: '菜单计划室',
+    title: '厨房协作区',
     name: '周周',
-    role: '菜单规划师',
+    role: '菜单 · 品鉴 · 服务',
     icon: '▦',
     accent: 0x6d9cc3,
     floor: 0x293746,
     floorAlt: 0x314559,
-    description: '安排一周餐次，并汇总采购清单。',
+    description: '安排菜单、品鉴成品，并处理厨房服务。',
     room: 'wide',
     spriteNum: 6,
     characters: [
       { id: 'weekly', name: '周周', role: '菜单规划师', spriteNum: 6, action: 'work' },
-      { id: 'weekly-nutrition', name: '小衡', role: '营养助手', spriteNum: 7, stationId: 'nutrition', action: 'work' },
-      { id: 'weekly-recipes', name: '阿谱', role: '菜谱策划', spriteNum: 8, stationId: 'recipes', action: 'work' }
+      { id: 'review', name: '味味', role: '成品品鉴员', spriteNum: 7, stationId: 'review', action: 'work' },
+      { id: 'account', name: '小管', role: '厨房管家', spriteNum: 8, stationId: 'account', action: 'work' }
     ]
   },
   {

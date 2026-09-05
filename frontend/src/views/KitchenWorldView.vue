@@ -40,7 +40,9 @@ const guideItems = [
   { id: 'recipes', title: '菜谱书房', role: '菜谱管理员', icon: '▤', accent: '#b083c7' },
   { id: 'nutrition', title: '营养咨询室', role: '营养师', icon: '♥', accent: '#e2816c' },
   { id: 'weekly', title: '菜单计划室', role: '菜单规划师', icon: '▦', accent: '#6d9cc3' },
-  { id: 'hot', title: '美食情报站', role: '市场观察员', icon: '♨', accent: '#d48c52' }
+  { id: 'hot', title: '美食情报站', role: '市场观察员', icon: '♨', accent: '#d48c52' },
+  { id: 'review', title: '成品品鉴台', role: '成品品鉴员', icon: '◆', accent: '#c87a8a' },
+  { id: 'account', title: '厨房服务台', role: '厨房管家', icon: '◈', accent: '#8f8aa8' }
 ]
 
 const activeStation = ref('')
@@ -87,7 +89,7 @@ function openStation(stationId) {
 
 .station-guide {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
   max-width: 1520px;
   margin: 14px auto 0;
