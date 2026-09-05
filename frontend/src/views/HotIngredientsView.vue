@@ -81,6 +81,10 @@ import { getHotIngredients } from '../api/stats'
 import { getIngredientImage } from '../utils/ingredientImages'
 
 const router = useRouter()
+const props = defineProps({
+  embedded: { type: Boolean, default: false }
+})
+const emit = defineEmits(['select-ingredient'])
 const period = ref('all')
 const loading = ref(false)
 const errorMessage = ref('')
@@ -110,6 +114,10 @@ async function loadRanking() {
 }
 
 function searchIngredient(name) {
+  if (props.embedded) {
+    emit('select-ingredient', name)
+    return
+  }
   router.push({ name: 'home', query: { ingredients: name } })
 }
 

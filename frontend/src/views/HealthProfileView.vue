@@ -105,75 +105,6 @@
       </div>
     </section>
 
-    <section class="nutrition-target-panel" aria-labelledby="nutrition-target-title" v-loading="nutritionTargetLoading">
-      <div class="panel-heading">
-        <div>
-          <span class="panel-kicker">每日营养目标</span>
-          <h2 id="nutrition-target-title">营养目标</h2>
-        </div>
-        <span class="updated-at">{{ nutritionTargetUpdatedAtLabel }}</span>
-      </div>
-
-      <el-alert
-        class="health-notice"
-        title="可选设置，仅作为 AI 菜谱搭配和分量的软偏好；营养数据为估算，仅供一般饮食参考。"
-        type="info"
-        :closable="false"
-        show-icon
-      />
-
-      <div class="target-switch-row">
-        <div>
-          <strong>启用每日营养目标</strong>
-          <span>{{ nutritionTargetStatus }}</span>
-        </div>
-        <el-switch
-          v-model="targetForm.enabled"
-          active-text="已启用"
-          inactive-text="已停用"
-          :disabled="targetSaving"
-        />
-      </div>
-
-      <el-alert
-        v-if="targetForm.enabled && targetValidationMessage"
-        class="target-validation-alert"
-        :title="targetValidationMessage"
-        type="warning"
-        :closable="false"
-        show-icon
-      />
-
-      <el-form v-if="targetForm.enabled" class="nutrition-target-form" label-position="top" @submit.prevent="saveTarget">
-        <div class="nutrition-target-grid">
-          <el-form-item label="每日热量（千卡）">
-            <el-input-number v-model="targetForm.caloriesKcal" :min="1" :max="10000" :precision="2" :step="50" controls-position="right" placeholder="例如：2000" />
-          </el-form-item>
-          <el-form-item label="每日蛋白质（克）">
-            <el-input-number v-model="targetForm.proteinG" :min="1" :max="1000" :precision="2" :step="5" controls-position="right" placeholder="例如：80" />
-          </el-form-item>
-          <el-form-item label="每日脂肪（克）">
-            <el-input-number v-model="targetForm.fatG" :min="1" :max="1000" :precision="2" :step="5" controls-position="right" placeholder="例如：60" />
-          </el-form-item>
-          <el-form-item label="每日碳水（克）">
-            <el-input-number v-model="targetForm.carbohydrateG" :min="1" :max="1000" :precision="2" :step="5" controls-position="right" placeholder="例如：260" />
-          </el-form-item>
-        </div>
-      </el-form>
-
-      <p v-else class="target-disabled-copy">停用后，菜谱生成和营养对比不会使用每日目标。</p>
-
-      <div class="form-actions">
-        <el-button v-if="nutritionTarget.configured" plain :disabled="targetSaving" @click="confirmDeleteTarget">
-          <Trash2 :size="16" aria-hidden="true" />
-          <span>清空目标</span>
-        </el-button>
-        <el-button type="primary" :loading="targetSaving" @click="saveTarget">
-          <Save :size="16" aria-hidden="true" />
-          <span>保存营养目标</span>
-        </el-button>
-      </div>
-    </section>
   </main>
 </template>
 
@@ -182,7 +113,6 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Save, Trash2 } from 'lucide-vue-next'
 import { deleteHealthProfile, getHealthProfile, saveHealthProfile } from '../api/healthProfile'
-import { deleteNutritionTarget, getNutritionTarget, saveNutritionTarget } from '../api/nutritionTargets'
 import {
   ACTIVITY_LEVEL_OPTIONS,
   AGE_RANGE_OPTIONS,
@@ -191,22 +121,12 @@ import {
   healthProfileLabel,
   normalizeHealthProfile
 } from '../utils/healthProfile'
-import {
-  buildNutritionTargetPayload,
-  emptyNutritionTarget,
-  normalizeNutritionTarget,
-  nutritionTargetValidationError
-} from '../utils/nutritionTarget'
 
 const formRef = ref(null)
 const loading = ref(false)
 const saving = ref(false)
 const profile = ref(emptyHealthProfile())
 const form = reactive(emptyHealthProfile())
-const nutritionTarget = ref(emptyNutritionTarget())
-const targetForm = reactive(emptyNutritionTarget())
-const nutritionTargetLoading = ref(false)
-const targetSaving = ref(false)
 
 const rules = {
   ageRange: [{ required: true, message: '请选择年龄段', trigger: 'change' }],
@@ -228,24 +148,7 @@ const updatedAtLabel = computed(() => {
   }
   return `更新于 ${new Date(profile.value.updatedAt).toLocaleString('zh-CN', { hour12: false })}`
 })
-const nutritionTargetStatus = computed(() => {
-  if (nutritionTarget.value.enabled) {
-    return '已启用并参与菜谱参考'
-  }
-  return nutritionTarget.value.configured ? '已停用' : '尚未设置'
-})
-const nutritionTargetUpdatedAtLabel = computed(() => {
-  if (!nutritionTarget.value.updatedAt) {
-    return '尚未保存'
-  }
-  return `更新于 ${new Date(nutritionTarget.value.updatedAt).toLocaleString('zh-CN', { hour12: false })}`
-})
-const targetValidationMessage = computed(() => nutritionTargetValidationError(targetForm))
-
-onMounted(() => {
-  loadProfile()
-  loadNutritionTarget()
-})
+onMounted(loadProfile)
 
 async function loadProfile() {
   loading.value = true
@@ -280,62 +183,6 @@ async function saveProfile() {
   }
 }
 
-async function loadNutritionTarget() {
-  nutritionTargetLoading.value = true
-  try {
-    const response = await getNutritionTarget()
-    applyNutritionTarget(response.data.data)
-  } catch (error) {
-    ElMessage.error(getErrorMessage(error, '每日营养目标加载失败'))
-  } finally {
-    nutritionTargetLoading.value = false
-  }
-}
-
-async function saveTarget() {
-  if (targetSaving.value) {
-    return
-  }
-  if (targetValidationMessage.value) {
-    ElMessage.error(targetValidationMessage.value)
-    return
-  }
-
-  targetSaving.value = true
-  try {
-    const response = await saveNutritionTarget(buildNutritionTargetPayload(targetForm))
-    applyNutritionTarget(response.data.data)
-    ElMessage.success(targetForm.enabled ? '每日营养目标已保存' : '每日营养目标已停用')
-  } catch (error) {
-    ElMessage.error(getErrorMessage(error, '每日营养目标保存失败'))
-  } finally {
-    targetSaving.value = false
-  }
-}
-
-async function confirmDeleteTarget() {
-  try {
-    await ElMessageBox.confirm('清空后，菜谱生成和营养对比将不再使用每日目标。', '清空每日营养目标', {
-      confirmButtonText: '确认清空',
-      cancelButtonText: '取消',
-      type: 'warning'
-    })
-  } catch {
-    return
-  }
-
-  targetSaving.value = true
-  try {
-    await deleteNutritionTarget()
-    applyNutritionTarget(emptyNutritionTarget())
-    ElMessage.success('每日营养目标已清空')
-  } catch (error) {
-    ElMessage.error(getErrorMessage(error, '每日营养目标清空失败'))
-  } finally {
-    targetSaving.value = false
-  }
-}
-
 async function confirmDelete() {
   try {
     await ElMessageBox.confirm('清空后，后续菜谱将不再使用身体指标。', '清空健康档案', {
@@ -365,12 +212,6 @@ function applyProfile(value) {
   Object.assign(form, normalized)
 }
 
-function applyNutritionTarget(value) {
-  const normalized = normalizeNutritionTarget(value)
-  nutritionTarget.value = normalized
-  Object.assign(targetForm, normalized)
-}
-
 function getErrorMessage(error, fallback) {
   return error?.response?.data?.message || fallback
 }
@@ -386,8 +227,7 @@ function getErrorMessage(error, fallback) {
 
 .health-profile-heading,
 .health-profile-overview,
-.health-profile-form-panel,
-.nutrition-target-panel {
+.health-profile-form-panel {
   min-width: 0;
 }
 
@@ -503,10 +343,6 @@ function getErrorMessage(error, fallback) {
   padding: clamp(16px, 2vw, 24px);
 }
 
-.nutrition-target-panel {
-  padding: clamp(16px, 2vw, 24px);
-}
-
 .panel-heading {
   display: flex;
   align-items: flex-start;
@@ -528,56 +364,6 @@ function getErrorMessage(error, fallback) {
 
 .health-notice {
   margin-bottom: 18px;
-}
-
-.target-switch-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  padding: 14px 16px;
-  border: 1px solid var(--app-line);
-  border-radius: 7px;
-  background: var(--app-surface-soft);
-}
-
-.target-switch-row div {
-  display: grid;
-  gap: 4px;
-}
-
-.target-switch-row strong {
-  color: var(--app-text);
-  font-size: 14px;
-}
-
-.target-switch-row span,
-.target-disabled-copy {
-  color: var(--app-text-muted);
-  font-size: 12px;
-  line-height: 1.55;
-}
-
-.nutrition-target-form {
-  margin-top: 18px;
-}
-
-.nutrition-target-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-}
-
-.nutrition-target-grid :deep(.el-input-number) {
-  width: 100%;
-}
-
-.target-validation-alert {
-  margin-top: 14px;
-}
-
-.target-disabled-copy {
-  margin: 16px 0 0;
 }
 
 .metric-grid {
@@ -628,8 +414,7 @@ function getErrorMessage(error, fallback) {
   }
 
   .profile-metrics,
-  .metric-grid,
-  .nutrition-target-grid {
+  .metric-grid {
     grid-template-columns: 1fr;
   }
 
@@ -653,9 +438,5 @@ function getErrorMessage(error, fallback) {
     white-space: normal;
   }
 
-  .target-switch-row {
-    align-items: flex-start;
-    flex-direction: column;
-  }
 }
 </style>

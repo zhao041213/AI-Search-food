@@ -20,6 +20,7 @@
     <properties>
         <java.version>17</java.version>
         <mybatis-plus.version>3.5.7</mybatis-plus.version>
+        <flyway.version>11.20.3</flyway.version>
         <jjwt.version>0.12.6</jjwt.version>
         <aliyun.sms.version>4.6.0</aliyun.sms.version>
         <aliyun.pnvs.version>2.0.0</aliyun.pnvs.version>
