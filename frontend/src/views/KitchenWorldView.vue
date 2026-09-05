@@ -1,10 +1,18 @@
 <template>
   <main class="kitchen-world-page" aria-label="AI 智能厨房">
     <section class="kitchen-world-stage" aria-label="厨房功能入口">
-      <KitchenScene @select-station="openStation" />
+      <KitchenScene :motion-paused="motionPaused" @select-station="openStation" />
       <div class="scene-caption">
         <span class="caption-key">操作提示</span>
-        <span>悬停查看岗位 · 点击人物打开功能</span>
+        <span>看铭牌辨功能 · 点击人物打开窗口</span>
+        <button
+          type="button"
+          class="motion-toggle"
+          :aria-pressed="motionPaused"
+          @click="motionPaused = !motionPaused"
+        >
+          {{ motionPaused ? '继续动态' : '暂停动态' }}
+        </button>
       </div>
     </section>
 
@@ -30,9 +38,10 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import KitchenScene from '../components/kitchen/KitchenScene.vue'
 import KitchenStationPanel from '../components/kitchen/KitchenStationPanel.vue'
+import { useKitchenStore } from '../stores/kitchen'
 
 const guideItems = [
   { id: 'chef', title: '主厨料理大厅', role: 'AI 主厨', icon: '✦', accent: '#d6a43b' },
@@ -47,6 +56,17 @@ const guideItems = [
 
 const activeStation = ref('')
 const stationPanelVisible = ref(false)
+const motionPaused = ref(false)
+const kitchen = useKitchenStore()
+
+watch(
+  () => kitchen.requestedStation,
+  (stationId) => {
+    if (!stationId) return
+    openStation(kitchen.consumeRequestedStation())
+  },
+  { immediate: true }
+)
 
 function openStation(stationId) {
   activeStation.value = stationId
@@ -85,6 +105,29 @@ function openStation(stationId) {
   color: #4a3627;
   font-weight: 900;
   letter-spacing: 0.08em;
+}
+
+.motion-toggle {
+  min-height: 26px;
+  margin-left: auto;
+  padding: 3px 10px;
+  border: 1px solid #967044;
+  border-radius: 3px;
+  color: #4a3627;
+  background: #f5e6c3;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.motion-toggle:hover {
+  background: #fff3d8;
+}
+
+.motion-toggle:focus-visible {
+  outline: 2px solid #4f8ca5;
+  outline-offset: 2px;
 }
 
 .station-guide {

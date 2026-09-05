@@ -5,10 +5,19 @@
 </template>
 
 <script setup>
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { AnimatedSprite, Application, Assets, Container, Graphics, Sprite, Text, TextStyle } from 'pixi.js'
+import { useKitchenStore } from '../../stores/kitchen'
+
+const props = defineProps({
+  motionPaused: {
+    type: Boolean,
+    default: false
+  }
+})
 
 const emit = defineEmits(['select-station'])
+const kitchen = useKitchenStore()
 
 const sceneHost = ref(null)
 const loading = ref(true)
@@ -17,6 +26,9 @@ const SCENE_HEIGHT = 760
 const MIN_SCENE_WIDTH = 1080
 const SPRITE_FRAMES = [1, 2, 3]
 const SPRITE_NUMS = [1, 2, 3, 4, 5, 6, 7, 8, 9]
+const NAMEPLATE_WIDTH_SCALE = 0.6
+const NAMEPLATE_HEIGHT_SCALE = 0.85
+const NAME_TEXT_SCALE = 0.95
 
 const stations = [
   {
@@ -33,9 +45,36 @@ const stations = [
     spriteNum: 1,
     characters: [
       { id: 'chef', name: '阿灶', role: 'AI 主厨', spriteNum: 1, action: 'cook' },
-      { id: 'chef-helper', name: '小灶', role: '食材识别员', spriteNum: 2, stationId: 'recognition', action: 'prep' },
-      { id: 'chef-recipes', name: '小谱', role: '生成记录员', spriteNum: 4, stationId: 'history', action: 'prep' },
-      { id: 'chef-nutrition', name: '小衡', role: '饮食偏好顾问', spriteNum: 5, stationId: 'diet-preference', action: 'prep' }
+      {
+        id: 'chef-helper',
+        name: '小灶',
+        role: '食材识别员',
+        guideLabel: '识别食材',
+        speechLines: ['拍照识别食材吧！', '相机也能认食材哦'],
+        spriteNum: 2,
+        stationId: 'recognition',
+        action: 'prep'
+      },
+      {
+        id: 'chef-recipes',
+        name: '小谱',
+        role: '生成记录员',
+        guideLabel: '生成记录',
+        speechLines: ['找回上次生成记录', '继续刚才的菜谱吗？'],
+        spriteNum: 4,
+        stationId: 'history',
+        action: 'prep'
+      },
+      {
+        id: 'chef-nutrition',
+        name: '小衡',
+        role: '饮食偏好顾问',
+        guideLabel: '饮食偏好',
+        speechLines: ['口味和忌口交给我', '先设置饮食偏好吧'],
+        spriteNum: 5,
+        stationId: 'diet-preference',
+        action: 'prep'
+      }
     ]
   },
   {
@@ -120,6 +159,13 @@ let animationTick
 let characterVisuals = []
 let workstationVisuals = []
 let cookingVisuals = []
+let speechVisuals = []
+let activeSpeech = null
+let nextSpeechAt = 0
+let reducedMotionQuery
+let prefersReducedMotion = false
+let stopCharacterNameWatch
+let headerGuideText
 const spriteTextures = new Map()
 
 onMounted(async () => {
@@ -144,6 +190,10 @@ onMounted(async () => {
   sceneHost.value.appendChild(canvas)
   loading.value = false
 
+  reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
+  prefersReducedMotion = reducedMotionQuery.matches
+  reducedMotionQuery.addEventListener?.('change', handleReducedMotionChange)
+
   const draw = () => {
     if (!app || app.destroyed) return
     const width = Math.max(sceneHost.value?.clientWidth || MIN_SCENE_WIDTH, MIN_SCENE_WIDTH)
@@ -152,34 +202,49 @@ onMounted(async () => {
     characterVisuals = []
     workstationVisuals = []
     cookingVisuals = []
+    speechVisuals = []
+    activeSpeech = null
+    headerGuideText = null
+    nextSpeechAt = animationTick + randomBetween(30, 60)
     drawKitchen(app.stage, width)
   }
 
+  animationTick = 0
   draw()
+  stopCharacterNameWatch = watch(() => kitchen.characterNames, syncCharacterNames, { deep: true })
   resizeObserver = new ResizeObserver(draw)
   resizeObserver.observe(sceneHost.value)
 
-  animationTick = 0
   app.ticker.add(() => {
-    animationTick += app.ticker.deltaTime
+    const delta = app.ticker.deltaTime
+    const motionDisabled = props.motionPaused || prefersReducedMotion
+    if (!motionDisabled) animationTick += delta
+    updateHeroWanderers(delta)
+    updateRandomSpeech()
     characterVisuals.forEach((item, index) => {
-      const idle = Math.sin(animationTick * 0.08 + index * 0.9) * (item.action === 'cook' ? 1.8 : 1.35)
-      item.container.position.y = item.baseY + idle
-      item.container.position.x = item.baseX + (item.action === 'cook' ? Math.sin(animationTick * 0.12 + index) * 1.4 : 0)
-      item.container.rotation = item.action === 'cook' ? Math.sin(animationTick * 0.12 + index) * 0.025 : 0
+      const idle = motionDisabled ? 0 : Math.sin(animationTick * 0.08 + index * 0.9) * (item.action === 'cook' ? 1.8 : 1.35)
+      const cookMotion = !motionDisabled && item.action === 'cook' ? Math.sin(animationTick * 0.12 + index) : 0
+      item.container.position.y = item.motionY + idle
+      item.container.position.x = item.motionX + cookMotion * 1.4
+      item.container.rotation = cookMotion * 0.025
       item.glow.alpha = item.hovered ? 0.94 : 0.2 + (Math.sin(animationTick * 0.06 + index) + 1) * 0.06
       item.container.scale.set(item.pressed ? 0.98 : item.hovered ? 1.045 : 1)
+      if (item.sprite) {
+        item.sprite.animationSpeed = motionDisabled ? 0 : item.walking ? 0.12 : item.wander ? 0.035 : 0.08
+      }
     })
-    workstationVisuals.forEach((item, index) => {
-      item.screen.alpha = 0.65 + (Math.sin(animationTick * 0.08 + index * 0.8) + 1) * 0.12
-      item.light.alpha = 0.35 + (Math.sin(animationTick * 0.1 + index) + 1) * 0.2
-    })
-    cookingVisuals.forEach((item) => {
-      const motion = Math.sin(animationTick * 0.16) * 1.6
-      item.pan.position.x = item.baseX + motion
-      item.pan.rotation = Math.sin(animationTick * 0.12) * 0.08
-      item.steam.alpha = 0.35 + (Math.sin(animationTick * 0.14) + 1) * 0.16
-    })
+    if (!motionDisabled) {
+      workstationVisuals.forEach((item, index) => {
+        item.screen.alpha = 0.65 + (Math.sin(animationTick * 0.08 + index * 0.8) + 1) * 0.12
+        item.light.alpha = 0.35 + (Math.sin(animationTick * 0.1 + index) + 1) * 0.2
+      })
+      cookingVisuals.forEach((item) => {
+        const motion = Math.sin(animationTick * 0.16) * 1.6
+        item.pan.position.x = item.baseX + motion
+        item.pan.rotation = Math.sin(animationTick * 0.12) * 0.08
+        item.steam.alpha = 0.35 + (Math.sin(animationTick * 0.14) + 1) * 0.16
+      })
+    }
   })
 })
 
@@ -204,6 +269,8 @@ function getSpriteFrames(spriteNum) {
 
 onBeforeUnmount(() => {
   resizeObserver?.disconnect()
+  stopCharacterNameWatch?.()
+  reducedMotionQuery?.removeEventListener?.('change', handleReducedMotionChange)
   if (app) {
     app.destroy(true)
     app = null
@@ -267,6 +334,7 @@ function drawOfficeHeader(parent, width) {
   header.rect(width - 44, 18, 5, 5).fill(0x68a873)
   parent.addChild(header)
   addText(parent, '像素厨房 · 办公区', 40, 17, 7, 0xf4dfb3, true)
+  headerGuideText = addText(parent, getHeroGuideText(), width / 2, 17, 7, 0xf1c36a, true, true)
   addText(parent, '在线 · 点击人物开始工作', width - 210, 17, 7, 0xc6e0c7, true)
 }
 
@@ -291,13 +359,21 @@ function drawHeroRoom(parent, x, y, w, h) {
   island.roundRect(x + w * 0.56 + 58, y + 72, 26, 8, 3).fill(0x222225)
   parent.addChild(island)
 
-  const chefPositions = [0.34, 0.445, 0.555, 0.66].map((ratio) => x + w * ratio)
+  const chefPositions = [0.29, 0.38, 0.47, 0.55].map((ratio) => x + w * ratio)
   stations[0].characters.forEach((character, index) => {
-    const visual = drawCharacter(parent, stations[0], chefPositions[index], y + 114, 0.94, character)
+    const feetY = y + 114
+    const movement = index === 0
+      ? null
+      : {
+          minX: chefPositions[index] - 30,
+          maxX: chefPositions[index] + 30,
+          minY: feetY - 3,
+          maxY: feetY + 3
+        }
+    const visual = drawCharacter(parent, stations[0], chefPositions[index], feetY, 0.94, character, movement)
     characterVisuals.push(visual)
+    if (visual.speechBubbles.length) speechVisuals.push(visual)
   })
-  addText(parent, '点击人物开始料理', x + w * 0.5, y + 32, 8, 0xf1c36a, true, true)
-  addSpeechBubble(parent, x + w * 0.69, y + 44, '今天想吃什么？', 104)
 
   drawPantryShelf(parent, x + 24, y + 95, 84, 22)
   const cooking = drawCookingPan(parent, x + w * 0.76, y + 76)
@@ -378,8 +454,9 @@ function drawSceneStats(parent, width) {
   })
 }
 
-function drawCharacter(parent, station, x, feetY, scale, character = null) {
+function drawCharacter(parent, station, x, feetY, scale, character = null, movement = null) {
   const actor = character || station
+  const displayName = kitchen.getCharacterName(actor.id, actor.name || station.name)
   const targetHeight = 58 * scale
   const spriteNum = actor.spriteNum || station.spriteNum
   const spriteFrames = getSpriteFrames(spriteNum)
@@ -445,21 +522,43 @@ function drawCharacter(parent, station, x, feetY, scale, character = null) {
     container.addChild(head)
   }
 
-  const labelY = -targetHeight - 15
-  const nameBg = new Graphics()
-  nameBg.roundRect(-31 * scale, labelY, 62 * scale, 15 * scale, 3).fill(0xf3ead4)
-  nameBg.roundRect(-31 * scale, labelY, 62 * scale, 15 * scale, 3).stroke({ width: 1, color: station.accent })
-  container.addChild(nameBg)
+  const hasGuideLabel = Boolean(actor.guideLabel)
+  const baseLabelWidth = (hasGuideLabel ? 76 : 62) * scale * NAMEPLATE_WIDTH_SCALE
+  const labelHeight = (hasGuideLabel ? 26 : 15) * scale * NAMEPLATE_HEIGHT_SCALE
+  const labelY = -targetHeight - labelHeight
   const name = new Text({
-    text: actor.name || station.name,
-    style: new TextStyle({ fontFamily: 'Microsoft YaHei, sans-serif', fontSize: 9 * scale, fontWeight: '900', fill: 0x392b24 })
+    text: displayName,
+    style: new TextStyle({ fontFamily: 'Microsoft YaHei, sans-serif', fontSize: (hasGuideLabel ? 8 : 9) * scale * NAME_TEXT_SCALE, fontWeight: '900', fill: 0x392b24 })
   })
   name.anchor.set(0.5, 0.5)
-  name.position.set(0, labelY + 7.5 * scale)
+  name.position.set(0, labelY + labelHeight * (hasGuideLabel ? 0.27 : 0.5))
+
+  let guide = null
+  if (hasGuideLabel) {
+    guide = new Text({
+      text: actor.guideLabel,
+      style: new TextStyle({ fontFamily: 'Microsoft YaHei, sans-serif', fontSize: 7.5 * scale * NAME_TEXT_SCALE, fontWeight: '900', fill: 0x4a3022 })
+    })
+    guide.anchor.set(0.5, 0.5)
+    guide.position.set(0, labelY + labelHeight * 0.72)
+  }
+
+  const nameBg = new Graphics()
+  const nameplate = { background: nameBg, nameText: name, guideText: guide, baseWidth: baseLabelWidth, height: labelHeight, y: labelY, scale, accent: station.accent, hasGuideLabel }
+  drawNameplateBackground(nameplate)
+  container.addChild(nameBg)
   container.addChild(name)
+  if (guide) container.addChild(guide)
+
+  const speechBubbles = (actor.speechLines || []).map((line) => {
+    const bubble = createSpeechBubble(line, labelY - 24 * scale, scale)
+    bubble.visible = false
+    container.addChild(bubble)
+    return bubble
+  })
 
   const glowFrame = new Graphics()
-  glowFrame.roundRect(-36 * scale, labelY - 5 * scale, 72 * scale, targetHeight + 25 * scale, 5).stroke({ width: 2, color: station.accent, alpha: 0.2 })
+  glowFrame.roundRect(-42 * scale, labelY - 5 * scale, 84 * scale, targetHeight + labelHeight + 10 * scale, 5).stroke({ width: 2, color: station.accent, alpha: 0.2 })
   glowFrame.visible = false
   container.addChild(glowFrame)
 
@@ -467,11 +566,24 @@ function drawCharacter(parent, station, x, feetY, scale, character = null) {
     container,
     baseX: x,
     baseY: feetY,
+    motionX: x,
+    motionY: feetY,
     glow: glowFrame,
     hovered: false,
     pressed: false,
     action: actor.action || 'work',
-    sprite: animatedSprite
+    sprite: animatedSprite,
+    actorId: actor.id,
+    nameText: name,
+    nameplate,
+    wander: Boolean(movement),
+    walking: Boolean(movement) && actor.id === 'chef-helper' && !prefersReducedMotion,
+    stateUntil: animationTick + randomBetween(150, 300),
+    targetX: movement ? Math.min(movement.maxX, x + 20) : x,
+    targetY: feetY,
+    movement,
+    walkSpeed: randomBetween(0.13, 0.2),
+    speechBubbles
   }
   container.on('pointerover', () => {
     visual.hovered = true
@@ -493,6 +605,141 @@ function drawCharacter(parent, station, x, feetY, scale, character = null) {
   return visual
 }
 
+function updateHeroWanderers(delta) {
+  const wanderers = characterVisuals.filter((item) => item.wander)
+  if (!wanderers.length) return
+
+  if (props.motionPaused || prefersReducedMotion) {
+    wanderers.forEach((item) => {
+      item.walking = false
+      if (prefersReducedMotion) {
+        item.motionX = item.baseX
+        item.motionY = item.baseY
+      }
+      if (item.sprite) item.sprite.animationSpeed = 0.035
+    })
+    return
+  }
+
+  wanderers.forEach((item) => {
+    if (!item.walking) {
+      if (animationTick >= item.stateUntil) {
+        const walkingCount = wanderers.filter((candidate) => candidate.walking).length
+        if (walkingCount < 2 && (walkingCount === 0 || Math.random() < 0.55)) {
+          startWandering(item)
+        } else {
+          item.stateUntil = animationTick + randomBetween(90, 210)
+        }
+      }
+      return
+    }
+
+    const dx = item.targetX - item.motionX
+    const dy = item.targetY - item.motionY
+    const distance = Math.hypot(dx, dy)
+    const step = item.walkSpeed * delta
+    if (distance <= step || animationTick >= item.stateUntil) {
+      item.motionX = item.targetX
+      item.motionY = item.targetY
+      stopWandering(item)
+      return
+    }
+    item.motionX += (dx / distance) * step
+    item.motionY += (dy / distance) * step
+  })
+
+  if (!wanderers.some((item) => item.walking)) {
+    startWandering(wanderers[Math.floor(Math.random() * wanderers.length)])
+  }
+}
+
+function startWandering(item) {
+  if (!item.movement || props.motionPaused || prefersReducedMotion) return
+  let targetX = randomBetween(item.movement.minX, item.movement.maxX)
+  if (Math.abs(targetX - item.motionX) < 10) {
+    targetX = item.motionX < item.baseX ? item.movement.maxX : item.movement.minX
+  }
+  item.targetX = targetX
+  item.targetY = randomBetween(item.movement.minY, item.movement.maxY)
+  item.walkSpeed = randomBetween(0.13, 0.2)
+  item.walking = true
+  item.stateUntil = animationTick + randomBetween(240, 420)
+  if (item.sprite) item.sprite.animationSpeed = 0.12
+}
+
+function stopWandering(item) {
+  item.walking = false
+  item.stateUntil = animationTick + randomBetween(120, 330)
+  if (item.sprite) item.sprite.animationSpeed = 0.035
+}
+
+function updateRandomSpeech() {
+  if (props.motionPaused || prefersReducedMotion) {
+    if (activeSpeech) activeSpeech.bubble.visible = false
+    activeSpeech = null
+    nextSpeechAt = animationTick + randomBetween(60, 150)
+    return
+  }
+
+  if (activeSpeech) {
+    const { bubble, showAt, hideAt } = activeSpeech
+    if (animationTick >= hideAt) {
+      bubble.visible = false
+      activeSpeech = null
+      nextSpeechAt = animationTick + randomBetween(200, 360)
+      return
+    }
+    const fadeIn = Math.min(1, (animationTick - showAt) / 10)
+    const fadeOut = Math.min(1, (hideAt - animationTick) / 12)
+    bubble.alpha = Math.max(0, Math.min(fadeIn, fadeOut))
+    return
+  }
+
+  if (animationTick < nextSpeechAt || !speechVisuals.length) return
+  const speaker = speechVisuals[Math.floor(Math.random() * speechVisuals.length)]
+  const bubble = speaker.speechBubbles[Math.floor(Math.random() * speaker.speechBubbles.length)]
+  bubble.alpha = 0
+  bubble.visible = true
+  activeSpeech = {
+    bubble,
+    showAt: animationTick,
+    hideAt: animationTick + randomBetween(150, 220)
+  }
+}
+
+function handleReducedMotionChange(event) {
+  prefersReducedMotion = event.matches
+}
+
+function syncCharacterNames() {
+  characterVisuals.forEach((item) => {
+    if (!item.nameText) return
+    item.nameText.text = kitchen.getCharacterName(item.actorId, item.nameText.text)
+    if (item.nameplate) drawNameplateBackground(item.nameplate)
+  })
+  if (headerGuideText) headerGuideText.text = getHeroGuideText()
+}
+
+function drawNameplateBackground(nameplate) {
+  const contentWidth = Math.max(nameplate.nameText.width, nameplate.guideText?.width || 0)
+  const width = Math.max(nameplate.baseWidth, contentWidth + 10 * nameplate.scale)
+  const { background, height, y, accent, hasGuideLabel } = nameplate
+  background.clear()
+  background.roundRect(-width / 2, y, width, height, 3).fill(0xf3ead4)
+  background.roundRect(-width / 2, y, width, height, 3).stroke({ width: 1, color: accent })
+  if (hasGuideLabel) {
+    background.rect(-width / 2 + 1, y + height * 0.5, width - 2, height * 0.42).fill({ color: accent, alpha: 0.3 })
+  }
+}
+
+function getHeroGuideText() {
+  return `${kitchen.getCharacterName('chef-helper', '小灶')}识食材 · ${kitchen.getCharacterName('chef-recipes', '小谱')}查记录 · ${kitchen.getCharacterName('chef-nutrition', '小衡')}调偏好`
+}
+
+function randomBetween(min, max) {
+  return min + Math.random() * (max - min)
+}
+
 function addRoomLabel(parent, x, y, title, subtitle, accent, centered = false) {
   const label = new Graphics()
   const labelW = Math.max(136, title.length * 12 + 28)
@@ -504,13 +751,19 @@ function addRoomLabel(parent, x, y, title, subtitle, accent, centered = false) {
   addText(parent, subtitle, centered ? x : x + 10, y + 16, 7, 0xf1dfbd, false, centered)
 }
 
-function addSpeechBubble(parent, x, y, text, width) {
+function createSpeechBubble(text, y, scale) {
+  const parent = new Container()
+  parent.eventMode = 'none'
+  const width = Math.max(96, Math.min(132, text.length * 8 + 18)) * scale
+  const height = 20 * scale
+  const x = -width / 2
   const bubble = new Graphics()
-  bubble.roundRect(x, y, width, 22, 5).fill(0xf8f3e7)
-  bubble.roundRect(x, y, width, 22, 5).stroke({ width: 1.2, color: 0xb08350 })
-  bubble.moveTo(x + 8, y + 22).lineTo(x + 14, y + 28).lineTo(x + 20, y + 22).fill(0xf8f3e7)
+  bubble.roundRect(x, y, width, height, 5).fill(0xf8f3e7)
+  bubble.roundRect(x, y, width, height, 5).stroke({ width: 1.2, color: 0xb08350 })
+  bubble.moveTo(-6 * scale, y + height).lineTo(0, y + height + 6 * scale).lineTo(6 * scale, y + height).fill(0xf8f3e7)
   parent.addChild(bubble)
-  addText(parent, text, x + 10, y + 7, 8, 0x4a392c, true)
+  addText(parent, text, 0, y + 5 * scale, 7.5 * scale, 0x4a392c, true, true)
+  return parent
 }
 
 function addText(parent, text, x, y, size, fill, bold = false, centered = false) {
@@ -527,6 +780,7 @@ function addText(parent, text, x, y, size, fill, bold = false, centered = false)
   if (centered) node.anchor.set(0.5, 0)
   node.position.set(x, y)
   parent.addChild(node)
+  return node
 }
 
 function drawPixelGrid(parent, x, y, w, h, tile, colorA, colorB) {

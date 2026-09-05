@@ -104,8 +104,9 @@
             <Target :size="17" aria-hidden="true" />
             <span>{{ nutritionTargetNavigation.label }}</span>
           </RouterLink>
-          <button class="sidebar-placeholder" type="button" disabled title="功能暂未开放">
-            <Circle :size="17" aria-hidden="true" />
+          <button v-if="auth.isUser" class="sidebar-link sidebar-button" type="button" @click="openCharacterRoster">
+            <Users :size="17" aria-hidden="true" />
+            <span>人物名册</span>
           </button>
         </template>
 
@@ -171,11 +172,12 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Bell, Bookmark, CalendarDays, Circle, CircleAlert, ClipboardList, Flame, Gauge, HeartPulse, Home, LogIn, LogOut, Package, Palette, Settings, ShieldCheck, Target, Users, UserCircle, Utensils } from 'lucide-vue-next'
+import { Bell, Bookmark, CalendarDays, CircleAlert, ClipboardList, Flame, Gauge, HeartPulse, Home, LogIn, LogOut, Package, Palette, Settings, ShieldCheck, Target, Users, UserCircle, Utensils } from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
 import { getUnreadNotificationCount } from './api/notifications'
 import { getMyAccount, loadMyAvatar } from './api/userAccount'
 import { useAuthStore } from './stores/auth'
+import { useKitchenStore } from './stores/kitchen'
 import {
   ADMIN_PANEL_NAVIGATION,
   buildAdminPanelQuery,
@@ -340,6 +342,7 @@ const themeOptions = [
 ]
 
 const auth = useAuthStore()
+const kitchen = useKitchenStore()
 const route = useRoute()
 const router = useRouter()
 const hotIngredientNavigation = computed(() => getHotIngredientNavigation())
@@ -411,6 +414,11 @@ onBeforeUnmount(() => {
 function logout() {
   auth.logout()
   router.push({ name: 'login' })
+}
+
+function openCharacterRoster() {
+  kitchen.requestStation('characters')
+  if (route.path !== '/') router.push('/')
 }
 
 function adminPanelRoute(panel) {
@@ -1017,6 +1025,19 @@ function applyTheme(theme) {
     border-color 180ms ease,
     background-color 180ms ease,
     color 180ms ease;
+}
+
+.sidebar-button {
+  width: 100%;
+  cursor: pointer;
+}
+
+.sidebar-button:focus-visible {
+  border-color: var(--app-line-strong);
+  color: var(--app-text);
+  background: var(--app-surface-soft);
+  outline: 2px solid var(--app-text-muted);
+  outline-offset: 2px;
 }
 
 .sidebar-link:hover,

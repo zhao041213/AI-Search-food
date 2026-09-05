@@ -27,7 +27,7 @@
 
       <div v-else-if="activeFeatureId === 'diet-preference'" class="scene-feature-loading" role="status">
         <span class="scene-feature-loading__pan" aria-hidden="true">◒</span>
-        <strong>小衡正在读取饮食偏好…</strong>
+        <strong>{{ kitchen.getCharacterName('chef-nutrition', '小衡') }}正在读取饮食偏好…</strong>
       </div>
 
       <Suspense v-else>
@@ -92,6 +92,7 @@ import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import { getDietPreference, saveDietPreference } from '../../api/userPreferences'
 import { useAuthStore } from '../../stores/auth'
+import { useKitchenStore } from '../../stores/kitchen'
 import { normalizeDietPreference } from '../../utils/personalization'
 import DietPreferenceForm from '../DietPreferenceForm.vue'
 import SceneWindow from './SceneWindow.vue'
@@ -108,7 +109,8 @@ const featureComponents = {
   weekly: defineAsyncComponent(() => import('../../views/WeeklyMenuView.vue')),
   hot: defineAsyncComponent(() => import('../../views/HotIngredientsView.vue')),
   account: defineAsyncComponent(() => import('../../views/UserAccountView.vue')),
-  notifications: defineAsyncComponent(() => import('../../views/NotificationsView.vue'))
+  notifications: defineAsyncComponent(() => import('../../views/NotificationsView.vue')),
+  characters: defineAsyncComponent(() => import('./CharacterRosterStation.vue'))
 }
 
 const props = defineProps({
@@ -118,6 +120,7 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue'])
 const auth = useAuthStore()
+const kitchen = useKitchenStore()
 const route = useRoute()
 const router = useRouter()
 const dietPreference = ref(normalizeDietPreference())
@@ -130,6 +133,7 @@ const chefSearchPreset = ref(null)
 const stationMap = {
   pantry: {
     id: 'pantry',
+    actorId: 'pantry',
     title: '食材储藏室',
     role: '食材管家',
     icon: '▣',
@@ -152,6 +156,7 @@ const stationMap = {
   },
   recipes: {
     id: 'recipes',
+    actorId: 'recipes',
     title: '菜谱书房',
     role: '菜谱管理员',
     icon: '▤',
@@ -174,6 +179,7 @@ const stationMap = {
   },
   nutrition: {
     id: 'nutrition',
+    actorId: 'nutrition',
     title: '营养咨询室',
     role: '营养师',
     icon: '♥',
@@ -209,6 +215,7 @@ const stationMap = {
   },
   weekly: {
     id: 'weekly',
+    actorId: 'weekly',
     title: '菜单计划室',
     role: '菜单规划师',
     icon: '▦',
@@ -231,6 +238,7 @@ const stationMap = {
   },
   hot: {
     id: 'hot',
+    actorId: 'hot',
     title: '美食情报站',
     role: '市场观察员',
     icon: '♨',
@@ -253,6 +261,7 @@ const stationMap = {
   },
   review: {
     id: 'review',
+    actorId: 'review',
     title: '成品品鉴台',
     role: '成品品鉴员 · 味味',
     icon: '◆',
@@ -275,6 +284,7 @@ const stationMap = {
   },
   account: {
     id: 'account',
+    actorId: 'account',
     title: '厨房服务台',
     role: '厨房管家',
     icon: '◈',
@@ -307,6 +317,7 @@ const stationMap = {
 const featureMap = {
   chef: {
     id: 'chef',
+    actorId: 'chef',
     title: '主厨料理大厅',
     role: 'AI 主厨 · 阿灶',
     icon: '✦',
@@ -317,6 +328,7 @@ const featureMap = {
   },
   recognition: {
     id: 'recognition',
+    actorId: 'chef-helper',
     title: '食材识别台',
     role: '食材识别员 · 小灶',
     icon: '◫',
@@ -327,6 +339,7 @@ const featureMap = {
   },
   history: {
     id: 'history',
+    actorId: 'chef-recipes',
     title: '菜谱生成记录',
     role: '生成记录员 · 小谱',
     icon: '◷',
@@ -337,6 +350,7 @@ const featureMap = {
   },
   pantry: {
     id: 'pantry',
+    actorId: 'pantry',
     title: '食材储藏室',
     role: '食材管家',
     icon: '▣',
@@ -347,6 +361,7 @@ const featureMap = {
   },
   recipes: {
     id: 'recipes',
+    actorId: 'recipes',
     title: '菜谱书房',
     role: '菜谱管理员',
     icon: '▤',
@@ -357,6 +372,7 @@ const featureMap = {
   },
   review: {
     id: 'review',
+    actorId: 'review',
     title: '成品品鉴台',
     role: '成品品鉴员 · 味味',
     icon: '◆',
@@ -367,6 +383,7 @@ const featureMap = {
   },
   'health-profile': {
     id: 'health-profile',
+    actorId: 'nutrition',
     title: '健康档案',
     role: '营养咨询室',
     icon: '♥',
@@ -377,6 +394,7 @@ const featureMap = {
   },
   'nutrition-targets': {
     id: 'nutrition-targets',
+    actorId: 'nutrition',
     title: '每日营养目标',
     role: '营养咨询室',
     icon: '◎',
@@ -387,6 +405,7 @@ const featureMap = {
   },
   'diet-preference': {
     id: 'diet-preference',
+    actorId: 'chef-nutrition',
     title: '饮食偏好',
     role: '饮食偏好顾问 · 小衡',
     icon: '◇',
@@ -397,6 +416,7 @@ const featureMap = {
   },
   weekly: {
     id: 'weekly',
+    actorId: 'weekly',
     title: '一周菜单',
     role: '菜单规划师',
     icon: '▦',
@@ -407,6 +427,7 @@ const featureMap = {
   },
   hot: {
     id: 'hot',
+    actorId: 'hot',
     title: '美食情报站',
     role: '市场观察员',
     icon: '♨',
@@ -417,6 +438,7 @@ const featureMap = {
   },
   account: {
     id: 'account',
+    actorId: 'account',
     title: '账号中心',
     role: '厨房服务台',
     icon: '◈',
@@ -427,12 +449,23 @@ const featureMap = {
   },
   notifications: {
     id: 'notifications',
+    actorId: 'account',
     title: '通知中心',
     role: '厨房服务台',
     icon: '●',
     accent: '#8f8aa8',
     description: '处理库存提醒、菜单通知和提醒偏好。',
     component: featureComponents.notifications,
+    requiresUser: true
+  },
+  characters: {
+    id: 'characters',
+    title: '人物名册',
+    role: '厨房角色管理',
+    icon: '◇',
+    accent: '#9a7445',
+    description: '修改厨房伙伴的显示名称，不改变人物职责。',
+    component: featureComponents.characters,
     requiresUser: true
   }
 }
@@ -446,12 +479,13 @@ const directFeatureByStation = {
   recipes: 'recipes',
   weekly: 'weekly',
   hot: 'hot',
-  review: 'review'
+  review: 'review',
+  characters: 'characters'
 }
 
 const station = computed(() => {
   if (props.stationId === 'chef') {
-    return { id: 'chef', title: '主厨料理大厅', role: 'AI 主厨', icon: '✦' }
+    return { id: 'chef', actorId: 'chef', title: '主厨料理大厅', role: 'AI 主厨', icon: '✦' }
   }
   return stationMap[props.stationId] || null
 })
@@ -471,9 +505,16 @@ const backLabel = computed(() => {
   return station.value?.title || '功能入口'
 })
 const windowTitle = computed(() => activeFeature.value?.title || station.value?.title || '厨房功能')
-const windowSubtitle = computed(() => activeFeature.value?.role || station.value?.role || '')
+const windowSubtitle = computed(() => getDisplayRole(activeFeature.value || station.value))
 const windowIcon = computed(() => activeFeature.value?.icon || station.value?.icon || '✦')
 const windowAccent = computed(() => activeFeature.value?.accent || station.value?.accent || '#d6a43b')
+
+function getDisplayRole(meta) {
+  if (!meta) return ''
+  const role = String(meta.role || '').split('·')[0].trim()
+  if (!meta.actorId) return role
+  return `${role} · ${kitchen.getCharacterName(meta.actorId)}`
+}
 
 watch(
   () => [props.modelValue, props.stationId],
