@@ -79,7 +79,9 @@ function openStation(stationId) {
   min-height: calc(100vh - 58px);
   padding: 22px clamp(16px, 2.6vw, 34px) 42px;
   color: #3b2b21;
-  background: linear-gradient(180deg, rgba(242, 226, 190, 0.18), transparent 180px);
+  background:
+    linear-gradient(180deg, rgba(242, 226, 190, 0.18), transparent 180px),
+    #f8efdc;
 }
 
 .kitchen-world-stage {
