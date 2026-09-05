@@ -85,7 +85,11 @@
 
     <section class="weekly-menu-workspace" v-loading="loading || recipesLoading" aria-label="一周菜单工作区">
       <el-empty v-if="!recipesLoading && !recipes.length" description="还没有已保存菜谱">
-        <RouterLink class="empty-action" to="/recipes/saved">
+        <button v-if="embedded" type="button" class="empty-action" @click="emit('open-feature', 'recipes')">
+          <BookOpen :size="16" aria-hidden="true" />
+          <span>去我的菜谱添加选择</span>
+        </button>
+        <RouterLink v-else class="empty-action" to="/recipes/saved">
           <BookOpen :size="16" aria-hidden="true" />
           <span>去我的菜谱添加选择</span>
         </RouterLink>
@@ -309,6 +313,11 @@ import {
   weeklySlotKey,
   WEEKLY_MEAL_OPTIONS
 } from '../utils/weeklyMenu'
+
+defineProps({
+  embedded: { type: Boolean, default: false }
+})
+const emit = defineEmits(['open-feature'])
 
 const weekStart = ref(toDateString(getWeekStart()))
 const weekPickerValue = ref(weekStart.value)
@@ -997,8 +1006,10 @@ function getErrorMessage(error, fallback) {
   border-radius: 6px;
   color: var(--app-text);
   background: var(--app-surface);
+  font: inherit;
   font-weight: 800;
   text-decoration: none;
+  cursor: pointer;
 }
 
 .empty-action:hover,

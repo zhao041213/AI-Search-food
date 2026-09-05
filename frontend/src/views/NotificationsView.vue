@@ -81,7 +81,11 @@
 
             <div v-if="expandedId === item.id" class="notification-detail">
               <p>{{ detailItem?.id === item.id ? detailItem.content : item.content || item.summary }}</p>
-              <RouterLink v-if="item.targetPath" class="notification-target" :to="item.targetPath">
+              <button v-if="item.targetPath && embedded" type="button" class="notification-target" @click="emit('open-feature', item.targetPath)">
+                查看相关内容
+                <ArrowUpRight :size="14" aria-hidden="true" />
+              </button>
+              <RouterLink v-else-if="item.targetPath" class="notification-target" :to="item.targetPath">
                 查看相关内容
                 <ArrowUpRight :size="14" aria-hidden="true" />
               </RouterLink>
@@ -170,6 +174,11 @@ import {
   markNotificationRead,
   updateNotificationPreferences
 } from '../api/notifications'
+
+defineProps({
+  embedded: { type: Boolean, default: false }
+})
+const emit = defineEmits(['open-feature'])
 
 const filters = [
   { value: 'all', label: '全部' },
@@ -674,9 +683,14 @@ h1 {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  padding: 0;
+  border: 0;
   color: var(--app-accent);
+  background: transparent;
+  font: inherit;
   font-size: 12px;
   font-weight: 800;
+  cursor: pointer;
 }
 
 .notification-card-actions {

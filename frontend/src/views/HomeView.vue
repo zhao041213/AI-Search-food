@@ -26,7 +26,8 @@
           <strong>库存保质期提醒</strong>
           <span>{{ pantryExpiryNoticeText }}</span>
         </div>
-        <RouterLink class="pantry-expiry-link" to="/pantry">查看库存</RouterLink>
+        <button v-if="embedded" type="button" class="pantry-expiry-link" @click="emit('open-feature', 'pantry')">查看库存</button>
+        <RouterLink v-else class="pantry-expiry-link" to="/pantry">查看库存</RouterLink>
       </div>
 
       <div class="command-grid" :class="{ 'result-priority-grid': resultPriorityMode }">
@@ -1052,6 +1053,11 @@ import {
   shouldSubmitIngredientsKey
 } from '../utils/recipeStream'
 import { emptyNutritionTarget, normalizeNutritionTarget } from '../utils/nutritionTarget'
+
+defineProps({
+  embedded: { type: Boolean, default: false }
+})
+const emit = defineEmits(['open-feature'])
 
 const ingredients = ref('')
 const mealType = ref('any')
@@ -2601,11 +2607,16 @@ h3 {
 
 .pantry-expiry-link {
   flex: 0 0 auto;
+  padding: 0;
+  border: 0;
   color: var(--app-text);
+  background: transparent;
+  font: inherit;
   font-size: 12px;
   font-weight: 800;
   text-decoration: underline;
   text-underline-offset: 3px;
+  cursor: pointer;
 }
 
 .command-grid {
