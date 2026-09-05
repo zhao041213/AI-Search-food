@@ -1053,9 +1053,14 @@ import {
   shouldSubmitIngredientsKey
 } from '../utils/recipeStream'
 import { emptyNutritionTarget, normalizeNutritionTarget } from '../utils/nutritionTarget'
+import {
+  mergeIngredientNames,
+  validateIngredientImageFile
+} from '../utils/ingredientRecognition'
 
-defineProps({
-  embedded: { type: Boolean, default: false }
+const props = defineProps({
+  embedded: { type: Boolean, default: false },
+  initialSearch: { type: Object, default: null }
 })
 const emit = defineEmits(['open-feature'])
 
@@ -1408,7 +1413,7 @@ onBeforeUnmount(() => {
 
 onMounted(() => {
   window.addEventListener('popstate', handlePopState)
-  if (!applyRouteIngredient()) {
+  if (!applyInitialSearch() && !applyRouteIngredient()) {
     restorePendingRecipe()
   }
   if (auth.isUser) {
@@ -1437,6 +1442,17 @@ watch(recipe, (currentRecipe, previousRecipe) => {
     }
   }
 })
+
+function applyInitialSearch() {
+  const form = toSearchForm(props.initialSearch)
+  if (!form.ingredients) return false
+  ingredients.value = form.ingredients
+  mealType.value = form.mealType
+  goal.value = form.goal
+  goalManuallySelected.value = true
+  searchMode.value = 'text'
+  return true
+}
 
 function applyRouteIngredient() {
   const routeIngredient = Array.isArray(route.query.ingredients)
@@ -2297,13 +2313,9 @@ function handleImageSelected(event) {
 }
 
 function selectImageFile(file) {
-  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
-    ElMessage.warning('仅支持 JPG、PNG、WebP 图片')
-    return false
-  }
-
-  if (file.size > 5 * 1024 * 1024) {
-    ElMessage.warning('图片大小不能超过 5MB')
+  const validationMessage = validateIngredientImageFile(file)
+  if (validationMessage) {
+    ElMessage.warning(validationMessage)
     return false
   }
 
@@ -2348,28 +2360,13 @@ async function recognizeSelectedImage() {
       ElMessage.warning('未识别到明确食材，请更换图片后重试')
       return
     }
-    ingredients.value = mergeIngredients(ingredients.value, recognizedIngredients.value)
+    ingredients.value = mergeIngredientNames(ingredients.value, recognizedIngredients.value)
     ElMessage.success('食材识别已完成')
   } catch (error) {
     ElMessage.error(getErrorMessage(error))
   } finally {
     recognizing.value = false
   }
-}
-
-function mergeIngredients(currentText, newIngredients) {
-  const currentIngredients = currentText
-    .split(/[，,、\n]/)
-    .map((item) => item.trim())
-    .filter(Boolean)
-  const merged = [...currentIngredients]
-  newIngredients.forEach((ingredient) => {
-    const normalized = ingredient.trim()
-    if (normalized && !merged.includes(normalized)) {
-      merged.push(normalized)
-    }
-  })
-  return merged.join('、')
 }
 
 function buildRecipeShoppingList(recipeData, ownedIngredients) {

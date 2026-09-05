@@ -33,9 +33,9 @@ const stations = [
     spriteNum: 1,
     characters: [
       { id: 'chef', name: '阿灶', role: 'AI 主厨', spriteNum: 1, action: 'cook' },
-      { id: 'chef-helper', name: '小灶', role: '备餐助手', spriteNum: 2, stationId: 'pantry', action: 'prep' },
-      { id: 'chef-recipes', name: '小谱', role: '菜谱策划', spriteNum: 4, stationId: 'recipes', action: 'prep' },
-      { id: 'chef-nutrition', name: '小衡', role: '营养助手', spriteNum: 5, stationId: 'nutrition', action: 'prep' }
+      { id: 'chef-helper', name: '小灶', role: '食材识别员', spriteNum: 2, stationId: 'recognition', action: 'prep' },
+      { id: 'chef-recipes', name: '小谱', role: '生成记录员', spriteNum: 4, stationId: 'history', action: 'prep' },
+      { id: 'chef-nutrition', name: '小衡', role: '饮食偏好顾问', spriteNum: 5, stationId: 'diet-preference', action: 'prep' }
     ]
   },
   {

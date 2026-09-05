@@ -12,18 +12,23 @@
       <div v-if="showFeatureBack" class="scene-feature-toolbar">
         <button type="button" class="scene-feature-back" @click="returnToStationMenu">
           <span aria-hidden="true">‹</span>
-          返回{{ station.title }}
+          返回{{ backLabel }}
         </button>
         <span>{{ activeFeature.description }}</span>
       </div>
 
       <DietPreferenceForm
-        v-if="activeFeatureId === 'diet-preference'"
+        v-if="activeFeatureId === 'diet-preference' && !preferenceLoading"
         :preference="dietPreference"
         :saving="preferenceSaving"
         @cancel="returnToStationMenu"
         @save="persistDietPreference"
       />
+
+      <div v-else-if="activeFeatureId === 'diet-preference'" class="scene-feature-loading" role="status">
+        <span class="scene-feature-loading__pan" aria-hidden="true">◒</span>
+        <strong>小衡正在读取饮食偏好…</strong>
+      </div>
 
       <Suspense v-else>
         <component
@@ -31,6 +36,8 @@
           :key="activeFeatureId"
           v-bind="activeFeatureProps"
           @select-ingredient="openChefWithIngredient"
+          @use-ingredients="openChefWithIngredient"
+          @use-search="openChefWithSearch"
           @open-feature="openFeatureFromChild"
         />
         <template #fallback>
@@ -91,9 +98,11 @@ import SceneWindow from './SceneWindow.vue'
 
 const featureComponents = {
   chef: defineAsyncComponent(() => import('../../views/HomeView.vue')),
+  recognition: defineAsyncComponent(() => import('./IngredientRecognitionStation.vue')),
+  history: defineAsyncComponent(() => import('./RecentSearchStation.vue')),
   pantry: defineAsyncComponent(() => import('../../views/PantryView.vue')),
   recipes: defineAsyncComponent(() => import('../../views/SavedRecipesView.vue')),
-  review: defineAsyncComponent(() => import('../../views/SavedRecipesView.vue')),
+  review: defineAsyncComponent(() => import('./FinishedDishReviewStation.vue')),
   'health-profile': defineAsyncComponent(() => import('../../views/HealthProfileView.vue')),
   'nutrition-targets': defineAsyncComponent(() => import('../../views/NutritionTargetView.vue')),
   weekly: defineAsyncComponent(() => import('../../views/WeeklyMenuView.vue')),
@@ -116,6 +125,7 @@ const preferenceLoading = ref(false)
 const preferenceSaving = ref(false)
 const activeFeatureId = ref('')
 const previousFeatureId = ref('')
+const chefSearchPreset = ref(null)
 
 const stationMap = {
   pantry: {
@@ -244,7 +254,7 @@ const stationMap = {
   review: {
     id: 'review',
     title: '成品品鉴台',
-    role: '成品品鉴员',
+    role: '成品品鉴员 · 味味',
     icon: '◆',
     accent: '#c87a8a',
     description: '从已保存菜谱进入成品评价，上传成品图并获取 AI 品鉴建议。',
@@ -305,6 +315,26 @@ const featureMap = {
     component: featureComponents.chef,
     requiresUser: false
   },
+  recognition: {
+    id: 'recognition',
+    title: '食材识别台',
+    role: '食材识别员 · 小灶',
+    icon: '◫',
+    accent: '#79a9a1',
+    description: '通过上传或拍照识别食材，再交给阿灶生成菜谱。',
+    component: featureComponents.recognition,
+    requiresUser: false
+  },
+  history: {
+    id: 'history',
+    title: '菜谱生成记录',
+    role: '生成记录员 · 小谱',
+    icon: '◷',
+    accent: '#b083c7',
+    description: '找回最近的食材条件、餐次和生成目标。',
+    component: featureComponents.history,
+    requiresUser: true
+  },
   pantry: {
     id: 'pantry',
     title: '食材储藏室',
@@ -328,10 +358,10 @@ const featureMap = {
   review: {
     id: 'review',
     title: '成品品鉴台',
-    role: '成品品鉴员',
+    role: '成品品鉴员 · 味味',
     icon: '◆',
     accent: '#c87a8a',
-    description: '选择已保存的菜谱，上传成品并查看品鉴记录。',
+    description: '直接选择已保存菜谱，上传成品并查看品鉴记录。',
     component: featureComponents.review,
     requiresUser: true
   },
@@ -358,7 +388,7 @@ const featureMap = {
   'diet-preference': {
     id: 'diet-preference',
     title: '饮食偏好',
-    role: '营养咨询室',
+    role: '饮食偏好顾问 · 小衡',
     icon: '◇',
     accent: '#e2816c',
     description: '设置默认目标、口味、忌口和过敏食材。',
@@ -409,6 +439,9 @@ const featureMap = {
 
 const directFeatureByStation = {
   chef: 'chef',
+  recognition: 'recognition',
+  history: 'history',
+  'diet-preference': 'diet-preference',
   pantry: 'pantry',
   recipes: 'recipes',
   weekly: 'weekly',
@@ -425,12 +458,17 @@ const station = computed(() => {
 
 const activeFeature = computed(() => featureMap[activeFeatureId.value] || null)
 const activeFeatureProps = computed(() => {
-  return ['chef', 'weekly', 'hot', 'notifications'].includes(activeFeatureId.value)
-    ? { embedded: true }
-    : {}
+  if (activeFeatureId.value === 'chef') {
+    return { embedded: true, initialSearch: chefSearchPreset.value }
+  }
+  return ['weekly', 'hot', 'notifications'].includes(activeFeatureId.value) ? { embedded: true } : {}
 })
 const showFeatureBack = computed(() => {
   return Boolean(previousFeatureId.value || (station.value?.entries?.length > 1 && activeFeature.value))
+})
+const backLabel = computed(() => {
+  if (previousFeatureId.value) return featureMap[previousFeatureId.value]?.title || '上一功能'
+  return station.value?.title || '功能入口'
 })
 const windowTitle = computed(() => activeFeature.value?.title || station.value?.title || '厨房功能')
 const windowSubtitle = computed(() => activeFeature.value?.role || station.value?.role || '')
@@ -444,6 +482,11 @@ watch(
     previousFeatureId.value = ''
     const featureId = directFeatureByStation[stationId]
     activeFeatureId.value = featureId || ''
+    if (stationId === 'chef') chefSearchPreset.value = null
+    if (featureId === 'diet-preference') {
+      openDietPreference()
+      return
+    }
     if (featureId) ensureFeatureAccess(featureId)
   },
   { immediate: true }
@@ -483,13 +526,26 @@ function returnToStationMenu() {
     previousFeatureId.value = ''
     return
   }
-  activeFeatureId.value = ''
+  if (station.value?.entries?.length) {
+    activeFeatureId.value = ''
+    return
+  }
+  emit('update:modelValue', false)
 }
 
 function openChefWithIngredient(ingredientName) {
   const name = String(ingredientName || '').trim()
   if (!name) return
-  router.replace({ name: 'home', query: { ...route.query, ingredients: name } })
+  chefSearchPreset.value = { ingredients: name, mealType: 'any', goal: 'balanced' }
+  openFeature('chef', { rememberCurrent: true })
+}
+
+function openChefWithSearch(search) {
+  chefSearchPreset.value = {
+    ingredients: String(search?.ingredients || '').trim(),
+    mealType: search?.mealType || 'any',
+    goal: search?.goal || 'balanced'
+  }
   openFeature('chef', { rememberCurrent: true })
 }
 
@@ -523,12 +579,12 @@ async function openDietPreference() {
     return
   }
 
+  activeFeatureId.value = 'diet-preference'
   if (preferenceLoading.value) return
   preferenceLoading.value = true
   try {
     const response = await getDietPreference()
     dietPreference.value = normalizeDietPreference(response.data.data)
-    activeFeatureId.value = 'diet-preference'
   } catch (error) {
     handleAuthorizedError(error, '饮食偏好加载失败，请稍后重试')
   } finally {
@@ -542,7 +598,11 @@ async function persistDietPreference(value) {
   try {
     const response = await saveDietPreference(normalizeDietPreference(value))
     dietPreference.value = normalizeDietPreference(response.data.data)
-    activeFeatureId.value = ''
+    if (props.stationId === 'diet-preference') {
+      emit('update:modelValue', false)
+    } else {
+      activeFeatureId.value = ''
+    }
     ElMessage.success('饮食偏好已保存')
   } catch (error) {
     handleAuthorizedError(error, '饮食偏好保存失败，请稍后重试')
