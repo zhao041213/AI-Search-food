@@ -26,6 +26,16 @@ test('人物名称会拒绝空值、过长内容和重复值', () => {
   assert.equal(result.errors.recipes, '人物名称不能重复')
 })
 
+test('人物名称会拒绝未知人物编号', () => {
+  const result = validateKitchenCharacterNames({
+    ...buildDefaultKitchenCharacterNames(),
+    unknown: '陌生人'
+  })
+
+  assert.equal(result.valid, false)
+  assert.equal(result.errors._unknownCharacterId, '包含未知人物编号')
+})
+
 test('人物名称存储按 JWT 用户编号区分', () => {
   const payload = Buffer.from(JSON.stringify({ id: 42, sub: 'tester' })).toString('base64url')
   assert.equal(getKitchenCharacterOwnerId(`header.${payload}.signature`), 'user-42')

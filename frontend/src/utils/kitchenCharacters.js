@@ -23,12 +23,18 @@ export function normalizeKitchenCharacterName(value) {
 }
 
 export function validateKitchenCharacterNames(values = {}) {
+  const input = values && typeof values === 'object' && !Array.isArray(values) ? values : {}
   const names = {}
   const errors = {}
   const ownersByName = new Map()
+  const knownIds = new Set(KITCHEN_CHARACTERS.map((character) => character.id))
+  const unknownIds = Object.keys(input).filter((characterId) => !knownIds.has(characterId))
+  if (unknownIds.length > 0) {
+    errors._unknownCharacterId = '包含未知人物编号'
+  }
 
   KITCHEN_CHARACTERS.forEach((character) => {
-    const name = normalizeKitchenCharacterName(values[character.id])
+    const name = normalizeKitchenCharacterName(input[character.id])
     names[character.id] = name
     if (!name) {
       errors[character.id] = '请输入人物名称'

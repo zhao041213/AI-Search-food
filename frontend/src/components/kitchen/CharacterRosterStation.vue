@@ -1,10 +1,14 @@
 <template>
-  <section class="character-roster" aria-labelledby="character-roster-title">
+  <section
+    class="character-roster"
+    aria-labelledby="character-roster-title"
+    :aria-busy="kitchen.characterNamesLoading || kitchen.characterNamesSaving || kitchen.characterNamesResetting"
+  >
     <header class="character-roster__header">
       <div>
         <p class="character-roster__eyebrow">厨房角色管理</p>
         <h2 id="character-roster-title">人物名册</h2>
-        <p>名称仅影响当前账号在本机浏览器中的厨房展示，不会改变人物功能。</p>
+        <p>登录后名称会同步到当前账号；游客仅保存在本机浏览器，不会改变人物功能。</p>
       </div>
       <span class="character-roster__count">{{ KITCHEN_CHARACTERS.length }} 位伙伴</span>
     </header>
@@ -49,16 +53,48 @@
       </section>
     </div>
 
+    <div class="character-roster__status" role="status" aria-live="polite">
+      <template v-if="kitchen.characterNamesStatus === 'loading'">
+        正在加载云端人物名称…
+      </template>
+      <template v-else-if="kitchen.characterNamesStatus === 'saving'">
+        正在保存人物名称…
+      </template>
+      <template v-else-if="kitchen.characterNamesStatus === 'resetting'">
+        正在恢复默认名称…
+      </template>
+      <template v-else-if="kitchen.characterNamesStatus === 'error'">
+        <span>{{ kitchen.characterNamesError || '人物名称同步失败，请稍后重试' }}</span>
+        <button type="button" class="roster-retry" @click="retryLoading">重试</button>
+      </template>
+      <template v-else-if="!auth.isUser">
+        当前为游客模式，修改只保存在本机浏览器。
+      </template>
+      <template v-else>
+        人物名称已与当前账号同步。
+      </template>
+    </div>
+
     <footer class="character-roster__actions">
       <span>每个名称最多 {{ KITCHEN_CHARACTER_NAME_MAX_LENGTH }} 个字符，且不能重复。</span>
       <div>
-        <button type="button" class="roster-button roster-button--secondary" @click="restoreDefaults">
+        <button
+          type="button"
+          class="roster-button roster-button--secondary"
+          :disabled="buttonsDisabled"
+          @click="restoreDefaults"
+        >
           <RotateCcw :size="15" aria-hidden="true" />
-          恢复默认名称
+          {{ kitchen.characterNamesResetting ? '恢复中…' : '恢复默认名称' }}
         </button>
-        <button type="button" class="roster-button roster-button--primary" @click="saveNames">
+        <button
+          type="button"
+          class="roster-button roster-button--primary"
+          :disabled="buttonsDisabled"
+          @click="saveNames"
+        >
           <Save :size="15" aria-hidden="true" />
-          保存修改
+          {{ kitchen.characterNamesSaving ? '保存中…' : '保存修改' }}
         </button>
       </div>
     </footer>
@@ -70,6 +106,7 @@ import { computed, reactive, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { RotateCcw, Save } from 'lucide-vue-next'
 import { useKitchenStore } from '../../stores/kitchen'
+import { useAuthStore } from '../../stores/auth'
 import {
   buildDefaultKitchenCharacterNames,
   KITCHEN_CHARACTERS,
@@ -78,8 +115,12 @@ import {
 } from '../../utils/kitchenCharacters'
 
 const kitchen = useKitchenStore()
+const auth = useAuthStore()
 const draft = reactive(buildDefaultKitchenCharacterNames())
 const errors = reactive({})
+const buttonsDisabled = computed(() => {
+  return kitchen.characterNamesLoading || kitchen.characterNamesSaving || kitchen.characterNamesResetting
+})
 const characterGroups = computed(() => {
   const groups = new Map()
   KITCHEN_CHARACTERS.forEach((character) => {
@@ -106,7 +147,8 @@ function clearErrors() {
   Object.keys(errors).forEach((characterId) => delete errors[characterId])
 }
 
-function saveNames() {
+async function saveNames() {
+  if (buttonsDisabled.value) return
   clearErrors()
   const validation = validateKitchenCharacterNames(draft)
   if (!validation.valid) {
@@ -114,24 +156,40 @@ function saveNames() {
     ElMessage.warning('请先修正人物名称')
     return
   }
-  kitchen.saveCharacterNames(validation.names)
-  Object.assign(draft, kitchen.characterNames)
-  ElMessage.success('人物名称已保存')
+  try {
+    const result = await kitchen.saveCharacterNames(validation.names)
+    if (!result.applied) return
+    Object.assign(draft, kitchen.characterNames)
+    ElMessage.success(auth.isUser ? '人物名称已同步到云端' : '人物名称已保存到本机')
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.message || '人物名称保存失败，请稍后重试')
+  }
 }
 
 async function restoreDefaults() {
+  if (buttonsDisabled.value) return
   try {
     await ElMessageBox.confirm('确定恢复所有人物的默认名称吗？', '恢复默认名称', {
       confirmButtonText: '恢复默认',
       cancelButtonText: '暂不恢复',
       type: 'warning'
     })
-    kitchen.resetCharacterNames()
+    const result = await kitchen.resetCharacterNames()
+    if (!result.applied) return
     Object.assign(draft, kitchen.characterNames)
     clearErrors()
-    ElMessage.success('已恢复默认名称')
-  } catch {
-    // The user cancelled the reset.
+    ElMessage.success(auth.isUser ? '已恢复默认名称并同步到云端' : '已恢复默认名称')
+  } catch (error) {
+    if (error === 'cancel' || error === 'close') return
+    if (error?.response?.status !== 401) {
+      ElMessage.error(error?.response?.data?.message || '人物名称恢复失败，请稍后重试')
+    }
+  }
+}
+
+function retryLoading() {
+  if (!buttonsDisabled.value) {
+    kitchen.retryCharacterNames()
   }
 }
 </script>
@@ -194,6 +252,34 @@ async function restoreDefaults() {
 .character-roster__rooms {
   display: grid;
   gap: 12px;
+}
+
+.character-roster__status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 22px;
+  color: #80664a;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.roster-retry {
+  min-height: 24px;
+  padding: 2px 8px;
+  border: 1px solid #9e7b50;
+  border-radius: 3px;
+  color: #5b422f;
+  background: #fffaf0;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.roster-retry:focus-visible {
+  outline: 2px solid #4f8ca5;
+  outline-offset: 2px;
 }
 
 .character-room {
@@ -337,6 +423,13 @@ async function restoreDefaults() {
 
 .roster-button:hover {
   filter: brightness(1.06);
+}
+
+.roster-button:disabled,
+.roster-retry:disabled {
+  cursor: wait;
+  opacity: 0.65;
+  filter: none;
 }
 
 .roster-button:focus-visible {

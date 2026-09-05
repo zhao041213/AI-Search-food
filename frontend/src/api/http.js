@@ -1,6 +1,6 @@
 import axios from 'axios'
-import { useAuthStore } from '../stores/auth'
-import { getAnonymousId } from '../utils/anonymousId'
+import { useAuthStore } from '../stores/auth.js'
+import { getAnonymousId } from '../utils/anonymousId.js'
 
 export const http = axios.create({
   baseURL: '/api',
