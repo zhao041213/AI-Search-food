@@ -19,6 +19,7 @@ import {
 } from '../utils/kitchenCharacterSync.js'
 
 const STORAGE_PREFIX = 'ai_smart_recipe_kitchen_characters'
+const CLOUD_SYNC_MARKER_SUFFIX = ':cloud-sync-v1'
 
 export const useKitchenStore = defineStore('kitchen', () => {
   const auth = useAuthStore()
@@ -70,6 +71,7 @@ export const useKitchenStore = defineStore('kitchen', () => {
       if (applied) {
         applyCharacterNames(cloud.names)
         persistCharacterNames()
+        markCloudSyncCompleted(key)
         characterNamesStatus.value = 'ready'
       }
       return { ...validation, ...cloud, synced: true, applied }
@@ -108,6 +110,7 @@ export const useKitchenStore = defineStore('kitchen', () => {
       if (applied) {
         applyCharacterNames(buildDefaultKitchenCharacterNames())
         removeStoredCharacterNames()
+        markCloudSyncCompleted(key)
         characterNamesStatus.value = 'ready'
       }
       return { synced: true, applied }
@@ -139,6 +142,7 @@ export const useKitchenStore = defineStore('kitchen', () => {
     const token = auth.token
     const key = storageKey.value
     const localState = readStoredKitchenCharacterNames(window.localStorage, key)
+    const cloudSyncCompleted = hasCompletedCloudSync(key)
     applyCharacterNames(localState.names)
     characterNamesError.value = ''
 
@@ -153,7 +157,7 @@ export const useKitchenStore = defineStore('kitchen', () => {
       if (!isCurrentContext(requestId, token, key)) return
 
       const cloudState = normalizeKitchenCharacterNamesResponse(response.data.data)
-      if (shouldMigrateKitchenCharacterNames(localState, cloudState)) {
+      if (shouldMigrateKitchenCharacterNames(localState, cloudState, cloudSyncCompleted)) {
         const migrationResponse = await saveKitchenCharacterNames(localState.names)
         if (!isCurrentContext(requestId, token, key)) return
         const migratedState = normalizeKitchenCharacterNamesResponse(migrationResponse.data.data)
@@ -163,6 +167,7 @@ export const useKitchenStore = defineStore('kitchen', () => {
         applyCharacterNames(cloudState.names)
         persistCharacterNames()
       }
+      markCloudSyncCompleted(key)
       characterNamesStatus.value = 'ready'
     } catch (error) {
       if (isCurrentContext(requestId, token, key)) {
@@ -194,6 +199,22 @@ export const useKitchenStore = defineStore('kitchen', () => {
       window.localStorage.removeItem(storageKey.value)
     } catch {
       // Storage may be unavailable in a restricted browser context.
+    }
+  }
+
+  function hasCompletedCloudSync(key) {
+    try {
+      return window.localStorage.getItem(`${key}${CLOUD_SYNC_MARKER_SUFFIX}`) === '1'
+    } catch {
+      return false
+    }
+  }
+
+  function markCloudSyncCompleted(key) {
+    try {
+      window.localStorage.setItem(`${key}${CLOUD_SYNC_MARKER_SUFFIX}`, '1')
+    } catch {
+      // Sync still succeeds when local storage is blocked.
     }
   }
 
