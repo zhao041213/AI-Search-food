@@ -66,7 +66,7 @@ function mockApi(handler) {
   return calls
 }
 
-function createUserStore(userId, localOverrides = {}) {
+function createUserStore(userId, localOverrides = {}, cloudSyncCompleted = false) {
   storage.clear()
   setActivePinia(createPinia())
   const auth = useAuthStore()
@@ -75,6 +75,9 @@ function createUserStore(userId, localOverrides = {}) {
     `ai_smart_recipe_kitchen_characters:user-${userId}`,
     JSON.stringify(localOverrides)
   )
+  if (cloudSyncCompleted) {
+    storage.setItem(`ai_smart_recipe_kitchen_characters:user-${userId}:cloud-sync-v1`, '1')
+  }
   return { auth, kitchen: useKitchenStore() }
 }
 
@@ -121,6 +124,10 @@ test('云端为空时首次迁移旧本地名称，迁移失败保留本地名�
     assert.equal(kitchen.characterNames.chef, '旧主厨')
     assert.deepEqual(calls.map((call) => call.method), ['GET', 'PUT'])
     assert.equal(calls[1].body.names.chef, '旧主厨')
+    assert.equal(
+      storage.getItem('ai_smart_recipe_kitchen_characters:user-42:cloud-sync-v1'),
+      '1'
+    )
   })
 
   await t.test('迁移失败', async () => {
@@ -137,7 +144,25 @@ test('云端为空时首次迁移旧本地名称，迁移失败保留本地名�
     assert.equal(kitchen.characterNames.chef, '旧主厨')
     assert.equal(calls[1].method, 'PUT')
     assert.equal(kitchen.characterNamesError, '服务暂不可用')
+    assert.equal(
+      storage.getItem('ai_smart_recipe_kitchen_characters:user-42:cloud-sync-v1'),
+      null
+    )
   })
+})
+
+test('其他设备恢复默认后不会被已同步设备的旧缓存覆盖', async () => {
+  const calls = mockApi((call, config) => response(config, {
+    names: buildDefaultKitchenCharacterNames(),
+    hasCustomNames: false
+  }))
+  const { kitchen } = createUserStore(42, { chef: '旧主厨' }, true)
+
+  await waitForStatus(kitchen)
+
+  assert.equal(kitchen.characterNames.chef, '阿灶')
+  assert.deepEqual(calls.map((call) => call.method), ['GET'])
+  assert.equal(storage.getItem('ai_smart_recipe_kitchen_characters:user-42'), '{}')
 })
 
 test('账号切换后重新加载新账号名称', async () => {

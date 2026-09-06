@@ -51,6 +51,8 @@ export function normalizeKitchenCharacterNamesResponse(payload) {
   }
 }
 
-export function shouldMigrateKitchenCharacterNames(localState, cloudState) {
-  return Boolean(localState?.hasCustomNames) && !Boolean(cloudState?.hasCustomNames)
+export function shouldMigrateKitchenCharacterNames(localState, cloudState, cloudSyncCompleted = false) {
+  return Boolean(localState?.hasCustomNames)
+    && !Boolean(cloudState?.hasCustomNames)
+    && !cloudSyncCompleted
 }

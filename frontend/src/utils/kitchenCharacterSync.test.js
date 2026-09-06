@@ -38,7 +38,17 @@ test('云端无自定义名称且本地有旧数据时允许首次迁移', () =>
     hasCustomNames: false
   })
 
-  assert.equal(shouldMigrateKitchenCharacterNames(local, cloud), true)
+  assert.equal(shouldMigrateKitchenCharacterNames(local, cloud, false), true)
+})
+
+test('账号完成过云同步后云端默认名称优先于旧本地缓存', () => {
+  const local = { names: customNames('旧主厨'), hasCustomNames: true, valid: true }
+  const cloud = normalizeKitchenCharacterNamesResponse({
+    names: buildDefaultKitchenCharacterNames(),
+    hasCustomNames: false
+  })
+
+  assert.equal(shouldMigrateKitchenCharacterNames(local, cloud, true), false)
 })
 
 test('云端已有名称时不会触发旧本地覆盖', () => {

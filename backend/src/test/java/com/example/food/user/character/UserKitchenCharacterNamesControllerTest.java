@@ -22,6 +22,7 @@ import java.util.Map;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -95,6 +96,18 @@ class UserKitchenCharacterNamesControllerTest {
     void unauthenticatedUserCannotReadNames() throws Exception {
         mockMvc.perform(get("/api/users/me/kitchen-character-names"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void adminCannotAccessUserCharacterNames() throws Exception {
+        when(jwtService.parseToken("admin-token"))
+                .thenReturn(new AuthPrincipal(1L, "admin", AppRole.ADMIN));
+
+        mockMvc.perform(get("/api/users/me/kitchen-character-names")
+                        .header("Authorization", "Bearer admin-token"))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(service);
     }
 
     private void authenticateUser() {
