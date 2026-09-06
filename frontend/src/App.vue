@@ -1,5 +1,9 @@
 <template>
-  <el-container class="app-shell" :data-theme="activeTheme">
+  <el-container
+    class="app-shell"
+    :class="{ 'kitchen-world-chrome': route.name === 'home' }"
+    :data-theme="activeTheme"
+  >
     <el-header class="app-header">
       <RouterLink class="brand" to="/" aria-label="AI 智能菜谱首页">
         <span class="brand-mark" aria-hidden="true">
@@ -691,6 +695,10 @@ function applyTheme(theme) {
   backdrop-filter: blur(14px);
 }
 
+.app-shell.kitchen-world-chrome .app-header {
+  background: rgba(248, 239, 220, 0.92);
+}
+
 .brand,
 .nav-link,
 .login-link,
@@ -991,6 +999,10 @@ function applyTheme(theme) {
   padding: 24px 14px;
   border-right: 1px solid var(--app-line);
   background: var(--app-surface);
+}
+
+.app-shell.kitchen-world-chrome .app-sidebar {
+  background: #f8efdc;
 }
 
 .sidebar-caption {
