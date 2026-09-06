@@ -17,7 +17,7 @@
           <RouterLink
             v-if="auth.isUser"
             class="notification-link"
-            to="/notifications"
+            :to="kitchenFeatureLocation('notifications')"
             :aria-label="notificationUnreadCount > 0 ? `消息中心，有${notificationUnreadCount}条未读消息` : '消息中心'"
           >
             <Bell :size="17" aria-hidden="true" />
@@ -27,15 +27,22 @@
           </RouterLink>
           <RouterLink
             v-if="auth.isUser"
-            class="account-profile"
-            to="/account"
-            :aria-label="`打开${auth.displayName || roleDisplay}的账号中心`"
+            custom
+            :to="kitchenNavigationLocation('account')"
+            v-slot="{ href }"
           >
-            <span class="account-name">{{ auth.displayName || roleDisplay }}</span>
-            <span class="account-avatar" aria-hidden="true">
-              <img v-if="headerAvatarUrl" :src="headerAvatarUrl" alt="" />
-              <UserCircle v-else :size="19" stroke-width="2.2" />
-            </span>
+            <a
+              class="account-profile"
+              :href="href"
+              :aria-label="`打开${auth.displayName || roleDisplay}的账号中心`"
+              @click.prevent="requestKitchenNavigation('account')"
+            >
+              <span class="account-name">{{ auth.displayName || roleDisplay }}</span>
+              <span class="account-avatar" aria-hidden="true">
+                <img v-if="headerAvatarUrl" :src="headerAvatarUrl" alt="" />
+                <UserCircle v-else :size="19" stroke-width="2.2" />
+              </span>
+            </a>
           </RouterLink>
           <span v-else class="account-name">{{ auth.displayName || roleDisplay }}</span>
           <el-button class="header-button" type="primary" plain @click="logout">
@@ -53,25 +60,14 @@
     <el-container class="app-body">
       <aside class="app-sidebar" aria-label="工作区导航">
         <div class="sidebar-caption">工作区</div>
-        <RouterLink class="sidebar-link" to="/">
+        <RouterLink
+          class="sidebar-link"
+          :class="{ 'sidebar-link-active': isKitchenWorkbenchActive }"
+          :to="kitchenWorldLocation()"
+          :aria-current="isKitchenWorkbenchActive ? 'page' : undefined"
+        >
           <Home :size="17" aria-hidden="true" />
           <span>智能工作台</span>
-        </RouterLink>
-        <RouterLink v-if="shouldShowSavedRecipesNavigation(auth.role)" class="sidebar-link" to="/recipes/saved">
-          <Bookmark :size="17" aria-hidden="true" />
-          <span>我的菜谱</span>
-        </RouterLink>
-        <RouterLink v-if="auth.isUser" class="sidebar-link" to="/pantry">
-          <Package :size="17" aria-hidden="true" />
-          <span>我的食材</span>
-        </RouterLink>
-        <RouterLink v-if="auth.isUser" class="sidebar-link" to="/health-profile">
-          <HeartPulse :size="17" aria-hidden="true" />
-          <span>健康档案</span>
-        </RouterLink>
-        <RouterLink v-if="auth.isUser" class="sidebar-link" to="/account">
-          <UserCircle :size="17" aria-hidden="true" />
-          <span>账号中心</span>
         </RouterLink>
 
         <div class="sidebar-caption sidebar-caption-spaced">功能扩展</div>
@@ -96,22 +92,24 @@
           </RouterLink>
         </template>
         <template v-else>
-          <RouterLink class="sidebar-link" :to="hotIngredientNavigation.to">
-            <Flame :size="17" aria-hidden="true" />
-            <span>{{ hotIngredientNavigation.label }}</span>
+          <RouterLink
+            v-for="item in userSidebarNavigation"
+            :key="item.featureId"
+            custom
+            :to="kitchenNavigationLocation(item.featureId)"
+            v-slot="{ href }"
+          >
+            <a
+              class="sidebar-link"
+              :class="{ 'sidebar-link-active': isKitchenNavigationActive(item.featureId, route.query) }"
+              :href="href"
+              :aria-current="isKitchenNavigationActive(item.featureId, route.query) ? 'page' : undefined"
+              @click.prevent="requestKitchenNavigation(item.featureId)"
+            >
+              <component :is="item.icon" :size="17" aria-hidden="true" />
+              <span>{{ item.navigation.label }}</span>
+            </a>
           </RouterLink>
-          <RouterLink v-if="auth.isUser" class="sidebar-link" to="/weekly-menu">
-            <CalendarDays :size="17" aria-hidden="true" />
-            <span>一周菜单</span>
-          </RouterLink>
-          <RouterLink v-if="auth.isUser" class="sidebar-link" :to="nutritionTargetNavigation.to">
-            <Target :size="17" aria-hidden="true" />
-            <span>{{ nutritionTargetNavigation.label }}</span>
-          </RouterLink>
-          <button v-if="auth.isUser" class="sidebar-link sidebar-button" type="button" @click="openCharacterRoster">
-            <Users :size="17" aria-hidden="true" />
-            <span>人物名册</span>
-          </button>
         </template>
 
         <RouterLink v-if="auth.isAdmin" custom :to="adminPanelRoute('overview')" v-slot="{ href, navigate }">
@@ -176,7 +174,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Bell, Bookmark, CalendarDays, CircleAlert, ClipboardList, Flame, Gauge, HeartPulse, Home, LogIn, LogOut, Package, Palette, Settings, ShieldCheck, Target, Users, UserCircle, Utensils } from 'lucide-vue-next'
+import { Bell, CircleAlert, ClipboardList, Flame, Gauge, Home, LogIn, LogOut, Palette, Settings, ShieldCheck, Users, UserCircle, Utensils } from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
 import { getUnreadNotificationCount } from './api/notifications'
 import { getMyAccount, loadMyAvatar } from './api/userAccount'
@@ -185,11 +183,18 @@ import { useKitchenStore } from './stores/kitchen'
 import {
   ADMIN_PANEL_NAVIGATION,
   buildAdminPanelQuery,
-  getHotIngredientNavigation,
-  getNutritionTargetNavigation,
-  resolveAdminPanel,
-  shouldShowSavedRecipesNavigation
+  resolveAdminPanel
 } from './utils/hotIngredientNavigation'
+import {
+  getKitchenNavigation,
+  getKitchenNavigationTarget,
+  isKitchenNavigationActive,
+  kitchenFeatureLocation,
+  kitchenNavigationLocation,
+  kitchenWorldLocation,
+  parseKitchenFeature,
+  parseKitchenStation
+} from './utils/kitchenFeatures'
 
 const RECIPE_THEME_KEY = 'ai-recipe-theme'
 const themeOptions = [
@@ -349,8 +354,10 @@ const auth = useAuthStore()
 const kitchen = useKitchenStore()
 const route = useRoute()
 const router = useRouter()
-const hotIngredientNavigation = computed(() => getHotIngredientNavigation())
-const nutritionTargetNavigation = computed(() => getNutritionTargetNavigation())
+const userSidebarNavigation = computed(() => getKitchenNavigation('sidebar', auth.role))
+const isKitchenWorkbenchActive = computed(() => route.name === 'home'
+  && !parseKitchenFeature(route.query)
+  && !parseKitchenStation(route.query))
 const activeAdminPanel = computed(() => resolveAdminPanel(route.query.panel))
 const adminPanelIcons = {
   overview: Gauge,
@@ -415,14 +422,23 @@ onBeforeUnmount(() => {
   window.removeEventListener('notifications-updated', loadNotificationUnreadCount)
 })
 
+function requestKitchenNavigation(featureId) {
+  const target = getKitchenNavigationTarget(featureId)
+  if (!target) return
+
+  if (target.type === 'station') {
+    kitchen.requestStation(target.stationId)
+    if (route.name !== 'home') router.push(kitchenWorldLocation())
+    return
+  }
+
+  const currentQuery = route.name === 'home' ? route.query : {}
+  router.push(kitchenNavigationLocation(target.featureId, currentQuery))
+}
+
 function logout() {
   auth.logout()
   router.push({ name: 'login' })
-}
-
-function openCharacterRoster() {
-  kitchen.requestStation('characters')
-  if (route.path !== '/') router.push('/')
 }
 
 function adminPanelRoute(panel) {
@@ -784,7 +800,8 @@ function applyTheme(theme) {
   border-color: var(--app-line-strong);
   color: var(--app-text);
   background: var(--app-surface-strong);
-  outline: none;
+  outline: 2px solid var(--app-text-muted);
+  outline-offset: 2px;
 }
 
 .notification-count {
@@ -821,7 +838,8 @@ function applyTheme(theme) {
 .account-profile:focus-visible {
   border-color: var(--app-line-strong);
   background: var(--app-surface-strong);
-  outline: none;
+  outline: 2px solid var(--app-text-muted);
+  outline-offset: 2px;
 }
 
 .account-name {
@@ -874,7 +892,7 @@ function applyTheme(theme) {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  min-height: 36px;
+  min-height: 44px;
   padding: 0 14px;
   border: 1px solid var(--app-line-strong);
   border-radius: 999px;
@@ -895,7 +913,8 @@ function applyTheme(theme) {
 .theme-trigger:focus-visible {
   border-color: var(--app-accent);
   background: var(--app-surface-strong);
-  outline: none;
+  outline: 2px solid var(--app-text-muted);
+  outline-offset: 2px;
 }
 
 .theme-panel {
@@ -1053,11 +1072,16 @@ function applyTheme(theme) {
 }
 
 .sidebar-link:hover,
-.sidebar-link.router-link-active,
+.sidebar-link-active,
 .sidebar-link-admin-active {
   border-color: var(--app-line);
   color: var(--app-text);
   background: var(--app-surface-soft);
+}
+
+.sidebar-link:focus-visible {
+  outline: 2px solid var(--app-text-muted);
+  outline-offset: 2px;
 }
 
 .sidebar-placeholder {
@@ -1096,7 +1120,7 @@ function applyTheme(theme) {
   .sidebar-link,
   .sidebar-placeholder {
     min-width: max-content;
-    min-height: 36px;
+    min-height: 44px;
   }
 
   .sidebar-admin-link {

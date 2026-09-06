@@ -25,7 +25,7 @@
         :style="{ '--guide-accent': item.accent }"
         @click="openStation(item.id)"
       >
-        <span class="guide-icon">{{ item.icon }}</span>
+        <span class="guide-icon" aria-hidden="true"><component :is="item.icon" :size="16" /></span>
         <span>
           <strong>{{ item.role }}</strong>
           <small>{{ item.title }}</small>
@@ -33,31 +33,37 @@
       </button>
     </section>
 
-    <KitchenStationPanel v-model="stationPanelVisible" :station-id="activeStation" />
+    <KitchenStationPanel
+      :model-value="stationPanelVisible"
+      :feature-id="activeFeatureId"
+      :station-id="activeStationId"
+      @update:model-value="handlePanelVisibility"
+    />
   </main>
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import KitchenScene from '../components/kitchen/KitchenScene.vue'
 import KitchenStationPanel from '../components/kitchen/KitchenStationPanel.vue'
 import { useKitchenStore } from '../stores/kitchen'
+import {
+  getKitchenGuideItems,
+  kitchenStationLocation,
+  kitchenWorldLocation,
+  parseKitchenFeature,
+  parseKitchenStation
+} from '../utils/kitchenFeatures'
 
-const guideItems = [
-  { id: 'chef', title: '主厨料理大厅', role: 'AI 主厨', icon: '✦', accent: '#d6a43b' },
-  { id: 'pantry', title: '食材储藏室', role: '食材管家', icon: '▣', accent: '#68a873' },
-  { id: 'recipes', title: '菜谱书房', role: '菜谱管理员', icon: '▤', accent: '#b083c7' },
-  { id: 'nutrition', title: '营养咨询室', role: '营养师', icon: '♥', accent: '#e2816c' },
-  { id: 'weekly', title: '菜单计划室', role: '菜单规划师', icon: '▦', accent: '#6d9cc3' },
-  { id: 'hot', title: '美食情报站', role: '市场观察员', icon: '♨', accent: '#d48c52' },
-  { id: 'review', title: '成品品鉴台', role: '成品品鉴员', icon: '◆', accent: '#c87a8a' },
-  { id: 'account', title: '厨房服务台', role: '厨房管家', icon: '◈', accent: '#8f8aa8' }
-]
-
-const activeStation = ref('')
-const stationPanelVisible = ref(false)
+const guideItems = getKitchenGuideItems()
+const route = useRoute()
+const router = useRouter()
 const motionPaused = ref(false)
 const kitchen = useKitchenStore()
+const activeFeatureId = computed(() => parseKitchenFeature(route.query))
+const activeStationId = computed(() => parseKitchenStation(route.query))
+const stationPanelVisible = computed(() => Boolean(activeFeatureId.value || activeStationId.value))
 
 watch(
   () => kitchen.requestedStation,
@@ -69,8 +75,13 @@ watch(
 )
 
 function openStation(stationId) {
-  activeStation.value = stationId
-  stationPanelVisible.value = true
+  router.push(kitchenStationLocation(stationId, route.query))
+}
+
+function handlePanelVisibility(visible) {
+  if (!visible) {
+    router.push(kitchenWorldLocation(route.query))
+  }
 }
 </script>
 
@@ -110,7 +121,7 @@ function openStation(stationId) {
 }
 
 .motion-toggle {
-  min-height: 26px;
+  min-height: 40px;
   margin-left: auto;
   padding: 3px 10px;
   border: 1px solid #967044;
@@ -159,7 +170,8 @@ function openStation(stationId) {
 .station-guide-item:focus-visible {
   border-color: var(--guide-accent);
   background: #fff8e9;
-  outline: none;
+  outline: 2px solid #4f8ca5;
+  outline-offset: 2px;
   transform: translateY(-2px);
 }
 

@@ -4,15 +4,23 @@ import { useAuthStore } from '../stores/auth'
 import KitchenWorldView from '../views/KitchenWorldView.vue'
 import LoginView from '../views/LoginView.vue'
 import AdminDashboardView from '../views/AdminDashboardView.vue'
-import SavedRecipesView from '../views/SavedRecipesView.vue'
-import HotIngredientsView from '../views/HotIngredientsView.vue'
-import PantryView from '../views/PantryView.vue'
-import HealthProfileView from '../views/HealthProfileView.vue'
-import NutritionTargetView from '../views/NutritionTargetView.vue'
-import WeeklyMenuView from '../views/WeeklyMenuView.vue'
-import UserAccountView from '../views/UserAccountView.vue'
-import NotificationsView from '../views/NotificationsView.vue'
 import PublicSharedRecipeView from '../views/PublicSharedRecipeView.vue'
+import {
+  getFeatureIdForStation,
+  getKitchenFeature,
+  getKitchenStation,
+  kitchenCanonicalFeatureLocation,
+  parseKitchenFeature,
+  parseKitchenStation
+} from '../utils/kitchenFeatures'
+
+function compatibilityRoute(path, name, featureId) {
+  return {
+    path,
+    name,
+    redirect: (to) => kitchenCanonicalFeatureLocation(featureId, to.query)
+  }
+}
 
 const router = createRouter({
   history: createWebHistory(),
@@ -33,58 +41,20 @@ const router = createRouter({
       component: AdminDashboardView,
       meta: { requiresAdmin: true }
     },
-    {
-      path: '/recipes/saved',
-      name: 'saved-recipes',
-      component: SavedRecipesView,
-      meta: { requiresUser: true }
-    },
-    {
-      path: '/pantry',
-      name: 'pantry',
-      component: PantryView,
-      meta: { requiresUser: true }
-    },
-    {
-      path: '/health-profile',
-      name: 'health-profile',
-      component: HealthProfileView,
-      meta: { requiresUser: true }
-    },
-    {
-      path: '/nutrition-targets',
-      name: 'nutrition-targets',
-      component: NutritionTargetView,
-      meta: { requiresUser: true }
-    },
-    {
-      path: '/weekly-menu',
-      name: 'weekly-menu',
-      component: WeeklyMenuView,
-      meta: { requiresUser: true }
-    },
-    {
-      path: '/account',
-      name: 'user-account',
-      component: UserAccountView,
-      meta: { requiresUser: true }
-    },
-    {
-      path: '/notifications',
-      name: 'notifications',
-      component: NotificationsView,
-      meta: { requiresUser: true }
-    },
+    compatibilityRoute('/recipes/saved', 'saved-recipes', 'recipes'),
+    compatibilityRoute('/pantry', 'pantry', 'pantry'),
+    compatibilityRoute('/health-profile', 'health-profile', 'health-profile'),
+    compatibilityRoute('/nutrition-targets', 'nutrition-targets', 'nutrition-targets'),
+    compatibilityRoute('/weekly-menu', 'weekly-menu', 'weekly'),
+    compatibilityRoute('/kitchen-overview', 'kitchen-overview', 'kitchen-overview'),
+    compatibilityRoute('/account', 'user-account', 'account'),
+    compatibilityRoute('/notifications', 'notifications', 'notifications'),
     {
       path: '/shared/recipes/:token',
       name: 'shared-recipe',
       component: PublicSharedRecipeView
     },
-    {
-      path: '/stats/hot-ingredients',
-      name: 'hot-ingredients',
-      component: HotIngredientsView
-    }
+    compatibilityRoute('/stats/hot-ingredients', 'hot-ingredients', 'hot')
   ]
 })
 
@@ -97,8 +67,29 @@ function loginRedirect(to) {
 
 router.beforeEach(async (to) => {
   const auth = useAuthStore()
+  const parsedFeatureId = parseKitchenFeature(to.query)
+  const stationId = parseKitchenStation(to.query)
+  const featureId = parsedFeatureId || getFeatureIdForStation(stationId)
 
-  if (!to.meta.requiresAdmin && !to.meta.requiresUser) {
+  if (to.name === 'home') {
+    const query = { ...to.query }
+    let queryChanged = false
+    if (to.query.feature !== undefined && !parsedFeatureId) {
+      delete query.feature
+      queryChanged = true
+    }
+    if (to.query.station !== undefined && !stationId) {
+      delete query.station
+      queryChanged = true
+    }
+    if (queryChanged) return { name: 'home', query }
+  }
+
+  const feature = getKitchenFeature(featureId)
+  const station = to.name === 'home' && stationId ? getKitchenStation(stationId) : null
+  const requiresUser = to.meta.requiresUser || feature?.requiresUser || station?.requiresUser
+
+  if (!to.meta.requiresAdmin && !requiresUser) {
     return true
   }
 
@@ -117,7 +108,7 @@ router.beforeEach(async (to) => {
     return loginRedirect(to)
   }
 
-  if (to.meta.requiresUser && !auth.isUser) {
+  if (requiresUser && !auth.isUser) {
     return loginRedirect(to)
   }
 

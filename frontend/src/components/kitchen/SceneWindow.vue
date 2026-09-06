@@ -7,13 +7,14 @@
     modal-class="scene-window-overlay"
     :show-close="false"
     :close-on-click-modal="false"
-    destroy-on-close
     :style="{ '--scene-window-accent': accent }"
     @update:model-value="emit('update:modelValue', $event)"
   >
     <template #header="{ close, titleId, titleClass }">
       <div class="scene-window__titlebar">
-        <span class="scene-window__title-icon" aria-hidden="true">{{ icon }}</span>
+        <span v-if="icon" class="scene-window__title-icon" aria-hidden="true">
+          <component :is="icon" :size="18" stroke-width="2.2" />
+        </span>
         <div class="scene-window__title-copy">
           <strong :id="titleId" :class="titleClass">{{ title }}</strong>
           <span v-if="subtitle">{{ subtitle }}</span>
@@ -38,7 +39,7 @@ defineProps({
   modelValue: { type: Boolean, default: false },
   title: { type: String, default: '厨房功能' },
   subtitle: { type: String, default: '' },
-  icon: { type: String, default: '✦' },
+  icon: { type: [String, Object, Function], default: null },
   accent: { type: String, default: '#d6a43b' },
   width: { type: String, default: 'min(1040px, calc(100vw - 64px))' },
   contentClass: { type: [String, Array, Object], default: '' }
@@ -99,8 +100,8 @@ const emit = defineEmits(['update:modelValue'])
 .scene-window__title-icon,
 .scene-window__close {
   display: grid;
-  width: 34px;
-  height: 34px;
+  width: 40px;
+  height: 40px;
   place-items: center;
   border: 2px solid #614734;
   border-radius: 3px;
@@ -110,6 +111,8 @@ const emit = defineEmits(['update:modelValue'])
 }
 
 .scene-window__title-icon {
+  width: 34px;
+  height: 34px;
   color: var(--scene-window-accent);
   font-size: 17px;
   font-weight: 900;
@@ -172,7 +175,8 @@ const emit = defineEmits(['update:modelValue'])
 .scene-window__close:focus-visible {
   color: #2b211d;
   background: var(--scene-window-accent);
-  outline: none;
+  outline: 2px solid #f4d578;
+  outline-offset: 2px;
   transform: translateY(-1px);
 }
 
