@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "test": "node --test src/utils/kitchenCharacters.test.js src/utils/kitchenCharacterSync.test.js src/utils/adminDashboard.test.js src/stores/kitchen.test.js",
     "start": "powershell -ExecutionPolicy Bypass -File ./scripts/start-nginx.ps1",
     "stop": "powershell -ExecutionPolicy Bypass -File ./scripts/stop-nginx.ps1",
     "dev": "vite --host 0.0.0.0",
