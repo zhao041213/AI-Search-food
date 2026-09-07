@@ -1,4 +1,4 @@
-# AI 智能菜谱推荐系统
+<h1 align="center">AI 智能菜谱推荐系统</h1>
 
 ![Java](https://img.shields.io/badge/Java-17-orange)
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.x-green)
