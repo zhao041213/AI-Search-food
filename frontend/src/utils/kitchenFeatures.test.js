@@ -25,6 +25,12 @@ test('统一注册表覆盖人物入口、动态组件和权限', () => {
   assert.equal(getKitchenFeature('hot').requiresUser, false)
 })
 
+test('交接功能暴露面板实际监听的事件名', () => {
+  assert.equal(getKitchenFeature('recognition').handoffEvent, 'use-ingredients')
+  assert.equal(getKitchenFeature('history').handoffEvent, 'use-search')
+  assert.equal(getKitchenFeature('hot').handoffEvent, 'select-ingredient')
+})
+
 test('用户导航由注册表排序，公共热门食材保留给未登录用户', () => {
   assert.deepEqual(
     getKitchenNavigation('sidebar', 'USER').map((item) => item.featureId),
