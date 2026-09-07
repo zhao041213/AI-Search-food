@@ -1,4 +1,10 @@
-# AI 智能菜谱推荐系统
+<h1 align="center">AI 智能菜谱推荐系统</h1>
+
+![Java](https://img.shields.io/badge/Java-17-orange)
+![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.x-green)
+![Vue](https://img.shields.io/badge/Vue-3-brightgreen)
+![Docker](https://img.shields.io/badge/Docker-Compose-blue)
+![License](https://img.shields.io/badge/license-MIT-blue)
 
 <p align="center">
   <strong>基于多模态大模型的食材识别与个性化菜谱工作台</strong>
