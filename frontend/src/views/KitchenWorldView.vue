@@ -1,7 +1,12 @@
 <template>
   <main class="kitchen-world-page" aria-label="AI 智能厨房">
     <section class="kitchen-world-stage" aria-label="厨房功能入口">
-      <KitchenScene :motion-paused="motionPaused" @select-station="openStation" />
+      <Suspense>
+        <KitchenScene :motion-paused="motionPaused" @select-station="openStation" />
+        <template #fallback>
+          <div class="kitchen-scene-loading" role="status">正在准备厨房……</div>
+        </template>
+      </Suspense>
       <div class="scene-caption">
         <span class="caption-key">操作提示</span>
         <span>看铭牌辨功能 · 点击人物打开窗口</span>
@@ -43,9 +48,8 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import KitchenScene from '../components/kitchen/KitchenScene.vue'
 import KitchenStationPanel from '../components/kitchen/KitchenStationPanel.vue'
 import { useKitchenStore } from '../stores/kitchen'
 import {
@@ -57,6 +61,7 @@ import {
 } from '../utils/kitchenFeatures'
 
 const guideItems = getKitchenGuideItems()
+const KitchenScene = defineAsyncComponent(() => import('../components/kitchen/KitchenScene.vue'))
 const route = useRoute()
 const router = useRouter()
 const motionPaused = ref(false)
@@ -98,6 +103,18 @@ function handlePanelVisibility(visible) {
 .kitchen-world-stage {
   max-width: 1520px;
   margin: 0 auto;
+}
+
+.kitchen-scene-loading {
+  display: grid;
+  min-height: 760px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid #8b6e4e;
+  color: #59432f;
+  background: #e6d2a8;
+  box-shadow: 0 16px 30px rgba(53, 35, 23, 0.2);
+  font-weight: 800;
 }
 
 .scene-caption {

@@ -1,9 +1,10 @@
 <template>
-  <el-container
-    class="app-shell"
-    :class="{ 'kitchen-world-chrome': route.name === 'home' }"
-    :data-theme="activeTheme"
-  >
+  <el-config-provider :locale="zhCn">
+    <el-container
+      class="app-shell"
+      :class="{ 'kitchen-world-chrome': route.name === 'home' }"
+      :data-theme="activeTheme"
+    >
     <el-header class="app-header">
       <RouterLink class="brand" to="/" aria-label="AI 智能菜谱首页">
         <span class="brand-mark" aria-hidden="true">
@@ -169,11 +170,13 @@
         </div>
       </el-popover>
     </div>
-  </el-container>
+    </el-container>
+  </el-config-provider>
 </template>
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import { Bell, CircleAlert, ClipboardList, Flame, Gauge, Home, LogIn, LogOut, Palette, Settings, ShieldCheck, Users, UserCircle, Utensils } from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
 import { getUnreadNotificationCount } from './api/notifications'
