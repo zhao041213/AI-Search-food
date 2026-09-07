@@ -2,9 +2,6 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { getMe } from '../api/auth'
 import { useAuthStore } from '../stores/auth'
 import KitchenWorldView from '../views/KitchenWorldView.vue'
-import LoginView from '../views/LoginView.vue'
-import AdminDashboardView from '../views/AdminDashboardView.vue'
-import PublicSharedRecipeView from '../views/PublicSharedRecipeView.vue'
 import {
   getFeatureIdForStation,
   getKitchenFeature,
@@ -33,12 +30,12 @@ const router = createRouter({
     {
       path: '/login',
       name: 'login',
-      component: LoginView
+      component: () => import('../views/LoginView.vue')
     },
     {
       path: '/admin',
       name: 'admin',
-      component: AdminDashboardView,
+      component: () => import('../views/AdminDashboardView.vue'),
       meta: { requiresAdmin: true }
     },
     compatibilityRoute('/recipes/saved', 'saved-recipes', 'recipes'),
@@ -52,7 +49,7 @@ const router = createRouter({
     {
       path: '/shared/recipes/:token',
       name: 'shared-recipe',
-      component: PublicSharedRecipeView
+      component: () => import('../views/PublicSharedRecipeView.vue')
     },
     compatibilityRoute('/stats/hot-ingredients', 'hot-ingredients', 'hot')
   ]

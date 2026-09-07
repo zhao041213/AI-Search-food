@@ -144,11 +144,19 @@ const activeFeatureProps = computed(() => {
   if (activeFeatureId.value === 'chef') componentProps.initialSearch = chefSearchPreset.value
   return componentProps
 })
-const activeFeatureListeners = computed(() => ({
-  recognition: { onUseIngredients: openChefWithIngredient },
-  history: { onUseSearch: openChefWithSearch },
-  hot: { onSelectIngredient: openChefWithIngredient },
-}[activeFeatureId.value] || {}))
+const featureHandoffHandlers = {
+  recognition: openChefWithIngredient,
+  history: openChefWithSearch,
+  hot: openChefWithIngredient
+}
+// v-on="..." expects the emitted event name; Vue adds the listener prop prefix itself.
+const activeFeatureListeners = computed(() => {
+  const feature = activeFeature.value
+  const handler = featureHandoffHandlers[activeFeatureId.value]
+  return feature?.handoffEvent && handler
+    ? { [feature.handoffEvent]: handler }
+    : {}
+})
 const showFeatureBack = computed(() => {
   return Boolean(
     previousFeatureId.value

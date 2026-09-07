@@ -55,7 +55,8 @@ export const KITCHEN_FEATURES = Object.freeze({
     description: '通过上传或拍照识别食材，再交给阿灶生成菜谱。',
     requiresUser: false,
     stationId: 'recognition',
-    directStation: true
+    directStation: true,
+    handoffEvent: 'use-ingredients'
   }),
   history: defineFeature('history', {
     title: '菜谱生成记录',
@@ -67,7 +68,8 @@ export const KITCHEN_FEATURES = Object.freeze({
     description: '找回最近的食材条件、餐次和生成目标。',
     requiresUser: true,
     stationId: 'history',
-    directStation: true
+    directStation: true,
+    handoffEvent: 'use-search'
   }),
   pantry: defineFeature('pantry', {
     title: '我的食材',
@@ -178,6 +180,7 @@ export const KITCHEN_FEATURES = Object.freeze({
     requiresUser: false,
     stationId: 'hot',
     directStation: true,
+    handoffEvent: 'select-ingredient',
     compatibleRoutes: Object.freeze(['/stats/hot-ingredients']),
     embeddedProps: Object.freeze({ embedded: true }),
     navigation: Object.freeze({ area: 'sidebar', order: 60, label: '热门食材', visibleFor: 'guest-or-user', stationId: 'hot' })

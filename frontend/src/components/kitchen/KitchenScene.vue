@@ -24,8 +24,11 @@ const loading = ref(true)
 
 const SCENE_HEIGHT = 760
 const MIN_SCENE_WIDTH = 1080
-const SPRITE_FRAMES = [1, 2, 3]
+const INITIAL_SPRITE_FRAME = 1
+const ANIMATION_SPRITE_FRAMES = [2, 3]
+const SPRITE_FRAMES = [INITIAL_SPRITE_FRAME, ...ANIMATION_SPRITE_FRAMES]
 const SPRITE_NUMS = [1, 2, 3, 4, 5, 6, 7, 8, 9]
+const SPRITE_DIRECTORY = '/sprites/web'
 const NAMEPLATE_WIDTH_SCALE = 0.6
 const NAMEPLATE_HEIGHT_SCALE = 0.85
 const NAME_TEXT_SCALE = 0.95
@@ -166,6 +169,7 @@ let reducedMotionQuery
 let prefersReducedMotion = false
 let stopCharacterNameWatch
 let headerGuideText
+let spriteLoadingCancelled = false
 const spriteTextures = new Map()
 
 onMounted(async () => {
@@ -181,7 +185,7 @@ onMounted(async () => {
     autoDensity: true
   })
 
-  await loadSpriteTextures()
+  await loadSpriteTextures([INITIAL_SPRITE_FRAME])
 
   const canvas = app.canvas
   canvas.className = 'kitchen-scene-canvas'
@@ -211,6 +215,7 @@ onMounted(async () => {
 
   animationTick = 0
   draw()
+  void loadAnimationSpriteTextures(draw)
   stopCharacterNameWatch = watch(() => kitchen.characterNames, syncCharacterNames, { deep: true })
   resizeObserver = new ResizeObserver(draw)
   resizeObserver.observe(sceneHost.value)
@@ -248,13 +253,13 @@ onMounted(async () => {
   })
 })
 
-async function loadSpriteTextures() {
+async function loadSpriteTextures(frames) {
   const requests = []
   SPRITE_NUMS.forEach((spriteNum) => {
-    SPRITE_FRAMES.forEach((frame) => {
+    frames.forEach((frame) => {
       const fileName = `${spriteNum}-D-${frame}.png`
       requests.push(
-        Assets.load(`/sprites/${fileName}`)
+        Assets.load(`${SPRITE_DIRECTORY}/${fileName}`)
           .then((texture) => spriteTextures.set(`${spriteNum}-D-${frame}`, texture))
           .catch(() => null)
       )
@@ -263,11 +268,26 @@ async function loadSpriteTextures() {
   await Promise.all(requests)
 }
 
+async function loadAnimationSpriteTextures(redraw) {
+  await waitForScenePaint()
+  if (spriteLoadingCancelled) return
+
+  await loadSpriteTextures(ANIMATION_SPRITE_FRAMES)
+  if (!spriteLoadingCancelled && app && !app.destroyed) redraw()
+}
+
+function waitForScenePaint() {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(resolve))
+  })
+}
+
 function getSpriteFrames(spriteNum) {
   return SPRITE_FRAMES.map((frame) => spriteTextures.get(`${spriteNum}-D-${frame}`)).filter(Boolean)
 }
 
 onBeforeUnmount(() => {
+  spriteLoadingCancelled = true
   resizeObserver?.disconnect()
   stopCharacterNameWatch?.()
   reducedMotionQuery?.removeEventListener?.('change', handleReducedMotionChange)
@@ -479,8 +499,8 @@ function drawCharacter(parent, station, x, feetY, scale, character = null, movem
         sprite.scale.set(targetHeight / sprite.texture.height)
       }
     }
-    // The source frames use different transparent canvas sizes. Refit each
-    // frame to the same height so the character does not pulse while animating.
+    // Keep every frame fitted to the same display height, including fallback
+    // assets that may not use the aligned web canvases.
     fitSpriteToHeight()
     if (sprite instanceof AnimatedSprite) {
       sprite.onFrameChange = fitSpriteToHeight
