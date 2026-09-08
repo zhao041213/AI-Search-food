@@ -298,8 +298,9 @@ onBeforeUnmount(() => {
 function drawKitchen(stage, width) {
   stage.sortableChildren = true
   const staticLayer = createSceneLayer(stage, 'kitchen-static-layer', 0, 'none')
-  const effectsLayer = createSceneLayer(stage, 'kitchen-effects-layer', 10, 'none')
   const characterLayer = createSceneLayer(stage, 'kitchen-character-layer', 20, 'passive')
+  const foregroundLayer = createSceneLayer(stage, 'kitchen-foreground-layer', 25, 'none')
+  const effectsLayer = createSceneLayer(stage, 'kitchen-effects-layer', 26, 'none')
   const uiLayer = createSceneLayer(stage, 'kitchen-ui-layer', 30, 'none')
 
   const outer = new Graphics()
@@ -312,21 +313,21 @@ function drawKitchen(stage, width) {
 
   const innerX = 22
   const innerW = width - 44
-  drawHeroRoom(staticLayer, characterLayer, effectsLayer, innerX, 30, innerW, 166)
+  drawHeroRoom(staticLayer, characterLayer, effectsLayer, foregroundLayer, innerX, 30, innerW, 166)
 
   const gap = 12
   const columns = 3
   const colW = (innerW - gap * (columns - 1)) / columns
   const rowY = 204
   const rowH = 190
-  drawRoom(staticLayer, characterLayer, effectsLayer, stations[1], innerX, rowY, colW, rowH)
-  drawRoom(staticLayer, characterLayer, effectsLayer, stations[2], innerX + colW + gap, rowY, colW, rowH)
-  drawRoom(staticLayer, characterLayer, effectsLayer, stations[3], innerX + (colW + gap) * 2, rowY, colW, rowH)
+  drawRoom(staticLayer, characterLayer, effectsLayer, foregroundLayer, stations[1], innerX, rowY, colW, rowH)
+  drawRoom(staticLayer, characterLayer, effectsLayer, foregroundLayer, stations[2], innerX + colW + gap, rowY, colW, rowH)
+  drawRoom(staticLayer, characterLayer, effectsLayer, foregroundLayer, stations[3], innerX + (colW + gap) * 2, rowY, colW, rowH)
 
   const lowerY = 404
   const wideW = colW * 2 + gap
-  drawRoom(staticLayer, characterLayer, effectsLayer, stations[4], innerX, lowerY, wideW, 190)
-  drawRoom(staticLayer, characterLayer, effectsLayer, stations[5], innerX + wideW + gap, lowerY, colW, 190)
+  drawRoom(staticLayer, characterLayer, effectsLayer, foregroundLayer, stations[4], innerX, lowerY, wideW, 190)
+  drawRoom(staticLayer, characterLayer, effectsLayer, foregroundLayer, stations[5], innerX + wideW + gap, lowerY, colW, 190)
 
   drawBreakRoom(staticLayer, innerX, 606, innerW, 132)
   drawSceneStats(uiLayer, width)
@@ -384,7 +385,7 @@ function drawOfficeHeader(parent, width) {
   addText(parent, '在线 · 点击人物开始工作', width - 210, 17, 7, 0xc6e0c7, true)
 }
 
-function drawHeroRoom(staticLayer, characterLayer, effectsLayer, x, y, w, h) {
+function drawHeroRoom(staticLayer, characterLayer, effectsLayer, foregroundLayer, x, y, w, h) {
   const parent = createStaticRoom(staticLayer, 'hero-room-static')
   const room = new Graphics()
   room.rect(x, y, w, h).fill(0x211b1d)
@@ -406,7 +407,7 @@ function drawHeroRoom(staticLayer, characterLayer, effectsLayer, x, y, w, h) {
   drawRecommendedBoard(parent, x + w * 0.72, y + 78, 126, 35, 0xd6a43b)
   drawStickyNotes(parent, x + w * 0.835, y + 39, 2, 0xf4cf75)
   drawDoubleFridge(parent, x + w - 88, y + 39, 62, 78)
-  drawCookingCounter(parent, x + w * 0.69, y + 117, Math.min(230, w * 0.22), 0xd6a43b)
+  drawCookingCounter(foregroundLayer, x + w * 0.69, y + 117, Math.min(230, w * 0.22), 0xd6a43b)
 
   const chefPositions = [0.41, 0.49, 0.57, 0.65].map((ratio) => x + w * ratio)
   stations[0].characters.forEach((character, index) => {
@@ -421,7 +422,7 @@ function drawHeroRoom(staticLayer, characterLayer, effectsLayer, x, y, w, h) {
   cookingVisuals.push(cooking)
 }
 
-function drawRoom(staticLayer, characterLayer, effectsLayer, station, x, y, w, h) {
+function drawRoom(staticLayer, characterLayer, effectsLayer, foregroundLayer, station, x, y, w, h) {
   const parent = createStaticRoom(staticLayer, `${station.id}-room-static`)
   const room = new Graphics()
   room.rect(x, y, w, h).fill(station.floor)
@@ -438,13 +439,12 @@ function drawRoom(staticLayer, characterLayer, effectsLayer, station, x, y, w, h
   const characters = station.characters || [{ id: station.id, name: station.name, role: station.role, spriteNum: station.spriteNum }]
   const positions = characters.length === 3 ? [0.32, 0.5, 0.68] : characters.length === 2 ? [0.4, 0.6] : [0.5]
   characters.forEach((character, index) => {
-    if (station.id === 'weekly') {
-      drawIngredientTray(parent, x + w * positions[index] - 30, y + h - 58, index)
-    }
-    const char = drawCharacter(characterLayer, station, x + w * positions[index], y + h - 12, 0.94, character)
+    const consoleY = station.id === 'weekly' ? y + h - 48 : y + h - 57
+    const feetY = consoleY - 4
+    const char = drawCharacter(characterLayer, station, x + w * positions[index], feetY, 0.94, character)
     characterVisuals.push(char)
     if (station.id === 'weekly') {
-      const desk = drawWorkstation(effectsLayer, x + w * positions[index], y + h - 48, station.accent)
+      const desk = drawWorkstation(foregroundLayer, x + w * positions[index], consoleY, station.accent)
       workstationVisuals.push(desk)
     }
   })
@@ -455,8 +455,8 @@ function drawRoom(staticLayer, characterLayer, effectsLayer, station, x, y, w, h
     drawSpiceJars(parent, x + 22, y + 107, 4, station.accent)
     drawCuttingBoard(parent, x + 112, y + 55, 28, 35)
     drawHangingUtensils(parent, x + 146, y + 52, 3, station.accent)
-    drawPrepTable(parent, x + w * 0.5, y + h - 57, 104, station.accent)
-    drawWorktopFood(parent, x + w * 0.5, y + h - 57, 104, station.accent)
+    drawPrepTable(foregroundLayer, x + w * 0.5, y + h - 57, 104, station.accent)
+    drawWorktopFood(foregroundLayer, x + w * 0.5, y + h - 57, 104, station.accent)
     drawCrate(parent, x + 18, y + h - 46, station.accent)
     drawRiceBag(parent, x + w - 112, y + h - 47, station.accent)
     drawStool(parent, x + w * 0.5 + 56, y + h - 34, station.accent)
@@ -467,7 +467,7 @@ function drawRoom(staticLayer, characterLayer, effectsLayer, station, x, y, w, h
     drawPictureFrame(parent, x + w - 112, y + 49, 44, 28, station.accent)
     drawPlant(parent, x + 74, y + 119)
     drawBookPile(parent, x + w - 109, y + 127, station.accent)
-    drawRecipeDesk(parent, x + w * 0.5, y + h - 57, 112, station.accent)
+    drawRecipeDesk(foregroundLayer, x + w * 0.5, y + h - 57, 112, station.accent, true)
   } else if (station.id === 'nutrition') {
     drawRack(parent, x + 14, y + 50, 70, 62, station.accent)
     drawSpiceJars(parent, x + 20, y + 118, 3, station.accent)
@@ -475,7 +475,7 @@ function drawRoom(staticLayer, characterLayer, effectsLayer, station, x, y, w, h
     drawOvenStove(parent, x + w - 77, y + 98, station.accent)
     drawNutritionPoster(parent, x + 101, y + 48, 62, 52, station.accent)
     drawPlant(parent, x + w - 32, y + 144)
-    drawExperimentTable(parent, x + w * 0.5, y + h - 57, 118, station.accent)
+    drawExperimentTable(foregroundLayer, x + w * 0.5, y + h - 57, 118, station.accent, true)
     drawScale(parent, x + 99, y + 121, station.accent)
   } else if (station.id === 'weekly') {
     drawBulletin(parent, x + 16, y + 48, station.accent, '任务公告板')
@@ -489,7 +489,7 @@ function drawRoom(staticLayer, characterLayer, effectsLayer, station, x, y, w, h
     drawBulletin(parent, x + 16, y + 49, station.accent, '菜品情报板')
     drawBookcase(parent, x + 18, y + 125, 42, 52, station.accent)
     drawStickyNotes(parent, x + 103, y + 50, 3, 0xf4cf75)
-    drawDeskComputer(parent, x + w * 0.5, y + h - 57, 122, station.accent)
+    drawDeskComputer(foregroundLayer, x + w * 0.5, y + h - 57, 122, station.accent, true)
     drawBookPile(parent, x + w - 119, y + 126, station.accent)
     drawStorageCabinet(parent, x + w - 62, y + 47, 46, 106, station.accent)
   }
@@ -1056,6 +1056,7 @@ function drawPrepTable(parent, x, y, w, accent) {
   const g = new Graphics()
   g.rect(x - w / 2, y, w, 24).fill(0x9c673d)
   g.rect(x - w / 2 + 4, y + 3, w - 8, 15).fill(0xd6a361)
+  g.rect(x - w / 2, y, w, 24).stroke({ width: 1, color: 0x65402b })
   g.rect(x - w / 2 + 12, y + 22, 7, 16).fill(0x68452f)
   g.rect(x + w / 2 - 19, y + 22, 7, 16).fill(0x68452f)
   g.rect(x - 26, y + 7, 52, 3).fill(accent)
@@ -1122,13 +1123,21 @@ function drawBookPile(parent, x, y, accent) {
   parent.addChild(g)
 }
 
-function drawRecipeDesk(parent, x, y, w, accent) {
+function drawRecipeDesk(parent, x, y, w, accent, foreground = false) {
   drawPrepTable(parent, x, y, w, accent)
   const g = new Graphics()
-  g.rect(x - 31, y - 12, 62, 10).fill(0xf0e6c8)
-  g.rect(x - 27, y - 10, 54, 2).fill(accent)
-  g.rect(x - 11, y - 17, 22, 9).fill(0xfff3d2)
-  g.rect(x - 8, y - 15, 16, 2).fill(0xb9946a)
+  if (foreground) {
+    g.rect(x + 23, y + 2, 29, 12).fill(0xf0e6c8)
+    g.rect(x + 26, y + 5, 23, 2).fill(accent)
+    g.rect(x + 31, y + 9, 10, 2).fill(0xb9946a)
+    g.rect(x - 50, y + 3, 23, 8).fill(0xfff3d2)
+    g.rect(x - 46, y + 6, 15, 2).fill(0xb9946a)
+  } else {
+    g.rect(x - 31, y - 12, 62, 10).fill(0xf0e6c8)
+    g.rect(x - 27, y - 10, 54, 2).fill(accent)
+    g.rect(x - 11, y - 17, 22, 9).fill(0xfff3d2)
+    g.rect(x - 8, y - 15, 16, 2).fill(0xb9946a)
+  }
   parent.addChild(g)
   drawWorktopFood(parent, x, y, w, accent)
 }
@@ -1167,13 +1176,21 @@ function drawNutritionPoster(parent, x, y, w, h, accent) {
   addText(parent, '营养', x + w / 2, y + 6, 7, 0x5a4332, true, true)
 }
 
-function drawExperimentTable(parent, x, y, w, accent) {
+function drawExperimentTable(parent, x, y, w, accent, foreground = false) {
   drawPrepTable(parent, x, y, w, accent)
   const g = new Graphics()
-  g.rect(x - 34, y - 12, 68, 9).fill(0xc8e0d5)
-  g.rect(x - 22, y - 20, 12, 9).fill(0xe9b84f)
-  g.rect(x - 2, y - 19, 12, 8).fill(0xd35b56)
-  g.rect(x + 17, y - 21, 10, 10).fill(0x71a6c3)
+  if (foreground) {
+    g.rect(x - 51, y - 12, 29, 9).fill(0xc8e0d5)
+    g.rect(x - 47, y - 20, 9, 8).fill(0xe9b84f)
+    g.rect(x + 22, y - 12, 29, 9).fill(0xc8e0d5)
+    g.rect(x + 27, y - 20, 9, 8).fill(0xd35b56)
+    g.rect(x + 39, y - 19, 8, 9).fill(0x71a6c3)
+  } else {
+    g.rect(x - 34, y - 12, 68, 9).fill(0xc8e0d5)
+    g.rect(x - 22, y - 20, 12, 9).fill(0xe9b84f)
+    g.rect(x - 2, y - 19, 12, 8).fill(0xd35b56)
+    g.rect(x + 17, y - 21, 10, 10).fill(0x71a6c3)
+  }
   parent.addChild(g)
   drawWorktopFood(parent, x, y, w, accent)
 }
@@ -1239,15 +1256,6 @@ function drawDishStack(parent, x, y, accent) {
   parent.addChild(g)
 }
 
-function drawIngredientTray(parent, x, y, variant) {
-  const colors = [0xd65343, 0x78a675, 0xe5b54e]
-  const g = new Graphics()
-  g.rect(x, y, 44, 15).fill(0xc88a4d)
-  g.rect(x, y, 44, 15).stroke({ width: 1, color: 0x563a2d })
-  ;[0, 1, 2].forEach((index) => g.circle(x + 9 + index * 13, y + 8, 4).fill(colors[(index + variant) % colors.length]))
-  parent.addChild(g)
-}
-
 function drawTrashBin(parent, x, y, accent) {
   const g = new Graphics()
   g.rect(x - 12, y, 24, 23).fill(0x5b6970)
@@ -1281,13 +1289,20 @@ function drawSmallAppliance(parent, x, y, accent) {
   parent.addChild(g)
 }
 
-function drawDeskComputer(parent, x, y, w, accent) {
+function drawDeskComputer(parent, x, y, w, accent, foreground = false) {
   drawPrepTable(parent, x, y, w, accent)
   const g = new Graphics()
-  g.rect(x - 24, y - 22, 48, 19).fill(0x252c2b)
-  g.rect(x - 20, y - 18, 40, 12).fill(accent)
-  g.rect(x - 3, y - 3, 6, 5).fill(0x6b4a35)
-  g.rect(x - 18, y + 3, 36, 3).fill(0xf1e3b9)
+  if (foreground) {
+    g.rect(x + 22, y + 2, 29, 13).fill(0x252c2b)
+    g.rect(x + 25, y + 5, 23, 8).fill(accent)
+    g.rect(x + 35, y + 15, 6, 4).fill(0x6b4a35)
+    g.rect(x - 50, y + 3, 25, 3).fill(0xf1e3b9)
+  } else {
+    g.rect(x - 24, y - 22, 48, 19).fill(0x252c2b)
+    g.rect(x - 20, y - 18, 40, 12).fill(accent)
+    g.rect(x - 3, y - 3, 6, 5).fill(0x6b4a35)
+    g.rect(x - 18, y + 3, 36, 3).fill(0xf1e3b9)
+  }
   parent.addChild(g)
   drawWorktopFood(parent, x, y, w, accent)
 }
@@ -1324,13 +1339,14 @@ function drawWorkstation(parent, x, y, accent) {
   desk.addChild(ingredients)
 
   const screen = new Graphics()
-  screen.roundRect(8, 2, 18, 13, 2).fill(0x1e2a2a)
-  screen.roundRect(10, 4, 14, 8, 1).fill({ color: accent, alpha: 0.88 })
-  screen.rect(13, 15, 8, 2).fill(0x77553a)
+  screen.roundRect(-10, 2, 20, 13, 2).fill(0x1e2a2a)
+  screen.roundRect(-8, 4, 16, 8, 1).fill({ color: accent, alpha: 0.88 })
+  screen.rect(-4, 15, 8, 2).fill(0x77553a)
   desk.addChild(screen)
 
   const light = new Graphics()
-  light.circle(0, 7, 2.5).fill(accent)
+  light.circle(-20, 7, 2.5).fill(accent)
+  light.circle(20, 7, 2.5).fill(0xd65343)
   desk.addChild(light)
   parent.addChild(desk)
   return { screen, light }

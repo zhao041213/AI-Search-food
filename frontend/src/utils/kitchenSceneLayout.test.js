@@ -48,7 +48,7 @@ test('像素布景配置覆盖七个区域的关键家具', () => {
     assert.match(sceneSource, new RegExp(`function ${helper}`))
   }
 
-  assert.match(sceneSource, /drawHeroRoom\(staticLayer, characterLayer, effectsLayer, innerX, 30, innerW, 166\)/)
+  assert.match(sceneSource, /drawHeroRoom\(staticLayer, characterLayer, effectsLayer, foregroundLayer, innerX, 30, innerW, 166\)/)
   assert.match(sceneSource, /drawBreakRoom\(staticLayer, innerX, 606, innerW, 132\)/)
   assert.match(sceneSource, /drawPixelGrid\(staticLayer, 0, 0, width, SCENE_HEIGHT, 32/)
 })
@@ -68,6 +68,7 @@ test('Pixi 场景按静态、特效、人物和界面分层并限制事件命中
     'kitchen-static-layer',
     'kitchen-effects-layer',
     'kitchen-character-layer',
+    'kitchen-foreground-layer',
     'kitchen-ui-layer'
   ]) {
     assert.match(sceneSource, new RegExp(label))
@@ -84,9 +85,14 @@ test('所有人物固定原地踏步且全身不被工作台遮挡', () => {
   assert.doesNotMatch(sceneSource, /function updateHeroWanderers/)
   assert.doesNotMatch(sceneSource, /\bmotionX\b|\bmotionY\b|\bwander\b|\bwalking\b/)
   assert.match(sceneSource, /item\.container\.position\.set\(item\.baseX, item\.baseY\)/)
-  assert.match(sceneSource, /drawCharacter\(characterLayer, station, x \+ w \* positions\[index\], y \+ h - 12/)
-  assert.match(sceneSource, /drawWorkstation\(effectsLayer, x \+ w \* positions\[index\], y \+ h - 48/)
-  assert.match(sceneSource, /drawPrepTable\(parent, x \+ w \* 0\.5, y \+ h - 57/)
+  assert.match(sceneSource, /const feetY = consoleY - 4/)
+  assert.match(sceneSource, /drawCharacter\(characterLayer, station, x \+ w \* positions\[index\], feetY/)
+  assert.match(sceneSource, /drawWorkstation\(foregroundLayer, x \+ w \* positions\[index\], consoleY/)
+  assert.match(sceneSource, /drawPrepTable\(foregroundLayer, x \+ w \* 0\.5, y \+ h - 57, 104, station\.accent\)/)
+
+  const heroRoomSource = sceneSource.slice(sceneSource.indexOf('function drawHeroRoom'), sceneSource.indexOf('function drawRoom'))
+  assert.match(heroRoomSource, /const feetY = y \+ h - 12/)
+  assert.doesNotMatch(heroRoomSource, /drawWorkstation/)
 })
 
 test('工作台两侧提供炒锅、砧板和蔬菜且人物中线保持留空', () => {
@@ -94,5 +100,6 @@ test('工作台两侧提供炒锅、砧板和蔬菜且人物中线保持留空',
   assert.match(sceneSource, /middle of the worktop clear/)
   assert.ok((sceneSource.match(/drawWorktopFood\(/g) || []).length >= 5)
   assert.match(sceneSource, /ingredients\.ellipse\(-20, -2/)
-  assert.match(sceneSource, /screen\.roundRect\(8, 2, 18, 13/)
+  assert.match(sceneSource, /body\.roundRect\(-30, 0, 60, 20/)
+  assert.match(sceneSource, /screen\.roundRect\(-10, 2, 20, 13/)
 })
