@@ -22,6 +22,11 @@ Current stack:
 - Do not overwrite user changes. If user changes affect the task, work with them.
 - All frontend pages must use Chinese as the primary visible language. English copy should only remain for code identifiers, API values, or unavoidable third-party terms.
 
+## Codex Conversation And Workspace Defaults
+
+- When creating a new Codex conversation or task, use `gpt-5.6-luna` by default with speed-priority reasoning (`minimal` when the platform exposes a reasoning-effort setting). Follow an explicitly requested model or reasoning setting instead.
+- Do not create a new Git worktree for this project. Work directly in `D:\AI-Search-food`; when code changes are needed, create or switch to a dedicated branch first and never modify `main` directly.
+
 ## Technical Discussion And Challenge
 
 - Maintain independent technical judgment. When a user proposal creates a material risk to correctness, usability, feasibility, maintainability, cost, security, or the agreed product goal, raise the concern clearly and discuss it instead of silently following it.
@@ -89,9 +94,7 @@ rollback the last modification made by the agent:
 
 - Before adding a feature, fixing a bug, adding or changing tests, or making other implementation changes, create and work on a dedicated branch. Do not make these changes directly on `main`.
 - Use concise, descriptive branch names that make the purpose clear. Use a type prefix and lowercase hyphen-separated words, such as `feature/ingredient-image-cache`, `fix/eggplant-image`, or `test/recipe-search-coverage`.
-- A separate Git worktree is optional; writing code does not require creating one. Code may be written in the current dedicated branch/worktree, but never directly on `main`.
-- If a new worktree is created for any task, use a sibling directory such as `git worktree add ..\\AI-Search-food-<short-name> -b <type>/<short-name>` and track its path and branch.
-- After every successful `git push` from a newly created worktree, automatically switch to another worktree (for example, the `main` worktree), remove the created directory with `git worktree remove ..\\AI-Search-food-<short-name>`, and run `git worktree prune`; do not wait for a separate cleanup request. If the push fails or the worktree still contains uncommitted changes, keep the directory and report it instead of using `--force`. Never remove the current worktree from inside itself.
+- Git worktrees are not used in this project. Keep all work in the current `D:\AI-Search-food` directory and use dedicated branches for code changes; never modify `main` directly.
 - Non-code activities, including downloading or installing skills, reading documentation, repository inspection, and other setup work, may use the current worktree without creating a new one.
 - Do not commit unless the user explicitly approves.
 - Do not push to GitHub unless the user explicitly approves.
