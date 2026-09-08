@@ -6,7 +6,7 @@
 
 <script setup>
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { AnimatedSprite, Application, Assets, Container, Graphics, Sprite, Text, TextStyle } from 'pixi.js'
+import { AnimatedSprite, Application, Assets, Container, Graphics, GraphicsContext, Rectangle, Sprite, Text, TextStyle } from 'pixi.js'
 import { useKitchenStore } from '../../stores/kitchen'
 
 const props = defineProps({
@@ -171,6 +171,7 @@ let stopCharacterNameWatch
 let headerGuideText
 let spriteLoadingCancelled = false
 const spriteTextures = new Map()
+const sharedGraphicsContexts = new Map()
 
 onMounted(async () => {
   if (!sceneHost.value) return
@@ -221,21 +222,16 @@ onMounted(async () => {
   resizeObserver.observe(sceneHost.value)
 
   app.ticker.add(() => {
-    const delta = app.ticker.deltaTime
     const motionDisabled = props.motionPaused || prefersReducedMotion
-    if (!motionDisabled) animationTick += delta
-    updateHeroWanderers(delta)
+    if (!motionDisabled) animationTick += app.ticker.deltaTime
     updateRandomSpeech()
     characterVisuals.forEach((item, index) => {
-      const idle = motionDisabled ? 0 : Math.sin(animationTick * 0.08 + index * 0.9) * (item.action === 'cook' ? 1.8 : 1.35)
-      const cookMotion = !motionDisabled && item.action === 'cook' ? Math.sin(animationTick * 0.12 + index) : 0
-      item.container.position.y = item.motionY + idle
-      item.container.position.x = item.motionX + cookMotion * 1.4
-      item.container.rotation = cookMotion * 0.025
+      item.container.position.set(item.baseX, item.baseY)
+      item.container.rotation = 0
       item.glow.alpha = item.hovered ? 0.94 : 0.2 + (Math.sin(animationTick * 0.06 + index) + 1) * 0.06
       item.container.scale.set(item.pressed ? 0.98 : item.hovered ? 1.045 : 1)
       if (item.sprite) {
-        item.sprite.animationSpeed = motionDisabled ? 0 : item.walking ? 0.12 : item.wander ? 0.035 : 0.08
+        item.sprite.animationSpeed = motionDisabled ? 0 : 0.08
       }
     })
     if (!motionDisabled) {
@@ -295,37 +291,67 @@ onBeforeUnmount(() => {
     app.destroy(true)
     app = null
   }
+  sharedGraphicsContexts.forEach((context) => context.destroy())
+  sharedGraphicsContexts.clear()
 })
 
 function drawKitchen(stage, width) {
+  stage.sortableChildren = true
+  const staticLayer = createSceneLayer(stage, 'kitchen-static-layer', 0, 'none')
+  const effectsLayer = createSceneLayer(stage, 'kitchen-effects-layer', 10, 'none')
+  const characterLayer = createSceneLayer(stage, 'kitchen-character-layer', 20, 'passive')
+  const uiLayer = createSceneLayer(stage, 'kitchen-ui-layer', 30, 'none')
+
   const outer = new Graphics()
   outer.rect(0, 0, width, SCENE_HEIGHT).fill(0xe6d2a8)
-  stage.addChild(outer)
+  staticLayer.addChild(outer)
 
-  drawPixelGrid(stage, 0, 0, width, SCENE_HEIGHT, 24, 0xe6d2a8, 0xd8c196)
-  drawFrame(stage, 12, 12, width - 24, SCENE_HEIGHT - 24)
+  // Keep the checkerboard as a quiet floor texture so the furniture reads first.
+  drawPixelGrid(staticLayer, 0, 0, width, SCENE_HEIGHT, 32, 0xe6d2a8, 0xe0cfa4)
+  drawFrame(staticLayer, 12, 12, width - 24, SCENE_HEIGHT - 24)
 
   const innerX = 22
   const innerW = width - 44
-  drawHeroRoom(stage, innerX, 24, innerW, 136)
+  drawHeroRoom(staticLayer, characterLayer, effectsLayer, innerX, 30, innerW, 166)
 
   const gap = 12
   const columns = 3
   const colW = (innerW - gap * (columns - 1)) / columns
-  const rowY = 176
-  const rowH = 208
-  drawRoom(stage, stations[1], innerX, rowY, colW, rowH)
-  drawRoom(stage, stations[2], innerX + colW + gap, rowY, colW, rowH)
-  drawRoom(stage, stations[3], innerX + (colW + gap) * 2, rowY, colW, rowH)
+  const rowY = 204
+  const rowH = 190
+  drawRoom(staticLayer, characterLayer, effectsLayer, stations[1], innerX, rowY, colW, rowH)
+  drawRoom(staticLayer, characterLayer, effectsLayer, stations[2], innerX + colW + gap, rowY, colW, rowH)
+  drawRoom(staticLayer, characterLayer, effectsLayer, stations[3], innerX + (colW + gap) * 2, rowY, colW, rowH)
 
-  const lowerY = 396
+  const lowerY = 404
   const wideW = colW * 2 + gap
-  drawRoom(stage, stations[4], innerX, lowerY, wideW, 204)
-  drawRoom(stage, stations[5], innerX + wideW + gap, lowerY, colW, 204)
+  drawRoom(staticLayer, characterLayer, effectsLayer, stations[4], innerX, lowerY, wideW, 190)
+  drawRoom(staticLayer, characterLayer, effectsLayer, stations[5], innerX + wideW + gap, lowerY, colW, 190)
 
-  drawBreakRoom(stage, innerX, 614, innerW, 124)
-  drawSceneStats(stage, width)
-  drawOfficeHeader(stage, width)
+  drawBreakRoom(staticLayer, innerX, 606, innerW, 132)
+  drawSceneStats(uiLayer, width)
+  drawOfficeHeader(uiLayer, width)
+}
+
+function createSceneLayer(stage, label, zIndex, eventMode) {
+  const layer = new Container({ label })
+  layer.zIndex = zIndex
+  layer.eventMode = eventMode
+  if (eventMode === 'none') layer.interactiveChildren = false
+  stage.addChild(layer)
+  return layer
+}
+
+function createStaticRoom(parent, label) {
+  const room = new Container({ label })
+  room.eventMode = 'none'
+  room.interactiveChildren = false
+  parent.addChild(room)
+  return room
+}
+
+function cacheStaticRoom(room) {
+  room.cacheAsTexture({ resolution: 1, antialias: false })
 }
 
 function drawFrame(parent, x, y, w, h) {
@@ -358,90 +384,120 @@ function drawOfficeHeader(parent, width) {
   addText(parent, '在线 · 点击人物开始工作', width - 210, 17, 7, 0xc6e0c7, true)
 }
 
-function drawHeroRoom(parent, x, y, w, h) {
+function drawHeroRoom(staticLayer, characterLayer, effectsLayer, x, y, w, h) {
+  const parent = createStaticRoom(staticLayer, 'hero-room-static')
   const room = new Graphics()
-  room.rect(x, y, w, h).fill(0x191719)
-  drawPixelGrid(room, x, y, w, h, 24, 0x191719, 0x242126)
-  room.rect(x, y, w, 26).fill(0x3e302a)
-  room.rect(x, y + 25, w, 2).fill(0xb78a4d)
-  room.rect(x, y, w, h).stroke({ width: 2, color: 0x865c3b })
+  room.rect(x, y, w, h).fill(0x211b1d)
+  drawPixelGrid(room, x, y, w, h, 28, 0x211b1d, 0x2a2327)
+  room.rect(x, y, w, 27).fill(0x46362d)
+  room.rect(x, y + 25, w, 2).fill(0xd1a25a)
+  room.rect(x, y, w, h).stroke({ width: 2, color: 0x93633f })
   parent.addChild(room)
 
-  addRoomLabel(parent, x + 10, y + 7, '主厨料理大厅', '今日 AI 菜谱工作台', 0xd6a43b)
-  addText(parent, '准备好食材了吗？', x + 38, y + 48, 13, 0xf3dfb9, true)
-  addText(parent, '点击主厨，输入食材并生成一份只属于你的菜谱', x + 38, y + 70, 9, 0xc8b496, false)
+  addRoomLabel(parent, x + 10, y + 7, '主厨接待大厅', '今日 AI 菜谱工作台', 0xd6a43b)
+  drawChalkboard(parent, x + 24, y + 39, 150, 48, '好食材＝好心情', 0xd6a43b)
+  drawWallClock(parent, x + w * 0.46, y + 51, 15, 0xf1c36a)
+  drawSpiceJars(parent, x + 26, y + 101, 4, 0xd6a43b)
+  addText(parent, '准备好食材了吗？', x + 195, y + 41, 12, 0xf3dfb9, true)
+  addText(parent, '点击人物，开始你的专属菜谱旅程', x + 195, y + 59, 8, 0xc8b496, false)
+  drawDisplayCabinet(parent, x + Math.round(w * 0.23), y + 91, 154, 0xd6a43b)
 
-  const island = new Graphics()
-  island.roundRect(x + w * 0.56, y + 62, w * 0.25, 39, 10).fill(0xa8753c)
-  island.roundRect(x + w * 0.56 + 4, y + 66, w * 0.25 - 8, 28, 7).fill(0xd2a25d)
-  island.roundRect(x + w * 0.56 + 14, y + 70, w * 0.25 - 28, 13, 4).fill(0x6d4a2e)
-  island.roundRect(x + w * 0.56 + 21, y + 72, 26, 8, 3).fill(0x222225)
-  island.roundRect(x + w * 0.56 + 58, y + 72, 26, 8, 3).fill(0x222225)
-  parent.addChild(island)
+  drawRack(parent, x + w * 0.69, y + 38, 116, 34, 0xd6a43b)
+  drawRecommendedBoard(parent, x + w * 0.72, y + 78, 126, 35, 0xd6a43b)
+  drawStickyNotes(parent, x + w * 0.835, y + 39, 2, 0xf4cf75)
+  drawDoubleFridge(parent, x + w - 88, y + 39, 62, 78)
+  drawCookingCounter(parent, x + w * 0.69, y + 117, Math.min(230, w * 0.22), 0xd6a43b)
 
-  const chefPositions = [0.29, 0.38, 0.47, 0.55].map((ratio) => x + w * ratio)
+  const chefPositions = [0.41, 0.49, 0.57, 0.65].map((ratio) => x + w * ratio)
   stations[0].characters.forEach((character, index) => {
-    const feetY = y + 114
-    const movement = index === 0
-      ? null
-      : {
-          minX: chefPositions[index] - 30,
-          maxX: chefPositions[index] + 30,
-          minY: feetY - 3,
-          maxY: feetY + 3
-        }
-    const visual = drawCharacter(parent, stations[0], chefPositions[index], feetY, 0.94, character, movement)
+    const feetY = y + h - 12
+    const visual = drawCharacter(characterLayer, stations[0], chefPositions[index], feetY, 0.94, character)
     characterVisuals.push(visual)
     if (visual.speechBubbles.length) speechVisuals.push(visual)
   })
 
-  drawPantryShelf(parent, x + 24, y + 95, 84, 22)
-  const cooking = drawCookingPan(parent, x + w * 0.76, y + 76)
+  cacheStaticRoom(parent)
+  const cooking = drawCookingPan(effectsLayer, x + w * 0.79, y + 112)
   cookingVisuals.push(cooking)
 }
 
-function drawRoom(parent, station, x, y, w, h) {
+function drawRoom(staticLayer, characterLayer, effectsLayer, station, x, y, w, h) {
+  const parent = createStaticRoom(staticLayer, `${station.id}-room-static`)
   const room = new Graphics()
   room.rect(x, y, w, h).fill(station.floor)
-  drawPixelGrid(room, x, y, w, h, 20, station.floor, station.floorAlt)
+  drawPixelGrid(room, x, y, w, h, 24, station.floor, station.floorAlt)
   room.rect(x, y, w, 30).fill({ color: station.accent, alpha: 0.28 })
   room.rect(x, y + 28, w, 2).fill(station.accent)
   room.rect(x, y, w, h).stroke({ width: 2, color: station.accent, alpha: 0.78 })
   parent.addChild(room)
 
   addRoomLabel(parent, x + w / 2, y + 8, station.title, station.role, station.accent, true)
+  drawHangingLamp(parent, x + w / 2, y + 34, station.accent)
   drawWallDecor(parent, station.id, x, y, w)
 
   const characters = station.characters || [{ id: station.id, name: station.name, role: station.role, spriteNum: station.spriteNum }]
   const positions = characters.length === 3 ? [0.32, 0.5, 0.68] : characters.length === 2 ? [0.4, 0.6] : [0.5]
   characters.forEach((character, index) => {
-    const char = drawCharacter(parent, station, x + w * positions[index], y + h - 52, 0.94, character)
+    if (station.id === 'weekly') {
+      drawIngredientTray(parent, x + w * positions[index] - 30, y + h - 58, index)
+    }
+    const char = drawCharacter(characterLayer, station, x + w * positions[index], y + h - 12, 0.94, character)
     characterVisuals.push(char)
-    // Keep the workbench below the character's feet so it never overlaps the face
-    // when the scene is scaled down in a smaller desktop viewport.
-    const desk = drawWorkstation(parent, x + w * positions[index], y + h - 46, station.accent)
-    workstationVisuals.push(desk)
+    if (station.id === 'weekly') {
+      const desk = drawWorkstation(effectsLayer, x + w * positions[index], y + h - 48, station.accent)
+      workstationVisuals.push(desk)
+    }
   })
 
   if (station.id === 'pantry') {
-    drawFridge(parent, x + 18, y + h - 86)
-    drawCrate(parent, x + w - 72, y + h - 72, station.accent)
+    drawDoubleFridge(parent, x + w - 61, y + 51, 45, 88)
+    drawRack(parent, x + 16, y + 49, 82, 52, station.accent)
+    drawSpiceJars(parent, x + 22, y + 107, 4, station.accent)
+    drawCuttingBoard(parent, x + 112, y + 55, 28, 35)
+    drawHangingUtensils(parent, x + 146, y + 52, 3, station.accent)
+    drawPrepTable(parent, x + w * 0.5, y + h - 57, 104, station.accent)
+    drawWorktopFood(parent, x + w * 0.5, y + h - 57, 104, station.accent)
+    drawCrate(parent, x + 18, y + h - 46, station.accent)
+    drawRiceBag(parent, x + w - 112, y + h - 47, station.accent)
+    drawStool(parent, x + w * 0.5 + 56, y + h - 34, station.accent)
   } else if (station.id === 'recipes') {
-    drawBookcase(parent, x + 20, y + h - 87, station.accent)
-    drawBookcase(parent, x + w - 66, y + h - 87, station.accent)
+    drawBookcase(parent, x + 14, y + 48, 45, 105, station.accent)
+    drawBookcase(parent, x + w - 59, y + 48, 45, 105, station.accent)
+    drawPictureFrame(parent, x + 68, y + 49, 44, 28, station.accent)
+    drawPictureFrame(parent, x + w - 112, y + 49, 44, 28, station.accent)
+    drawPlant(parent, x + 74, y + 119)
+    drawBookPile(parent, x + w - 109, y + 127, station.accent)
+    drawRecipeDesk(parent, x + w * 0.5, y + h - 57, 112, station.accent)
   } else if (station.id === 'nutrition') {
-    drawScale(parent, x + 20, y + h - 63, station.accent)
-    drawPlant(parent, x + w - 44, y + h - 74)
+    drawRack(parent, x + 14, y + 50, 70, 62, station.accent)
+    drawSpiceJars(parent, x + 20, y + 118, 3, station.accent)
+    drawHangingUtensils(parent, x + w - 83, y + 49, 4, station.accent)
+    drawOvenStove(parent, x + w - 77, y + 98, station.accent)
+    drawNutritionPoster(parent, x + 101, y + 48, 62, 52, station.accent)
+    drawPlant(parent, x + w - 32, y + 144)
+    drawExperimentTable(parent, x + w * 0.5, y + h - 57, 118, station.accent)
+    drawScale(parent, x + 99, y + 121, station.accent)
   } else if (station.id === 'weekly') {
-    drawCalendarBoard(parent, x + 24, y + 60, station.accent)
-    drawTable(parent, x + w - 142, y + h - 75, 116, station.accent)
+    drawBulletin(parent, x + 16, y + 48, station.accent, '任务公告板')
+    drawShelfWithBins(parent, x + 166, y + 49, 118, 44, station.accent)
+    drawWallUtensilRack(parent, x + 170, y + 111, station.accent)
+    drawSinkCabinet(parent, x + w - 142, y + 105, 126, 45, station.accent)
+    drawTrashBin(parent, x + w - 29, y + h - 49, station.accent)
+    drawPlant(parent, x + w - 27, y + 52)
+    drawDishStack(parent, x + w - 120, y + 84, station.accent)
   } else if (station.id === 'hot') {
-    drawBulletin(parent, x + 18, y + 58, station.accent)
-    drawChiliCrate(parent, x + w - 75, y + h - 70, station.accent)
+    drawBulletin(parent, x + 16, y + 49, station.accent, '菜品情报板')
+    drawBookcase(parent, x + 18, y + 125, 42, 52, station.accent)
+    drawStickyNotes(parent, x + 103, y + 50, 3, 0xf4cf75)
+    drawDeskComputer(parent, x + w * 0.5, y + h - 57, 122, station.accent)
+    drawBookPile(parent, x + w - 119, y + 126, station.accent)
+    drawStorageCabinet(parent, x + w - 62, y + 47, 46, 106, station.accent)
   }
+  cacheStaticRoom(parent)
 }
 
-function drawBreakRoom(parent, x, y, w, h) {
+function drawBreakRoom(staticLayer, x, y, w, h) {
+  const parent = createStaticRoom(staticLayer, 'break-room-static')
   const room = new Graphics()
   room.rect(x, y, w, h).fill(0x211d1a)
   drawPixelGrid(room, x, y, w, h, 24, 0x211d1a, 0x2a2420)
@@ -450,15 +506,23 @@ function drawBreakRoom(parent, x, y, w, h) {
   room.rect(x, y, w, h).stroke({ width: 2, color: 0x816044 })
   parent.addChild(room)
   addRoomLabel(parent, x + 12, y + 6, '厨房休息区', '让推荐灵感稍微喘口气', 0x9bb58a)
-  drawTable(parent, x + w * 0.42, y + 51, Math.min(260, w * 0.24), 0xb98a4c)
-  drawPlant(parent, x + 34, y + 64)
-  drawPlant(parent, x + w - 42, y + 64)
-  addText(parent, '今天也要好好吃饭。', x + w * 0.09, y + 74, 11, 0xe8d7b7, true)
+  drawSmallDiningSet(parent, x + 34, y + 52, 136, 0x9bb58a)
+  drawStickyNotes(parent, x + 215, y + 39, 3, 0xf4cf75)
+  drawPetRestCorner(parent, x + Math.round(w * 0.22), y + 69, 112, 0x9bb58a)
+  drawLongTable(parent, x + w * 0.48, y + 49, Math.min(330, w * 0.3), 0xb98a4c)
+  drawTeaSet(parent, x + w * 0.48, y + 43, 0xb98a4c)
+  drawTeaCart(parent, x + Math.round(w * 0.68), y + 38, 132, 0xb98a4c)
+  drawShelfWithBins(parent, x + w - 200, y + 41, 166, 62, 0x9bb58a)
+  drawHangingPots(parent, x + w - 177, y + 45, 3, 0xb98a4c)
+  drawIngredientBasket(parent, x + w - 113, y + 104, 0x9bb58a)
+  drawSmallAppliance(parent, x + w - 65, y + 101, 0x9bb58a)
+  drawPictureFrame(parent, x + w - 68, y + 39, 42, 30, 0x9bb58a)
+  addText(parent, '今天也要好好吃饭。', x + 36, y + 111, 10, 0xe8d7b7, true)
+  cacheStaticRoom(parent)
 }
 
 function drawSceneStats(parent, width) {
   const stats = [
-    ['菜谱', '等待你的第一道'],
     ['库存', '登录后自动匹配'],
     ['本周', '开始安排菜单']
   ]
@@ -474,7 +538,7 @@ function drawSceneStats(parent, width) {
   })
 }
 
-function drawCharacter(parent, station, x, feetY, scale, character = null, movement = null) {
+function drawCharacter(parent, station, x, feetY, scale, character = null) {
   const actor = character || station
   const displayName = kitchen.getCharacterName(actor.id, actor.name || station.name)
   const targetHeight = 58 * scale
@@ -581,13 +645,17 @@ function drawCharacter(parent, station, x, feetY, scale, character = null, movem
   glowFrame.roundRect(-42 * scale, labelY - 5 * scale, 84 * scale, targetHeight + labelHeight + 10 * scale, 5).stroke({ width: 2, color: station.accent, alpha: 0.2 })
   glowFrame.visible = false
   container.addChild(glowFrame)
+  container.hitArea = new Rectangle(
+    -42 * scale,
+    labelY - 5 * scale,
+    84 * scale,
+    targetHeight + labelHeight + 10 * scale
+  )
 
   const visual = {
     container,
     baseX: x,
     baseY: feetY,
-    motionX: x,
-    motionY: feetY,
     glow: glowFrame,
     hovered: false,
     pressed: false,
@@ -596,13 +664,6 @@ function drawCharacter(parent, station, x, feetY, scale, character = null, movem
     actorId: actor.id,
     nameText: name,
     nameplate,
-    wander: Boolean(movement),
-    walking: Boolean(movement) && actor.id === 'chef-helper' && !prefersReducedMotion,
-    stateUntil: animationTick + randomBetween(150, 300),
-    targetX: movement ? Math.min(movement.maxX, x + 20) : x,
-    targetY: feetY,
-    movement,
-    walkSpeed: randomBetween(0.13, 0.2),
     speechBubbles
   }
   container.on('pointerover', () => {
@@ -623,74 +684,6 @@ function drawCharacter(parent, station, x, feetY, scale, character = null, movem
   })
   parent.addChild(container)
   return visual
-}
-
-function updateHeroWanderers(delta) {
-  const wanderers = characterVisuals.filter((item) => item.wander)
-  if (!wanderers.length) return
-
-  if (props.motionPaused || prefersReducedMotion) {
-    wanderers.forEach((item) => {
-      item.walking = false
-      if (prefersReducedMotion) {
-        item.motionX = item.baseX
-        item.motionY = item.baseY
-      }
-      if (item.sprite) item.sprite.animationSpeed = 0.035
-    })
-    return
-  }
-
-  wanderers.forEach((item) => {
-    if (!item.walking) {
-      if (animationTick >= item.stateUntil) {
-        const walkingCount = wanderers.filter((candidate) => candidate.walking).length
-        if (walkingCount < 2 && (walkingCount === 0 || Math.random() < 0.55)) {
-          startWandering(item)
-        } else {
-          item.stateUntil = animationTick + randomBetween(90, 210)
-        }
-      }
-      return
-    }
-
-    const dx = item.targetX - item.motionX
-    const dy = item.targetY - item.motionY
-    const distance = Math.hypot(dx, dy)
-    const step = item.walkSpeed * delta
-    if (distance <= step || animationTick >= item.stateUntil) {
-      item.motionX = item.targetX
-      item.motionY = item.targetY
-      stopWandering(item)
-      return
-    }
-    item.motionX += (dx / distance) * step
-    item.motionY += (dy / distance) * step
-  })
-
-  if (!wanderers.some((item) => item.walking)) {
-    startWandering(wanderers[Math.floor(Math.random() * wanderers.length)])
-  }
-}
-
-function startWandering(item) {
-  if (!item.movement || props.motionPaused || prefersReducedMotion) return
-  let targetX = randomBetween(item.movement.minX, item.movement.maxX)
-  if (Math.abs(targetX - item.motionX) < 10) {
-    targetX = item.motionX < item.baseX ? item.movement.maxX : item.movement.minX
-  }
-  item.targetX = targetX
-  item.targetY = randomBetween(item.movement.minY, item.movement.maxY)
-  item.walkSpeed = randomBetween(0.13, 0.2)
-  item.walking = true
-  item.stateUntil = animationTick + randomBetween(240, 420)
-  if (item.sprite) item.sprite.animationSpeed = 0.12
-}
-
-function stopWandering(item) {
-  item.walking = false
-  item.stateUntil = animationTick + randomBetween(120, 330)
-  if (item.sprite) item.sprite.animationSpeed = 0.035
 }
 
 function updateRandomSpeech() {
@@ -803,6 +796,24 @@ function addText(parent, text, x, y, size, fill, bold = false, centered = false)
   return node
 }
 
+function getSharedGraphicsContext(key, build) {
+  let context = sharedGraphicsContexts.get(key)
+  if (!context) {
+    context = new GraphicsContext()
+    build(context)
+    sharedGraphicsContexts.set(key, context)
+  }
+  return context
+}
+
+function addSharedGraphic(parent, context, x, y) {
+  const graphic = new Graphics({ context, roundPixels: true })
+  graphic.position.set(Math.round(x), Math.round(y))
+  graphic.eventMode = 'none'
+  parent.addChild(graphic)
+  return graphic
+}
+
 function drawPixelGrid(parent, x, y, w, h, tile, colorA, colorB) {
   const target = typeof parent.rect === 'function' ? parent : new Graphics()
   for (let ty = y; ty < y + h; ty += tile) {
@@ -816,11 +827,209 @@ function drawPixelGrid(parent, x, y, w, h, tile, colorA, colorB) {
 }
 
 function drawWallDecor(parent, id, x, y, w) {
-  if (id === 'pantry') drawPantryShelf(parent, x + w - 102, y + 53, 76, 28)
-  if (id === 'recipes') drawPictureFrame(parent, x + w / 2 - 22, y + 49, 44, 28, 0xb083c7)
-  if (id === 'nutrition') drawPictureFrame(parent, x + w / 2 - 22, y + 49, 44, 28, 0xe2816c)
-  if (id === 'weekly') drawPictureFrame(parent, x + w - 88, y + 49, 50, 30, 0x6d9cc3)
-  if (id === 'hot') drawPictureFrame(parent, x + w / 2 - 24, y + 48, 48, 30, 0xd48c52)
+  const accent = stations.find((station) => station.id === id)?.accent || 0xd6a43b
+  if (id === 'pantry') drawHangingPots(parent, x + w - 105, y + 42, 2, accent)
+  if (id === 'recipes') drawPictureFrame(parent, x + w / 2 - 22, y + 45, 44, 28, accent)
+  if (id === 'nutrition') drawPictureFrame(parent, x + w / 2 - 22, y + 45, 44, 28, accent)
+  if (id === 'weekly') drawPictureFrame(parent, x + w - 88, y + 43, 50, 30, accent)
+  if (id === 'hot') drawPictureFrame(parent, x + w / 2 - 24, y + 43, 48, 30, accent)
+}
+
+function drawHangingLamp(parent, x, y, accent) {
+  const g = new Graphics({ roundPixels: true })
+  g.rect(x - 1, y - 9, 2, 9).fill(0xd8bd7b)
+  g.rect(x - 4, y - 10, 8, 3).fill(0x5a4232)
+  g.rect(x - 12, y, 24, 4).fill(0x3a2b25)
+  g.rect(x - 8, y + 4, 16, 9).fill(accent)
+  g.rect(x - 10, y + 11, 20, 3).fill(0x5a3e2d)
+  g.rect(x - 5, y + 6, 10, 4).fill(0xffe7a3)
+  g.rect(x - 2, y + 13, 4, 3).fill(0xf6d26f)
+  g.rect(x - 15, y + 15, 6, 2).fill(0xb58d58)
+  g.rect(x + 9, y + 15, 6, 2).fill(0xb58d58)
+  parent.addChild(g)
+}
+
+function drawWallClock(parent, x, y, radius, accent) {
+  const g = new Graphics()
+  g.circle(x, y, radius + 3).fill(0x2f2724)
+  g.circle(x, y, radius).fill(0xf0e5c8)
+  g.circle(x, y, radius).stroke({ width: 2, color: accent })
+  g.rect(x - 1, y - radius + 4, 2, radius - 4).fill(0x5f4734)
+  g.rect(x, y - 1, radius - 4, 2).fill(0x5f4734)
+  g.rect(x - 2, y - 2, 4, 4).fill(accent)
+  parent.addChild(g)
+}
+
+function drawChalkboard(parent, x, y, w, h, title, accent) {
+  const g = new Graphics()
+  g.rect(x + 4, y + 5, w, h).fill(0x160f12)
+  g.rect(x, y, w, h).fill(0x2e4d43)
+  g.rect(x, y, w, h).stroke({ width: 2, color: accent })
+  g.rect(x + 8, y + h - 9, w - 16, 3).fill(0x7d9d7b)
+  parent.addChild(g)
+  addText(parent, title, x + w / 2, y + 9, 9, 0xfff3c4, true, true)
+}
+
+function drawRecommendedBoard(parent, x, y, w, h, accent) {
+  const g = new Graphics()
+  g.rect(x + 3, y + 4, w, h).fill(0x322019)
+  g.rect(x, y, w, h).fill(0x253c35)
+  g.rect(x, y, w, h).stroke({ width: 2, color: accent })
+  g.rect(x + 7, y + 7, 46, 4).fill(accent)
+  g.rect(x + 7, y + 16, w - 18, 3).fill(0xc5d3aa)
+  g.rect(x + 7, y + 24, w - 34, 3).fill(0xc5d3aa)
+  parent.addChild(g)
+  addText(parent, '今日推荐', x + 82, y + 7, 8, 0xfff3c4, true, true)
+}
+
+function drawDisplayCabinet(parent, x, y, w, accent) {
+  const px = Math.round(x)
+  const py = Math.round(y)
+  const g = new Graphics({ roundPixels: true })
+  g.rect(px + 4, py + 6, w, 52).fill(0x120d0b)
+
+  // A compact wall lamp visually anchors the display without entering the copy area.
+  g.rect(px + Math.round(w * 0.5) - 1, py - 18, 3, 11).fill(0x8b6845)
+  g.rect(px + Math.round(w * 0.5) - 12, py - 7, 24, 4).fill(0x4c3428)
+  g.rect(px + Math.round(w * 0.5) - 8, py - 3, 16, 5).fill(accent)
+  g.rect(px + Math.round(w * 0.5) - 4, py + 2, 8, 3).fill(0xffdfa0)
+
+  // Opaque blue-grey glass keeps the hard pixel edge while separating the food silhouettes.
+  g.rect(px, py + 5, w, 24).fill(0x243538)
+  g.rect(px, py + 5, w, 24).stroke({ width: 2, color: 0x9e7950 })
+  g.rect(px + 5, py + 9, w - 10, 3).fill(0x78918b)
+  g.rect(px + 5, py + 24, w - 10, 3).fill(0xc8b27e)
+  g.rect(px + Math.round(w * 0.34), py + 7, 2, 20).fill(0x6a817c)
+  g.rect(px + Math.round(w * 0.67), py + 7, 2, 20).fill(0x6a817c)
+
+  g.ellipse(px + 27, py + 21, 27, 6).fill(0xe8d8b7)
+  g.rect(px + 18, py + 15, 7, 6).fill(0xd65343)
+  g.rect(px + 26, py + 13, 8, 8).fill(0xe5b54e)
+  g.rect(px + 35, py + 16, 6, 5).fill(0x78a675)
+  g.ellipse(px + Math.round(w * 0.5), py + 20, 29, 6).fill(0xd7c7a7)
+  g.rect(px + Math.round(w * 0.5) - 10, py + 13, 7, 7).fill(0x78a675)
+  g.rect(px + Math.round(w * 0.5), py + 15, 9, 5).fill(0xd08058)
+  g.ellipse(px + w - 27, py + 21, 27, 6).fill(0xe8d8b7)
+  g.rect(px + w - 38, py + 14, 8, 7).fill(0xb8794b)
+  g.rect(px + w - 28, py + 12, 7, 9).fill(0xd65343)
+
+  g.rect(px, py + 29, w, 24).fill(0x99633b)
+  g.rect(px + 4, py + 33, w - 8, 16).fill(0xc98f50)
+  g.rect(px + Math.round(w * 0.5) - 1, py + 33, 2, 16).fill(0x6b432b)
+  g.rect(px + Math.round(w * 0.25) - 2, py + 39, 4, 5).fill(0xe0b35d)
+  g.rect(px + Math.round(w * 0.75) - 2, py + 39, 4, 5).fill(0xe0b35d)
+  g.rect(px + 9, py + 53, 7, 7).fill(0x513625)
+  g.rect(px + w - 16, py + 53, 7, 7).fill(0x513625)
+  g.rect(px, py + 29, w, 3).fill(accent)
+  parent.addChild(g)
+}
+
+function drawSpiceJars(parent, x, y, count, accent) {
+  for (let index = 0; index < count; index += 1) {
+    const bodyColor = index % 2 ? 0xd68f47 : 0xa7b85f
+    const context = getSharedGraphicsContext(`spice-${accent}-${bodyColor}`, (shape) => {
+      shape.rect(2, 5, 13, 14).fill(0x17100d)
+      shape.rect(0, 4, 13, 14).fill(bodyColor)
+      shape.rect(2, 0, 9, 5).fill(accent)
+      shape.rect(3, 7, 7, 3).fill(0xf5dd9d)
+      shape.rect(4, 8, 5, 1).fill(0x9a744a)
+    })
+    addSharedGraphic(parent, context, x + index * 19, y)
+  }
+}
+
+function drawRack(parent, x, y, w, h, accent) {
+  const g = new Graphics({ roundPixels: true })
+  g.rect(x + 4, y + 5, w, h).fill(0x241812)
+  g.rect(x, y, w, h).fill(0x714b35)
+  g.rect(x, y, w, h).stroke({ width: 2, color: accent })
+  g.rect(x + 4, y + 4, 4, h - 8).fill(0x966344)
+  g.rect(x + w - 8, y + 4, 4, h - 8).fill(0x4b3025)
+  g.rect(x + 5, y + h * 0.5, w - 10, 3).fill(0x4b3025)
+  ;[0xd85a4f, 0x7fb36d, 0xe6b64c, 0xc68bc0, 0x6e9fc0].forEach((color, index) => {
+    const shelfY = index < 3 ? y + 8 : y + h * 0.5 + 8
+    const shelfX = x + 9 + (index % 3) * 23
+    g.rect(shelfX, shelfY, 15, 10).fill(color)
+    g.rect(shelfX + 3, shelfY - 3, 9, 3).fill(0x33221d)
+    g.rect(shelfX + 3, shelfY + 3, 9, 2).fill(0xe7c383)
+  })
+  parent.addChild(g)
+}
+
+function drawStickyNotes(parent, x, y, count, accent) {
+  const g = new Graphics()
+  const colors = [accent, 0xc4e39e, 0xe7a9a0]
+  for (let index = 0; index < count; index += 1) {
+    g.rect(x + (index % 2) * 17, y + Math.floor(index / 2) * 17, 13, 12).fill(colors[index % colors.length])
+    g.rect(x + 3 + (index % 2) * 17, y + 3 + Math.floor(index / 2) * 17, 7, 2).fill(0x6b4a35)
+  }
+  parent.addChild(g)
+}
+
+function drawDoubleFridge(parent, x, y, w, h) {
+  const g = new Graphics({ roundPixels: true })
+  g.roundRect(x + 4, y + 5, w, h, 4).fill(0x18201f)
+  g.roundRect(x, y, w, h, 4).fill(0xb9c5c2)
+  g.roundRect(x, y, w, h, 4).stroke({ width: 2, color: 0x2b3735 })
+  g.rect(x + w / 2 - 1, y + 2, 2, h - 4).fill(0x687773)
+  g.rect(x + 4, y + h * 0.5 - 1, w - 8, 2).fill(0x687773)
+  g.rect(x + w * 0.35, y + 10, 3, 14).fill(0x3e4b47)
+  g.rect(x + w * 0.78, y + 10, 3, 14).fill(0x3e4b47)
+  g.rect(x + w * 0.35, y + h * 0.62, 3, 14).fill(0x3e4b47)
+  g.rect(x + w * 0.78, y + h * 0.62, 3, 14).fill(0x3e4b47)
+  g.rect(x + 7, y + 7, 6, 5).fill(0xe3c15f)
+  g.rect(x + 15, y + 8, 5, 4).fill(0x7da77e)
+  g.rect(x + 8, y + h - 10, w - 16, 4).fill(0x87a69c)
+  g.rect(x + 6, y + h, 7, 4).fill(0x3e4b47)
+  g.rect(x + w - 13, y + h, 7, 4).fill(0x3e4b47)
+  parent.addChild(g)
+}
+
+function drawCookingCounter(parent, x, y, w, accent) {
+  const g = new Graphics()
+  g.rect(x, y, w, 27).fill(0x865a36)
+  g.rect(x + 3, y + 3, w - 6, 17).fill(0xd29b59)
+  g.rect(x + 12, y + 8, 28, 6).fill(0xebe3c3)
+  g.circle(x + w * 0.45, y + 11, 6).fill(0x7da77e)
+  g.circle(x + w * 0.64, y + 11, 5).fill(0xd65343)
+  g.rect(x + 11, y + 26, 6, 12).fill(0x513625)
+  g.rect(x + w - 17, y + 26, 6, 12).fill(0x513625)
+  g.rect(x, y, w, 2).fill(accent)
+  parent.addChild(g)
+}
+
+function drawCuttingBoard(parent, x, y, w, h) {
+  const g = new Graphics()
+  g.roundRect(x, y, w, h, 3).fill(0xc78f50)
+  g.roundRect(x, y, w, h, 3).stroke({ width: 2, color: 0x6d472f })
+  g.circle(x + w - 6, y + 7, 2).fill(0x5f4130)
+  parent.addChild(g)
+}
+
+function drawHangingUtensils(parent, x, y, count, accent) {
+  const g = new Graphics()
+  g.rect(x, y, count * 16 + 5, 3).fill(accent)
+  for (let index = 0; index < count; index += 1) {
+    const utensilX = x + 5 + index * 16
+    g.rect(utensilX, y + 3, 3, 18 + (index % 2) * 8).fill(0xd6c8a9)
+    g.circle(utensilX + 1.5, y + 24 + (index % 2) * 8, 4).fill(0xc0b294)
+  }
+  parent.addChild(g)
+}
+
+function drawHangingPots(parent, x, y, count, accent) {
+  const g = new Graphics({ roundPixels: true })
+  g.rect(x, y, count * 24 + 4, 3).fill(accent)
+  for (let index = 0; index < count; index += 1) {
+    const potX = x + 9 + index * 24
+    g.rect(potX, y + 3, 2, 9).fill(0xd7c7a7)
+    g.rect(potX - 6, y + 9, 13, 3).fill(0x77716a)
+    g.ellipse(potX - 7, y + 11, 15, 8).fill(0x34302e)
+    g.rect(potX - 4, y + 4, 8, 3).fill(0x4b4742)
+    g.rect(potX + 7, y + 13, 7, 3).fill(0x5a5049)
+    g.rect(potX - 4, y + 15, 9, 2).fill(0x171412)
+  }
+  parent.addChild(g)
 }
 
 function drawPictureFrame(parent, x, y, w, h, accent) {
@@ -843,6 +1052,257 @@ function drawPantryShelf(parent, x, y, w, h) {
   parent.addChild(g)
 }
 
+function drawPrepTable(parent, x, y, w, accent) {
+  const g = new Graphics()
+  g.rect(x - w / 2, y, w, 24).fill(0x9c673d)
+  g.rect(x - w / 2 + 4, y + 3, w - 8, 15).fill(0xd6a361)
+  g.rect(x - w / 2 + 12, y + 22, 7, 16).fill(0x68452f)
+  g.rect(x + w / 2 - 19, y + 22, 7, 16).fill(0x68452f)
+  g.rect(x - 26, y + 7, 52, 3).fill(accent)
+  g.circle(x + 31, y + 8, 4).fill(0x77a978)
+  parent.addChild(g)
+}
+
+function drawWorktopFood(parent, x, y, w, accent) {
+  const px = Math.round(x)
+  const py = Math.round(y)
+  const left = Math.round(px - w / 2 + 8)
+  const panX = Math.round(px + w / 2 - 24)
+  const g = new Graphics({ roundPixels: true })
+
+  // Keep the middle of the worktop clear so the character reads as standing in front of it.
+  g.rect(left + 2, py - 7, 27, 8).fill(0x3f2b20)
+  g.rect(left, py - 10, 27, 8).fill(0xb97c47)
+  g.rect(left, py - 10, 27, 8).stroke({ width: 1, color: 0x65402b })
+  g.rect(left + 4, py - 13, 6, 5).fill(0x78a675)
+  g.rect(left + 11, py - 15, 6, 7).fill(0xe2ad49)
+  g.rect(left + 19, py - 13, 6, 5).fill(0xd65b4f)
+  g.rect(left + 6, py - 16, 2, 4).fill(0x4f7f54)
+
+  g.ellipse(panX + 2, py - 3, 15, 5).fill(0x171310)
+  g.ellipse(panX, py - 6, 15, 5).fill(0x34302e)
+  g.ellipse(panX, py - 7, 11, 3).fill(0x72503b)
+  g.rect(panX + 13, py - 8, 16, 4).fill(0x3b2b25)
+  g.rect(panX + 25, py - 9, 8, 6).fill(0x241b18)
+  g.rect(panX - 7, py - 9, 5, 4).fill(0xd65343)
+  g.rect(panX, py - 10, 5, 4).fill(0xe5b54e)
+  g.rect(panX + 6, py - 9, 4, 3).fill(0x78a675)
+  g.rect(left, py - 2, 27, 2).fill(accent)
+  parent.addChild(g)
+}
+
+function drawRiceBag(parent, x, y, accent) {
+  const g = new Graphics()
+  g.roundRect(x, y, 36, 34, 4).fill(0xe7d8ae)
+  g.roundRect(x, y, 36, 34, 4).stroke({ width: 2, color: accent })
+  g.rect(x + 7, y + 8, 22, 3).fill(0xc29153)
+  g.rect(x + 9, y + 17, 18, 4).fill(0x9dbb7a)
+  g.rect(x + 13, y + 25, 10, 2).fill(0xc29153)
+  parent.addChild(g)
+}
+
+function drawStool(parent, x, y, accent) {
+  const context = getSharedGraphicsContext(`stool-${accent}`, (shape) => {
+    shape.rect(-10, 3, 24, 7).fill(0x1d1410)
+    shape.rect(-12, 0, 24, 7).fill(accent)
+    shape.rect(-9, 2, 18, 2).fill(0xe2bd70)
+    shape.rect(-8, 7, 4, 16).fill(0x6b4630)
+    shape.rect(4, 7, 4, 16).fill(0x6b4630)
+    shape.rect(-5, 15, 10, 3).fill(0x4e3327)
+  })
+  addSharedGraphic(parent, context, x, y)
+}
+
+function drawBookPile(parent, x, y, accent) {
+  const g = new Graphics()
+  g.rect(x, y + 13, 42, 7).fill(0x6c8f9b)
+  g.rect(x + 5, y + 7, 34, 7).fill(0xe2a55d)
+  g.rect(x + 1, y, 38, 8).fill(0xb47db1)
+  g.rect(x + 7, y + 2, 24, 2).fill(accent)
+  parent.addChild(g)
+}
+
+function drawRecipeDesk(parent, x, y, w, accent) {
+  drawPrepTable(parent, x, y, w, accent)
+  const g = new Graphics()
+  g.rect(x - 31, y - 12, 62, 10).fill(0xf0e6c8)
+  g.rect(x - 27, y - 10, 54, 2).fill(accent)
+  g.rect(x - 11, y - 17, 22, 9).fill(0xfff3d2)
+  g.rect(x - 8, y - 15, 16, 2).fill(0xb9946a)
+  parent.addChild(g)
+  drawWorktopFood(parent, x, y, w, accent)
+}
+
+function drawOvenStove(parent, x, y, accent) {
+  const g = new Graphics({ roundPixels: true })
+  g.rect(x + 4, y + 5, 61, 47).fill(0x211816)
+  g.rect(x, y, 61, 47).fill(0x6d5a52)
+  g.rect(x, y, 61, 47).stroke({ width: 2, color: accent })
+  g.rect(x + 5, y + 4, 51, 4).fill(0xb88a62)
+  g.ellipse(x + 16, y + 4, 14, 4).fill(0x292321)
+  g.ellipse(x + 43, y + 4, 14, 4).fill(0x292321)
+  g.rect(x + 7, y + 8, 47, 19).fill(0x24282a)
+  g.rect(x + 12, y + 12, 37, 11).fill(0x9a5a42)
+  g.rect(x + 14, y + 14, 33, 3).fill(0xc67a55)
+  g.rect(x + 11, y + 27, 39, 4).fill(0x332a27)
+  g.circle(x + 16, y + 35, 5).fill(0x25201e)
+  g.circle(x + 31, y + 35, 5).fill(0x25201e)
+  g.circle(x + 46, y + 35, 5).fill(0x25201e)
+  g.rect(x + 14, y + 33, 4, 2).fill(accent)
+  g.rect(x + 29, y + 33, 4, 2).fill(accent)
+  g.rect(x + 44, y + 33, 4, 2).fill(accent)
+  g.rect(x + 5, y + 47, 7, 4).fill(0x3b2e2a)
+  g.rect(x + 49, y + 47, 7, 4).fill(0x3b2e2a)
+  parent.addChild(g)
+}
+
+function drawNutritionPoster(parent, x, y, w, h, accent) {
+  const g = new Graphics()
+  g.rect(x, y, w, h).fill(0xf1e6be)
+  g.rect(x, y, w, h).stroke({ width: 2, color: accent })
+  g.circle(x + w * 0.5, y + 22, 11).fill(0x78aa76)
+  g.rect(x + 10, y + 38, w - 20, 3).fill(accent)
+  g.rect(x + 16, y + 45, w - 32, 3).fill(0xa78768)
+  parent.addChild(g)
+  addText(parent, '营养', x + w / 2, y + 6, 7, 0x5a4332, true, true)
+}
+
+function drawExperimentTable(parent, x, y, w, accent) {
+  drawPrepTable(parent, x, y, w, accent)
+  const g = new Graphics()
+  g.rect(x - 34, y - 12, 68, 9).fill(0xc8e0d5)
+  g.rect(x - 22, y - 20, 12, 9).fill(0xe9b84f)
+  g.rect(x - 2, y - 19, 12, 8).fill(0xd35b56)
+  g.rect(x + 17, y - 21, 10, 10).fill(0x71a6c3)
+  parent.addChild(g)
+  drawWorktopFood(parent, x, y, w, accent)
+}
+
+function drawShelfWithBins(parent, x, y, w, h, accent) {
+  const g = new Graphics({ roundPixels: true })
+  g.rect(x + 4, y + 5, w, h).fill(0x221711)
+  g.rect(x, y, w, h).fill(0x80563b)
+  g.rect(x, y, w, h).stroke({ width: 2, color: accent })
+  g.rect(x + 4, y + 4, 4, h - 8).fill(0xa46d48)
+  g.rect(x + w - 8, y + 4, 4, h - 8).fill(0x4e3327)
+  g.rect(x + 4, y + h * 0.5, w - 8, 3).fill(0x4e3327)
+  ;[0xd66555, 0x78a675, 0xe1ad53, 0x7197b8].forEach((color, index) => {
+    const binX = x + 8 + (index % 4) * ((w - 24) / 4)
+    g.rect(binX, y + 8, Math.max(12, (w - 32) / 4), 14).fill(color)
+    g.rect(binX + 3, y + 10, Math.max(6, (w - 50) / 4), 3).fill(0xe4c482)
+    g.rect(binX, y + h * 0.5 + 8, Math.max(12, (w - 32) / 4), 14).fill(index % 2 ? 0xd8bd6c : 0xb8c9a2)
+  })
+  parent.addChild(g)
+}
+
+function drawWallUtensilRack(parent, x, y, accent) {
+  const g = new Graphics()
+  g.rect(x, y, 104, 4).fill(accent)
+  ;[0xe8d9b8, 0xc78e54, 0x90b2ac, 0xe1b44e].forEach((color, index) => {
+    g.rect(x + 10 + index * 24, y + 4, 4, 19).fill(color)
+    g.circle(x + 12 + index * 24, y + 24, 4).fill(color)
+  })
+  parent.addChild(g)
+}
+
+function drawSinkCabinet(parent, x, y, w, h, accent) {
+  const g = new Graphics({ roundPixels: true })
+  g.rect(x + 4, y + 5, w, h).fill(0x201511)
+  g.rect(x, y, w, h).fill(0x9b6845)
+  g.rect(x, y, w, h).stroke({ width: 2, color: accent })
+  g.rect(x - 3, y + 3, w + 6, 4).fill(0xd3a168)
+  g.rect(x + 8, y + 7, w - 16, 16).fill(0xb7c8c3)
+  g.rect(x + 13, y + 10, w - 26, 9).fill(0x657b78)
+  g.rect(x + 17, y + 11, w - 34, 3).fill(0xd9e1d5)
+  g.rect(x + w * 0.5 - 1, y + 26, 2, h - 28).fill(0x65432f)
+  g.rect(x + 5, y + 26, w - 10, 2).fill(0x6c472f)
+  g.rect(x + 18, y + 29, 5, 10).fill(0x6c4a35)
+  g.rect(x + w - 23, y + 29, 5, 10).fill(0x6c4a35)
+  // Use stepped pixel geometry for the faucet instead of an arc path; this
+  // keeps the hard-edged style and avoids path joins bleeding into the room.
+  g.rect(x + w * 0.44, y + 1, 3, 8).fill(0x719287)
+  g.rect(x + w * 0.44, y - 1, 16, 3).fill(0x719287)
+  g.rect(x + w * 0.44 + 13, y, 3, 8).fill(0x719287)
+  g.rect(x + 8, y + 35, 22, 3).fill(0xd8bd6c)
+  g.rect(x + 9, y + 38, 20, 4).fill(0x6d9cc3)
+  g.rect(x + 7, y + h, 7, 4).fill(0x513625)
+  g.rect(x + w - 14, y + h, 7, 4).fill(0x513625)
+  parent.addChild(g)
+}
+
+function drawDishStack(parent, x, y, accent) {
+  const g = new Graphics()
+  g.ellipse(x, y + 15, 28, 7).fill(0xe8dfc5)
+  g.ellipse(x + 2, y + 11, 24, 6).fill(0xc5d8cf)
+  g.ellipse(x + 4, y + 7, 20, 5).fill(0xe8dfc5)
+  g.rect(x + 11, y + 2, 6, 4).fill(accent)
+  parent.addChild(g)
+}
+
+function drawIngredientTray(parent, x, y, variant) {
+  const colors = [0xd65343, 0x78a675, 0xe5b54e]
+  const g = new Graphics()
+  g.rect(x, y, 44, 15).fill(0xc88a4d)
+  g.rect(x, y, 44, 15).stroke({ width: 1, color: 0x563a2d })
+  ;[0, 1, 2].forEach((index) => g.circle(x + 9 + index * 13, y + 8, 4).fill(colors[(index + variant) % colors.length]))
+  parent.addChild(g)
+}
+
+function drawTrashBin(parent, x, y, accent) {
+  const g = new Graphics()
+  g.rect(x - 12, y, 24, 23).fill(0x5b6970)
+  g.rect(x - 14, y - 4, 28, 4).fill(accent)
+  g.rect(x - 6, y + 5, 3, 13).fill(0x839397)
+  g.rect(x + 3, y + 5, 3, 13).fill(0x839397)
+  parent.addChild(g)
+}
+
+function drawIngredientBasket(parent, x, y, accent) {
+  const g = new Graphics()
+  g.rect(x, y + 8, 38, 19).fill(0xb97842)
+  g.rect(x, y + 8, 38, 19).stroke({ width: 2, color: accent })
+  g.rect(x + 5, y + 4, 3, 7).fill(0xd4a361)
+  g.rect(x + 30, y + 4, 3, 7).fill(0xd4a361)
+  g.rect(x + 7, y + 2, 24, 3).fill(0xd4a361)
+  g.circle(x + 9, y + 8, 5).fill(0x78a675)
+  g.circle(x + 19, y + 6, 5).fill(0xe0af45)
+  g.circle(x + 29, y + 8, 5).fill(0xd65343)
+  parent.addChild(g)
+}
+
+function drawSmallAppliance(parent, x, y, accent) {
+  const g = new Graphics()
+  g.roundRect(x, y, 42, 28, 3).fill(0xa7b7b3)
+  g.roundRect(x, y, 42, 28, 3).stroke({ width: 2, color: accent })
+  g.rect(x + 6, y + 6, 23, 13).fill(0x33403e)
+  g.rect(x + 10, y + 9, 15, 7).fill(0xd08058)
+  g.circle(x + 35, y + 10, 3).fill(accent)
+  g.circle(x + 35, y + 19, 3).fill(0x687c78)
+  parent.addChild(g)
+}
+
+function drawDeskComputer(parent, x, y, w, accent) {
+  drawPrepTable(parent, x, y, w, accent)
+  const g = new Graphics()
+  g.rect(x - 24, y - 22, 48, 19).fill(0x252c2b)
+  g.rect(x - 20, y - 18, 40, 12).fill(accent)
+  g.rect(x - 3, y - 3, 6, 5).fill(0x6b4a35)
+  g.rect(x - 18, y + 3, 36, 3).fill(0xf1e3b9)
+  parent.addChild(g)
+  drawWorktopFood(parent, x, y, w, accent)
+}
+
+function drawStorageCabinet(parent, x, y, w, h, accent) {
+  const g = new Graphics()
+  g.rect(x, y, w, h).fill(0x7d553e)
+  g.rect(x, y, w, h).stroke({ width: 2, color: accent })
+  g.rect(x + 4, y + 5, w - 8, h * 0.38).fill(0xa4754c)
+  g.rect(x + 4, y + h * 0.5, w - 8, h * 0.42).fill(0x9a6b47)
+  g.rect(x + w * 0.5 - 2, y + 18, 4, 6).fill(accent)
+  g.rect(x + w * 0.5 - 2, y + h * 0.72, 4, 6).fill(accent)
+  parent.addChild(g)
+}
+
 function drawWorkstation(parent, x, y, accent) {
   const desk = new Container()
   desk.position.set(x, y)
@@ -855,14 +1315,22 @@ function drawWorkstation(parent, x, y, accent) {
   body.rect(17, 18, 5, 9).fill(0x805738)
   desk.addChild(body)
 
+  const ingredients = new Graphics({ roundPixels: true })
+  ingredients.ellipse(-20, -2, 9, 3).fill(0x4a342a)
+  ingredients.rect(-25, -7, 6, 6).fill(0x78a675)
+  ingredients.rect(-19, -9, 6, 8).fill(0xe2ad49)
+  ingredients.rect(14, -7, 6, 6).fill(0xd65343)
+  ingredients.rect(21, -9, 6, 8).fill(0x78a675)
+  desk.addChild(ingredients)
+
   const screen = new Graphics()
-  screen.roundRect(-9, -16, 18, 13, 2).fill(0x1e2a2a)
-  screen.roundRect(-7, -14, 14, 8, 1).fill({ color: accent, alpha: 0.88 })
-  screen.rect(-4, -2, 8, 2).fill(0x77553a)
+  screen.roundRect(8, 2, 18, 13, 2).fill(0x1e2a2a)
+  screen.roundRect(10, 4, 14, 8, 1).fill({ color: accent, alpha: 0.88 })
+  screen.rect(13, 15, 8, 2).fill(0x77553a)
   desk.addChild(screen)
 
   const light = new Graphics()
-  light.circle(24, 7, 2.5).fill(accent)
+  light.circle(0, 7, 2.5).fill(accent)
   desk.addChild(light)
   parent.addChild(desk)
   return { screen, light }
@@ -909,15 +1377,25 @@ function drawCrate(parent, x, y, accent) {
   parent.addChild(g)
 }
 
-function drawBookcase(parent, x, y, accent) {
-  const g = new Graphics()
-  g.rect(x, y, 44, 75).fill(0x8e5d43)
-  g.rect(x, y, 44, 75).stroke({ width: 2, color: accent })
-  g.rect(x + 4, y + 20, 36, 3).fill(0xe0b35d)
-  g.rect(x + 4, y + 45, 36, 3).fill(0xe0b35d)
+function drawBookcase(parent, x, y, w = 44, h = 75, accent = 0xb083c7) {
+  const g = new Graphics({ roundPixels: true })
+  g.rect(x + 4, y + 5, w, h).fill(0x241713)
+  g.rect(x, y, w, h).fill(0x8e5d43)
+  g.rect(x, y, w, h).stroke({ width: 2, color: accent })
+  g.rect(x + 4, y + 4, 4, h - 8).fill(0xaf7652)
+  g.rect(x + w - 8, y + 4, 4, h - 8).fill(0x5d392c)
+  g.rect(x + 4, y + h * 0.27, w - 8, 3).fill(0xe0b35d)
+  g.rect(x + 4, y + h * 0.6, w - 8, 3).fill(0xe0b35d)
   ;[0xe67b63, 0x70a6c6, 0xd4a14a, 0xb180bc, 0x78a878].forEach((color, index) => {
-    g.rect(x + 7 + (index % 4) * 8, y + 7 + Math.floor(index / 4) * 25, 6, 14).fill(color)
+    const bookX = x + 9 + (index % 4) * Math.max(7, (w - 20) / 4)
+    const bookY = y + 7 + Math.floor(index / 4) * Math.max(18, h * 0.32)
+    g.rect(bookX, bookY, 6, Math.min(14, h * 0.18)).fill(color)
+    g.rect(bookX + 1, bookY + 2, 2, Math.min(9, h * 0.12)).fill(0xf0d793)
   })
+  g.rect(x + 7, y + h * 0.65, w - 14, h * 0.28).fill(0x744934)
+  g.rect(x + w * 0.5 - 1, y + h * 0.66, 2, h * 0.26).fill(0x4e3026)
+  g.rect(x + w * 0.5 - 6, y + h * 0.78, 3, 4).fill(accent)
+  g.rect(x + w * 0.5 + 3, y + h * 0.78, 3, 4).fill(accent)
   parent.addChild(g)
 }
 
@@ -940,39 +1418,169 @@ function drawPlant(parent, x, y) {
   parent.addChild(g)
 }
 
-function drawCalendarBoard(parent, x, y, accent) {
-  const g = new Graphics()
-  g.rect(x, y, 116, 68).fill(0xede2c8)
-  g.rect(x, y, 116, 68).stroke({ width: 2, color: accent })
-  g.rect(x, y, 116, 14).fill(accent)
-  for (let row = 0; row < 3; row += 1) {
-    for (let col = 0; col < 5; col += 1) {
-      g.rect(x + 10 + col * 20, y + 23 + row * 13, 12, 7).fill((row + col) % 3 === 0 ? 0xe8b844 : 0xa8c3c0)
-    }
-  }
-  parent.addChild(g)
-}
-
 function drawTable(parent, x, y, w, accent) {
-  const g = new Graphics()
+  const g = new Graphics({ roundPixels: true })
+  g.roundRect(x + 4, y + 5, w, 24, 6).fill(0x211713)
   g.roundRect(x, y, w, 24, 6).fill(0xb77d45)
   g.roundRect(x + 3, y + 3, w - 6, 15, 4).fill(0xd5a363)
+  g.rect(x + 8, y + 5, w - 16, 3).fill(0xe6b874)
   g.rect(x + 14, y + 22, 7, 12).fill(0x805738)
   g.rect(x + w - 21, y + 22, 7, 12).fill(0x805738)
+  g.rect(x + 20, y + 29, w - 40, 3).fill(0x593925)
   g.rect(x + w / 2 - 16, y + 8, 32, 3).fill(accent)
+  g.rect(x + w / 2 - 5, y + 12, 10, 4).fill(0xeee1c1)
   parent.addChild(g)
 }
 
-function drawBulletin(parent, x, y, accent) {
+function drawSmallDiningSet(parent, x, y, w, accent) {
+  drawTable(parent, x + w * 0.5, y + 18, w, accent)
+  drawStool(parent, x + 18, y + 40, accent)
+  drawStool(parent, x + w - 18, y + 40, accent)
+  drawDishStack(parent, x + w * 0.5 - 7, y + 3, accent)
+}
+
+function drawRestCat(parent, x, y, accent) {
+  const g = new Graphics({ roundPixels: true })
+  g.ellipse(x - 13, y - 2, 34, 13).fill(0x2a1b15)
+  g.ellipse(x - 16, y - 5, 31, 12).fill(0xd69a63)
+  g.rect(x - 12, y - 18, 24, 16).fill(0xe3a66d)
+  g.moveTo(x - 12, y - 17).lineTo(x - 7, y - 27).lineTo(x - 2, y - 17).fill(0xe3a66d)
+  g.moveTo(x + 12, y - 17).lineTo(x + 7, y - 27).lineTo(x + 2, y - 17).fill(0xe3a66d)
+  g.rect(x - 7, y - 12, 3, 3).fill(0x513625)
+  g.rect(x + 4, y - 12, 3, 3).fill(0x513625)
+  g.rect(x - 3, y - 6, 6, 2).fill(accent)
+  g.rect(x + 13, y - 6, 13, 4).fill(0xd69a63)
+  g.rect(x + 23, y - 14, 4, 10).fill(0xd69a63)
+  g.rect(x + 19, y - 17, 7, 4).fill(0xd69a63)
+  parent.addChild(g)
+}
+
+function drawRestDog(parent, x, y, accent) {
+  const g = new Graphics({ roundPixels: true })
+  g.ellipse(x, y + 2, 37, 14).fill(0x291c17)
+  g.ellipse(x, y - 2, 34, 13).fill(0xb8784d)
+  g.rect(x - 14, y - 17, 27, 15).fill(0xc98959)
+  g.rect(x - 16, y - 18, 7, 12).fill(0x6f4534)
+  g.rect(x + 9, y - 18, 7, 12).fill(0x6f4534)
+  g.rect(x - 7, y - 12, 3, 3).fill(0x38251f)
+  g.rect(x + 4, y - 12, 3, 3).fill(0x38251f)
+  g.rect(x - 3, y - 6, 7, 3).fill(0x4e3026)
+  g.rect(x - 5, y - 1, 12, 3).fill(accent)
+  parent.addChild(g)
+}
+
+function drawPetRestCorner(parent, x, y, w, accent) {
+  const px = Math.round(x)
+  const py = Math.round(y)
+  const g = new Graphics({ roundPixels: true })
+  g.rect(px + 4, py + 6, w, 37).fill(0x17110f)
+  g.rect(px, py + 2, w, 37).fill(0x5f5648)
+  g.rect(px + 5, py + 7, w - 10, 27).fill(0xc59a68)
+  g.rect(px + 8, py + 10, w - 16, 3).fill(0xe4bd82)
+  g.rect(px, py + 2, w, 37).stroke({ width: 2, color: accent })
+  parent.addChild(g)
+
+  drawRestCat(parent, px + 30, py + 31, accent)
+  drawRestDog(parent, px + 79, py + 31, accent)
+
+  const accessories = new Graphics({ roundPixels: true })
+  accessories.ellipse(px + 14, py + 45, 18, 6).fill(0x31423e)
+  accessories.ellipse(px + 14, py + 43, 14, 4).fill(0xe8d29b)
+  accessories.circle(px + w - 9, py + 45, 5).fill(0xd65343)
+  accessories.rect(px + w - 11, py + 43, 4, 4).fill(0xf0c75f)
+  parent.addChild(accessories)
+}
+
+function drawLongTable(parent, x, y, w, accent) {
+  const g = new Graphics({ roundPixels: true })
+  g.rect(x - w / 2 + 5, y + 6, w, 25).fill(0x211713)
+  g.rect(x - w / 2, y, w, 25).fill(0xa66d3f)
+  g.rect(x - w / 2 + 4, y + 3, w - 8, 16).fill(0xd5a363)
+  g.rect(x - w / 2 + 10, y + 5, w - 20, 3).fill(0xe4b474)
+  g.rect(x - w / 2 + 16, y + 23, 7, 23).fill(0x6d4831)
+  g.rect(x + w / 2 - 23, y + 23, 7, 23).fill(0x6d4831)
+  g.rect(x - w / 2 + 22, y + 37, w - 44, 4).fill(0x4b3025)
+  g.rect(x - 42, y + 7, 84, 3).fill(accent)
+  g.rect(x - 78, y + 9, 18, 4).fill(0xeedfb8)
+  g.rect(x + 60, y + 9, 18, 4).fill(0xeedfb8)
+  parent.addChild(g)
+  ;[-w * 0.36, -w * 0.12, w * 0.12, w * 0.36].forEach((offset) => drawStool(parent, x + offset, y + 36, accent))
+}
+
+function drawTeaCart(parent, x, y, w, accent) {
+  const px = Math.round(x)
+  const py = Math.round(y)
+  const g = new Graphics({ roundPixels: true })
+
+  // Narrow wall shelf, kept well below the room label band.
+  g.rect(px + 13, py, w - 26, 5).fill(0x2a1b16)
+  g.rect(px + 10, py - 3, w - 20, 5).fill(0xa66d3f)
+  g.rect(px + 18, py + 2, 4, 8).fill(0x70462e)
+  g.rect(px + w - 22, py + 2, 4, 8).fill(0x70462e)
+  g.rect(px + 25, py - 14, 19, 11).fill(0x58736d)
+  g.rect(px + 29, py - 17, 11, 4).fill(0xc6b88f)
+  g.rect(px + 56, py - 12, 12, 9).fill(0xe7d8b5)
+  g.rect(px + 74, py - 10, 12, 7).fill(0xd3a168)
+
+  // Cart body with a separate top, doors, handles, legs and caster wheels.
+  g.rect(px + 5, py + 20, w, 45).fill(0x1b1310)
+  g.rect(px, py + 15, w, 43).fill(0x97613d)
+  g.rect(px - 3, py + 12, w + 6, 7).fill(0xd4a064)
+  g.rect(px + 5, py + 22, w - 10, 29).fill(0xb97b4c)
+  g.rect(px + Math.round(w * 0.5) - 1, py + 22, 2, 29).fill(0x68432f)
+  g.rect(px + Math.round(w * 0.25) - 2, py + 34, 4, 5).fill(accent)
+  g.rect(px + Math.round(w * 0.75) - 2, py + 34, 4, 5).fill(accent)
+  g.rect(px + 8, py + 58, 6, 8).fill(0x68432f)
+  g.rect(px + w - 14, py + 58, 6, 8).fill(0x68432f)
+  g.circle(px + 11, py + 67, 4).fill(0x25211f)
+  g.circle(px + w - 11, py + 67, 4).fill(0x25211f)
+
+  // Kettle, cups and an ingredient basket form one readable horizontal group.
+  g.ellipse(px + 24, py + 10, 30, 8).fill(0x3b4140)
+  g.rect(px + 12, py - 2, 24, 12).fill(0x626d69)
+  g.rect(px + 18, py - 6, 12, 4).fill(0xc6b88f)
+  g.rect(px + 35, py + 1, 9, 4).fill(0x626d69)
+  g.rect(px + 50, py + 2, 10, 9).fill(0xe5d3aa)
+  g.rect(px + 63, py + 3, 10, 8).fill(0xc6e0d1)
+  g.rect(px + 82, py + 1, 37, 12).fill(0x9f693f)
+  g.rect(px + 87, py - 3, 27, 5).fill(0xd4a361)
+  g.rect(px + 89, py - 2, 7, 8).fill(0x78a675)
+  g.rect(px + 99, py - 4, 7, 10).fill(0xe0af45)
+  g.rect(px + 108, py - 1, 7, 7).fill(0xd65343)
+  g.rect(px, py + 15, w, 3).fill(accent)
+  parent.addChild(g)
+}
+
+function drawTeaSet(parent, x, y, accent) {
   const g = new Graphics()
+  g.ellipse(x - 12, y + 11, 24, 6).fill(0xf1e5c6)
+  g.rect(x - 8, y + 4, 16, 8).fill(0xe8d4ad)
+  g.rect(x - 5, y + 6, 10, 2).fill(accent)
+  g.circle(x + 24, y + 8, 6).fill(0xd8b384)
+  g.rect(x + 21, y - 2, 6, 10).fill(0x7ca078)
+  g.circle(x + 18, y - 3, 5).fill(0x7ca078)
+  g.circle(x + 28, y - 5, 5).fill(0x6f986f)
+  parent.addChild(g)
+}
+
+function drawBulletin(parent, x, y, accent, title = '') {
+  const g = new Graphics({ roundPixels: true })
+  g.rect(x + 4, y + 5, 118, 70).fill(0x211713)
   g.rect(x, y, 118, 70).fill(0xeadfbd)
   g.rect(x, y, 118, 70).stroke({ width: 2, color: accent })
+  g.rect(x + 4, y + 4, 110, 3).fill(0xf7edcf)
   g.rect(x + 8, y + 10, 48, 6).fill(accent)
   g.rect(x + 8, y + 24, 94, 4).fill(0x9b8063)
   g.rect(x + 8, y + 36, 75, 4).fill(0x9b8063)
   g.rect(x + 8, y + 48, 88, 4).fill(0x9b8063)
   g.circle(x + 96, y + 18, 7).fill(0xd65343)
+  g.rect(x + 94, y + 16, 4, 4).fill(0xf1c36a)
+  g.rect(x + 83, y + 31, 23, 18).fill(0xf1d688)
+  g.rect(x + 87, y + 34, 15, 2).fill(0x9b8063)
+  g.rect(x + 87, y + 40, 11, 2).fill(0x9b8063)
+  g.circle(x + 94, y + 31, 2).fill(0xd65343)
   parent.addChild(g)
+  if (title) addText(parent, title, x + 59, y + 5, 7, 0x5a4332, true, true)
 }
 
 function drawChiliCrate(parent, x, y, accent) {
