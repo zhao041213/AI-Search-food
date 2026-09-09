@@ -2,21 +2,30 @@ import { useAuthStore } from '../stores/auth.js'
 import { getAnonymousId } from '../utils/anonymousId.js'
 import { http } from './http.js'
 
-export async function streamAgentChat(payload, { onEvent, signal } = {}) {
+export async function streamAgentChat(payload, { image, onEvent, signal } = {}) {
   const auth = useAuthStore()
   const headers = {
     Accept: 'text/event-stream',
-    'Content-Type': 'application/json',
     'X-Anonymous-Id': getAnonymousId()
   }
   if (auth.token) {
     headers.Authorization = `Bearer ${auth.token}`
   }
 
+  let body
+  if (image) {
+    body = new FormData()
+    body.append('request', new Blob([JSON.stringify(payload)], { type: 'application/json' }))
+    body.append('image', image)
+  } else {
+    headers['Content-Type'] = 'application/json'
+    body = JSON.stringify(payload)
+  }
+
   const response = await fetch('/api/agent/chat/stream', {
     method: 'POST',
     headers,
-    body: JSON.stringify(payload),
+    body,
     signal
   })
   if (!response.ok) {

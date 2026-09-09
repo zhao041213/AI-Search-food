@@ -28,6 +28,25 @@ class AgentToolRegistryTest {
     }
 
     @Test
+    void ordinaryChatDoesNotExposeKitchenTools() {
+        assertThat(registry.functionDefinitions("你好，讲个笑话", false)).isEmpty();
+    }
+
+    @Test
+    void selectsOnlyRelevantDomainTools() {
+        java.util.List<String> dateTools = registry.functionDefinitions("今天几号", false).stream()
+                .map(definition -> ((java.util.Map<?, ?>) definition.get("function")).get("name").toString())
+                .toList();
+        java.util.List<String> pantryTools = registry.functionDefinitions("帮我消耗两个鸡蛋", false).stream()
+                .map(definition -> ((java.util.Map<?, ?>) definition.get("function")).get("name").toString())
+                .toList();
+
+        assertThat(dateTools).containsExactly("current_datetime");
+        assertThat(pantryTools).contains("pantry_list", "pantry_expiry", "pantry_manage")
+                .doesNotContain("notification_manage", "profile_manage");
+    }
+
+    @Test
     void rejectsUnregisteredOrBlankTools() {
         assertThatThrownBy(() -> registry.require("admin.users"))
                 .isInstanceOf(IllegalArgumentException.class);

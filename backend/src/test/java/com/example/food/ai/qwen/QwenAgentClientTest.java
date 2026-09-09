@@ -122,6 +122,31 @@ class QwenAgentClientTest {
                 .hasMessageContaining("DASHSCOPE_API_KEY");
     }
 
+    @Test
+    void ordinaryChatOmitsFunctionCallingFields() {
+        RestTemplate restTemplate = new RestTemplateBuilder().build();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restTemplate).build();
+        QwenProperties properties = properties("test-api-key");
+        QwenAgentClient client = new QwenAgentClient(restTemplate, new ObjectMapper(), properties);
+
+        server.expect(once(), requestTo(properties.endpoint()))
+                .andExpect(jsonPath("$.tools").doesNotExist())
+                .andExpect(jsonPath("$.tool_choice").doesNotExist())
+                .andExpect(jsonPath("$.messages[0].content").value(org.hamcrest.Matchers.containsString("当前服务器时间")))
+                .andRespond(withSuccess("""
+                        {"choices":[{"message":{"content":"今天是星期三。"}}]}
+                        """, MediaType.APPLICATION_JSON));
+
+        QwenAgentClient.AgentTurn turn = client.complete(
+                List.of(QwenAgentClient.ConversationMessage.user("今天过得怎么样")),
+                List.of()
+        );
+
+        assertThat(turn.content()).isEqualTo("今天是星期三。");
+        assertThat(turn.toolCalls()).isEmpty();
+        server.verify();
+    }
+
     private QwenProperties properties(String apiKey) {
         return new QwenProperties(
                 apiKey,

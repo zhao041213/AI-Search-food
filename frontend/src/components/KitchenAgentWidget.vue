@@ -49,6 +49,7 @@
           <div v-if="message.content" class="agent-message__bubble" :class="{ 'is-error': message.error }">
             {{ message.content }}
           </div>
+          <img v-if="message.imagePreview" class="agent-message__image" :src="message.imagePreview" alt="本轮上传的厨房图片" />
 
           <div v-if="message.card" class="agent-card" :class="`agent-card--${message.card.cardType}`">
             <template v-if="message.card.cardType === 'inventory-card'">
@@ -134,10 +135,16 @@
             </template>
 
             <template v-else-if="message.card.cardType === 'confirmation-card'">
-              <div class="agent-confirmation__title"><ShieldCheck :size="16" aria-hidden="true" /><strong>请确认这次保存</strong></div>
+              <div class="agent-confirmation__title"><ShieldCheck :size="16" aria-hidden="true" /><strong>{{ message.card.title || '请确认这次操作' }}</strong></div>
               <p>{{ message.card.impact }}</p>
-              <small>确认后只会新增一条菜谱收藏，不会修改库存或菜单。</small>
-              <div class="agent-card__actions"><button type="button" class="agent-button agent-button--primary" :disabled="loading || message.card.confirmed" @click="confirmSave(message)"><Check :size="14" aria-hidden="true" />{{ message.card.confirmed ? '已确认' : '确认保存' }}</button><button type="button" class="agent-button" :disabled="loading" @click="cancelConfirmation(message)">暂不保存</button></div>
+              <small>只有点击确认后才会修改当前账号的数据；同一操作不会重复执行。</small>
+              <div class="agent-card__actions"><button type="button" class="agent-button agent-button--primary" :disabled="loading || message.card.confirmed" @click="confirmAction(message)"><Check :size="14" aria-hidden="true" />{{ message.card.confirmed ? '已确认' : (message.card.actionLabel || '确认执行') }}</button><button type="button" class="agent-button" :disabled="loading || message.card.confirmed" @click="cancelConfirmation(message)">{{ message.card.cancelLabel || '暂不执行' }}</button></div>
+            </template>
+
+            <template v-else-if="['operation-result-card', 'image-recognition-card', 'attachment-card', 'finished-dish-card'].includes(message.card.cardType)">
+              <div class="agent-card__head"><div><ClipboardCheck :size="15" aria-hidden="true" /><strong>{{ message.card.payload?.title || '厨房操作结果' }}</strong></div></div>
+              <p class="agent-card__note">{{ message.card.payload?.summary || '操作已完成' }}</p>
+              <pre v-if="message.card.payload?.detail" class="agent-result-detail">{{ prettyDetail(message.card.payload.detail) }}</pre>
             </template>
 
             <div v-if="message.card.source && message.card.cardType !== 'recipe-card'" class="agent-card__source"><Clock3 :size="13" aria-hidden="true" />{{ message.card.source }}</div>
@@ -156,9 +163,15 @@
         <button v-for="prompt in quickPrompts" :key="prompt" type="button" class="agent-quick-prompt" @click="sendPrompt(prompt)">{{ prompt }}</button>
       </div>
       <form class="agent-composer" @submit.prevent="sendMessage">
+        <div v-if="attachment" class="agent-attachment-preview">
+          <img :src="attachmentPreview" alt="待发送的厨房图片预览" />
+          <div><strong>{{ attachment.name }}</strong><small>{{ formatFileSize(attachment.size) }} · 仅在本轮对话中处理</small></div>
+          <button type="button" class="agent-icon-button" aria-label="移除附件" title="移除附件" :disabled="loading" @click="clearAttachment"><X :size="16" aria-hidden="true" /></button>
+        </div>
         <label for="kitchen-agent-input" class="visually-hidden">问小厨灵</label>
         <textarea id="kitchen-agent-input" ref="input" v-model="draft" rows="2" maxlength="1000" placeholder="问问你的厨房……" :disabled="loading" @keydown="handleInputKeydown" />
-        <div class="agent-composer__footer"><span>Enter 发送 · Shift+Enter 换行</span><button v-if="loading" type="button" class="agent-button agent-button--stop" @click="stopGeneration"><Square :size="14" aria-hidden="true" />停止</button><button v-else type="submit" class="agent-send-button" aria-label="发送消息" :disabled="!draft.trim()"><Send :size="16" aria-hidden="true" /></button></div>
+        <input ref="attachmentInput" class="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" @change="selectAttachment" />
+        <div class="agent-composer__footer"><span>Enter 发送 · 图片最大 5MB</span><div class="agent-composer__actions"><button type="button" class="agent-attach-button" aria-label="添加厨房图片" title="添加图片" :disabled="loading" @click="attachmentInput?.click()"><Paperclip :size="16" aria-hidden="true" /></button><button v-if="loading" type="button" class="agent-button agent-button--stop" @click="stopGeneration"><Square :size="14" aria-hidden="true" />停止</button><button v-else type="submit" class="agent-send-button" aria-label="发送消息" :disabled="!draft.trim() && !attachment"><Send :size="16" aria-hidden="true" /></button></div></div>
       </form>
       <footer class="agent-panel__footer"><span>数据只来自当前账号</span><button type="button" @click="clearConversation">清空会话</button></footer>
     </section>
@@ -180,7 +193,7 @@
 
 <script setup>
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Bell, BookOpen, CalendarDays, Check, Clock3, Database, HeartPulse, LockKeyhole, Plus, Save, Send, ShieldCheck, Square, X } from 'lucide-vue-next'
+import { Bell, BookOpen, CalendarDays, Check, ClipboardCheck, Clock3, Database, HeartPulse, LockKeyhole, Paperclip, Plus, Save, Send, ShieldCheck, Square, X } from 'lucide-vue-next'
 import { deleteAgentConversation, streamAgentChat } from '../api/agent.js'
 import { useAuthStore } from '../stores/auth.js'
 
@@ -192,19 +205,28 @@ const messages = ref([])
 const conversationId = ref(null)
 const messageList = ref(null)
 const input = ref(null)
+const attachmentInput = ref(null)
+const attachment = ref(null)
+const attachmentPreview = ref('')
 const abortController = ref(null)
 const lastPrompt = ref('')
+const lastAttachment = ref(null)
 const quickPrompts = ['我今天有什么食材', '哪些食材快过期', '今晚能做什么', '本周菜单是什么', '我有哪些提醒']
+const previewUrls = new Set()
 let messageSeed = 0
 
 const storageKey = () => `ai-kitchen-agent:${auth.token ? auth.token.slice(-20) : 'guest'}`
 
 onMounted(() => restoreConversation())
-onBeforeUnmount(() => stopGeneration())
+onBeforeUnmount(() => {
+  stopGeneration()
+  revokeAllPreviews()
+})
 
 watch(messages, () => {
   if (auth.isUser) {
-    localStorage.setItem(storageKey(), JSON.stringify({ conversationId: conversationId.value, messages: messages.value.slice(-80) }))
+    const storedMessages = messages.value.slice(-80).map(({ imagePreview, ...message }) => message)
+    localStorage.setItem(storageKey(), JSON.stringify({ conversationId: conversationId.value, messages: storedMessages }))
   }
   void scrollToBottom()
 }, { deep: true })
@@ -227,28 +249,34 @@ function handleInputKeydown(event) {
 
 function sendMessage() {
   const message = draft.value.trim()
-  if (!message || loading.value) return
+  if ((!message && !attachment.value) || loading.value) return
+  const image = attachment.value
+  const preview = attachmentPreview.value
   draft.value = ''
-  sendPrompt(message)
+  attachment.value = null
+  attachmentPreview.value = ''
+  if (attachmentInput.value) attachmentInput.value.value = ''
+  sendPrompt(message || '请识别这张图片中的食材，并告诉我可以怎么处理', image, preview)
 }
 
-function sendPrompt(prompt) {
+function sendPrompt(prompt, image = null, imagePreview = '') {
   if (loading.value) return
   lastPrompt.value = prompt
+  lastAttachment.value = image
   if (!auth.isUser) {
     addMessage({ role: 'assistant', content: '请先登录普通用户账号。登录后我才能读取你的真实库存、菜单和提醒。' })
     return
   }
-  addMessage({ role: 'user', content: prompt })
-  startStream({ conversationId: conversationId.value, message: prompt })
+  addMessage({ role: 'user', content: prompt, imagePreview })
+  startStream({ conversationId: conversationId.value, message: prompt }, image)
 }
 
-async function startStream(payload) {
+async function startStream(payload, image = null) {
   loading.value = true
   const assistant = addMessage({ role: 'assistant', content: '', statusText: '小厨灵正在整理请求', trace: [] })
   abortController.value = new AbortController()
   try {
-    await streamAgentChat(payload, { signal: abortController.value.signal, onEvent: (event) => applyEvent(event, assistant) })
+    await streamAgentChat(payload, { image, signal: abortController.value.signal, onEvent: (event) => applyEvent(event, assistant) })
   } catch (error) {
     if (error?.name !== 'AbortError') {
       assistant.error = true
@@ -282,16 +310,16 @@ function applyEvent(event, assistant) {
   }
 }
 
-async function confirmSave(message) {
+async function confirmAction(message) {
   if (loading.value || !message.card?.confirmationId) return
   message.card.confirmed = true
-  addMessage({ role: 'user', content: '确认保存这道菜' })
+  addMessage({ role: 'user', content: `确认执行：${message.card.title || '厨房操作'}` })
   await startStream({ conversationId: conversationId.value, confirmationId: message.card.confirmationId, idempotencyKey: message.card.idempotencyKey })
 }
 
 function cancelConfirmation(message) {
   message.card.confirmed = true
-  addMessage({ role: 'assistant', content: '好的，我暂时不保存这道菜。需要时再点“保存菜谱”即可。' })
+  addMessage({ role: 'assistant', content: '好的，这次操作没有执行。' })
 }
 
 function saveRecipe() {
@@ -299,7 +327,7 @@ function saveRecipe() {
 }
 
 function retryLast() {
-  if (lastPrompt.value) sendPrompt(lastPrompt.value)
+  if (lastPrompt.value) sendPrompt(lastPrompt.value, lastAttachment.value)
 }
 
 function stopGeneration() {
@@ -310,6 +338,8 @@ function stopGeneration() {
 
 function startNewConversation() {
   stopGeneration()
+  clearAttachment()
+  revokeAllPreviews()
   conversationId.value = null
   messages.value = []
   draft.value = ''
@@ -318,6 +348,8 @@ function startNewConversation() {
 
 async function clearConversation() {
   stopGeneration()
+  clearAttachment()
+  revokeAllPreviews()
   if (conversationId.value) {
     try { await deleteAgentConversation(conversationId.value) } catch { /* A local reset is still safe if the network is unavailable. */ }
   }
@@ -392,6 +424,54 @@ function goalLabel(value) {
   return ({ balanced: '均衡', fat_loss: '减脂', muscle_gain: '增肌' })[value] || value || '均衡'
 }
 
+function selectAttachment(event) {
+  const file = event.target.files?.[0]
+  if (!file) return
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+    addMessage({ role: 'assistant', content: '附件仅支持 JPG、PNG、WebP 图片。', error: true })
+    event.target.value = ''
+    return
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    addMessage({ role: 'assistant', content: '附件图片不能超过 5MB。', error: true })
+    event.target.value = ''
+    return
+  }
+  revokeAttachmentPreview()
+  attachment.value = file
+  attachmentPreview.value = URL.createObjectURL(file)
+  previewUrls.add(attachmentPreview.value)
+}
+
+function clearAttachment() {
+  revokeAttachmentPreview()
+  attachment.value = null
+  if (attachmentInput.value) attachmentInput.value.value = ''
+}
+
+function revokeAttachmentPreview() {
+  if (attachmentPreview.value?.startsWith('blob:')) {
+    URL.revokeObjectURL(attachmentPreview.value)
+    previewUrls.delete(attachmentPreview.value)
+  }
+  attachmentPreview.value = ''
+}
+
+function revokeAllPreviews() {
+  previewUrls.forEach((url) => URL.revokeObjectURL(url))
+  previewUrls.clear()
+  attachmentPreview.value = ''
+}
+
+function formatFileSize(size) {
+  return size < 1024 * 1024 ? `${Math.max(1, Math.round(size / 1024))} KB` : `${(size / 1024 / 1024).toFixed(1)} MB`
+}
+
+function prettyDetail(detail) {
+  if (typeof detail === 'string') return detail
+  return JSON.stringify(detail, null, 2)
+}
+
 async function scrollToBottom() {
   await nextTick()
   if (messageList.value) messageList.value.scrollTop = messageList.value.scrollHeight
@@ -432,6 +512,7 @@ async function scrollToBottom() {
 .agent-message--user { margin-left: auto; justify-items: end; }
 .agent-message__bubble { padding: 10px 12px; border: 1px solid #d7bd91; color: #4b3728; background: #fffdf5; font-size: 14px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
 .agent-message--user .agent-message__bubble { border-color: #4f8ca5; color: #fff; background: #4f8ca5; }
+.agent-message__image { display: block; width: min(220px, 72vw); max-height: 180px; object-fit: cover; border: 2px solid #4f8ca5; background: #fffdf5; }
 .agent-message__bubble.is-error { border-color: #cf7161; color: #8b3e34; background: #fff0ec; }
 .agent-status-line { display: flex; align-items: center; gap: 7px; color: #a36e2d; font-size: 11px; font-weight: 900; }
 .agent-status-dot { width: 7px; height: 7px; border-radius: 50%; background: #65a074; }
@@ -456,10 +537,13 @@ async function scrollToBottom() {
 .agent-recipe-card__topline { color: #a36e2d; }.agent-card h3 { margin: 0; font-size: 19px; line-height: 1.35; }.agent-recipe-card__summary { margin: -3px 0 0; color: #80664a; font-size: 13px; line-height: 1.6; }.agent-recipe-card__section { display: grid; gap: 6px; padding-top: 9px; border-top: 1px solid #ead9b9; }.agent-recipe-card__section > strong { font-size: 12px; }.agent-recipe-card__chips { display: flex; flex-wrap: wrap; gap: 5px; }.agent-recipe-card__chips span { padding: 4px 6px; border: 1px solid #d5b77f; color: #5d4936; background: #fff4d6; font-size: 11px; }.agent-recipe-card__section--missing p { margin: 0; color: #a45246; font-size: 12px; line-height: 1.5; }.agent-recipe-card__section ol { display: grid; gap: 7px; margin: 0; padding-left: 22px; color: #5d4936; font-size: 12px; line-height: 1.55; }.agent-recipe-card__section li span { margin-right: 4px; color: #a36e2d; font-weight: 900; }.agent-recipe-card__nutrition { padding: 7px 8px; color: #4f7660; background: #e8f1e3; font-size: 11px; font-weight: 800; }
 .agent-button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 44px; padding: 0 10px; border: 1px solid #b99562; color: #5d4936; background: #fffaf0; font: inherit; font-size: 11px; font-weight: 900; cursor: pointer; }.agent-button:hover, .agent-button:focus-visible { border-color: #4f8ca5; background: #fff4d6; outline: 2px solid #4f8ca5; outline-offset: 2px; }.agent-button--primary { border-color: #3d7866; color: #fff; background: #3d7866; }.agent-button--stop { border-color: #c75b4d; color: #9b4037; background: #fff0ec; }.agent-button--retry { min-width: 64px; color: #9b4037; background: #fff0ec; }.agent-button:disabled { opacity: .5; cursor: not-allowed; }
 .agent-confirmation__title { color: #986424; }.agent-card--confirmation-card p { margin: 0; font-size: 13px; line-height: 1.6; }.agent-card--confirmation-card small { color: #8b765c; font-size: 11px; line-height: 1.5; }
+.agent-result-detail { max-height: 220px; margin: 0; overflow: auto; padding: 9px; border: 1px solid #ead9b9; color: #5d4936; background: #fffaf0; font: 11px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 .agent-trace { color: #8b765c; font-size: 10px; }.agent-trace summary { width: max-content; color: #876c4d; cursor: pointer; }.agent-trace span { display: block; margin-top: 4px; padding-left: 10px; overflow-wrap: anywhere; }.agent-trace span::before { content: '·'; margin-right: 5px; color: #a36e2d; }
 .agent-error-actions { display: flex; justify-content: flex-start; }.agent-login-hint { display: flex; align-items: center; gap: 6px; padding: 8px 14px; border-top: 1px solid #ead9b9; color: #986424; background: #fff4d6; font-size: 11px; font-weight: 800; }
 .agent-quick-prompts { display: flex; gap: 6px; overflow-x: auto; padding: 8px 14px 10px; border-top: 1px solid #ead9b9; scrollbar-width: thin; }.agent-quick-prompt { min-height: 44px; padding: 0 9px; border: 1px solid #c8aa7b; color: #6d543d; background: #fffdf5; font: inherit; font-size: 11px; font-weight: 800; white-space: nowrap; cursor: pointer; }.agent-quick-prompt:hover, .agent-quick-prompt:focus-visible { border-color: #4f8ca5; background: #fff4d6; outline: 2px solid #4f8ca5; outline-offset: 2px; }
 .agent-composer { display: grid; gap: 6px; padding: 10px 14px; border-top: 1px solid #d6b989; background: #f5e6c3; }.agent-composer textarea { width: 100%; min-height: 58px; resize: vertical; padding: 9px 10px; border: 1px solid #b99562; border-radius: 0; color: #3b2b21; background: #fffdf5; font: inherit; font-size: 14px; line-height: 1.5; outline: none; }.agent-composer textarea:focus { border-color: #4f8ca5; box-shadow: 0 0 0 2px rgba(79,140,165,.22); }.agent-composer textarea:disabled { opacity: .65; }.agent-composer__footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: #8b765c; font-size: 10px; }.agent-send-button { display: inline-grid; width: 44px; height: 44px; place-items: center; border: 1px solid #3d7866; color: #fff; background: #3d7866; cursor: pointer; }.agent-send-button:hover, .agent-send-button:focus-visible { background: #2f6655; outline: 2px solid #4f8ca5; outline-offset: 2px; }.agent-send-button:disabled { opacity: .5; cursor: not-allowed; }
+.agent-composer__actions { display: flex; align-items: center; gap: 7px; }.agent-attach-button { display: inline-grid; width: 44px; height: 44px; place-items: center; border: 1px solid #b99562; color: #654b37; background: #fffaf0; cursor: pointer; }.agent-attach-button:hover, .agent-attach-button:focus-visible { border-color: #4f8ca5; background: #fff4d6; outline: 2px solid #4f8ca5; outline-offset: 2px; }.agent-attach-button:disabled { opacity: .5; cursor: not-allowed; }
+.agent-attachment-preview { display: grid; grid-template-columns: 48px minmax(0, 1fr) 44px; align-items: center; gap: 8px; padding: 7px; border: 1px solid #b99562; background: #fffaf0; }.agent-attachment-preview img { width: 48px; height: 48px; object-fit: cover; border: 1px solid #d6b989; }.agent-attachment-preview div { display: grid; gap: 3px; min-width: 0; }.agent-attachment-preview strong, .agent-attachment-preview small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.agent-attachment-preview strong { font-size: 12px; }.agent-attachment-preview small { color: #8b765c; font-size: 10px; }
 .agent-panel__footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 14px 9px; color: #9a8060; background: #fff8e8; font-size: 10px; }.agent-panel__footer button { border: 0; color: #9b4037; background: transparent; font: inherit; font-weight: 800; cursor: pointer; }.agent-panel__footer button:hover, .agent-panel__footer button:focus-visible { text-decoration: underline; outline: 2px solid #4f8ca5; outline-offset: 2px; }
 @keyframes agent-pulse { from { opacity: .45; transform: scale(.8); } to { opacity: 1; transform: scale(1.1); } }
 @media (max-width: 720px) { .agent-widget { left: 16px; right: 16px; bottom: max(16px, env(safe-area-inset-bottom)); } .agent-launcher { width: 100%; justify-content: flex-start; } .agent-panel { position: fixed; left: 0; right: 0; bottom: 0; width: 100%; height: min(78dvh, 760px); max-height: calc(100dvh - 18px); border-width: 2px 2px 0; border-radius: 16px 16px 0 0; z-index: 2; } .agent-backdrop { display: block; position: fixed; inset: 0; z-index: 1; background: rgba(43,33,29,.28); } .agent-messages { padding-bottom: 10px; } }

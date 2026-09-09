@@ -3,6 +3,8 @@ package com.example.food.agent;
 import com.example.food.ai.recipe.RecipeRecommendationService;
 import com.example.food.ai.recipe.dto.RecipeGenerateRequest;
 import com.example.food.ai.recipe.dto.RecipeGenerateResponse;
+import com.example.food.ai.ingredient.IngredientRecognitionService;
+import com.example.food.ai.ingredient.dto.IngredientRecognitionResponse;
 import com.example.food.ai.qwen.QwenAgentClient;
 import com.example.food.agent.dto.AgentChatRequest;
 import com.example.food.notification.NotificationService;
@@ -29,6 +31,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -40,6 +43,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -61,7 +65,9 @@ public class AgentService {
     private final AgentMessageMapper messageMapper;
     private final AgentConfirmationMapper confirmationMapper;
     private final AgentToolRegistry toolRegistry;
+    private final AgentKitchenToolService kitchenToolService;
     private final AgentWriteService writeService;
+    private final IngredientRecognitionService ingredientRecognitionService;
     private final UserPantryService pantryService;
     private final NotificationService notificationService;
     private final WeeklyMenuService weeklyMenuService;
@@ -85,7 +91,9 @@ public class AgentService {
             AgentMessageMapper messageMapper,
             AgentConfirmationMapper confirmationMapper,
             AgentToolRegistry toolRegistry,
+            AgentKitchenToolService kitchenToolService,
             AgentWriteService writeService,
+            IngredientRecognitionService ingredientRecognitionService,
             UserPantryService pantryService,
             NotificationService notificationService,
             WeeklyMenuService weeklyMenuService,
@@ -101,7 +109,9 @@ public class AgentService {
         this.messageMapper = messageMapper;
         this.confirmationMapper = confirmationMapper;
         this.toolRegistry = toolRegistry;
+        this.kitchenToolService = kitchenToolService;
         this.writeService = writeService;
+        this.ingredientRecognitionService = ingredientRecognitionService;
         this.pantryService = pantryService;
         this.notificationService = notificationService;
         this.weeklyMenuService = weeklyMenuService;
@@ -115,11 +125,16 @@ public class AgentService {
     }
 
     public SseEmitter stream(AgentChatRequest request, AuthPrincipal principal) {
+        return stream(request, principal, null);
+    }
+
+    public SseEmitter stream(AgentChatRequest request, AuthPrincipal principal, MultipartFile image) {
         requireUser(principal);
-        validateRequest(request);
+        AgentAttachment attachment = AgentAttachment.from(image);
+        validateRequest(request, attachment);
         SseEmitter emitter = new SseEmitter(STREAM_TIMEOUT_MILLIS);
         AtomicBoolean cancelled = new AtomicBoolean(false);
-        Future<?> worker = workerExecutor.submit(() -> run(emitter, cancelled, request, principal));
+        Future<?> worker = workerExecutor.submit(() -> run(emitter, cancelled, request, principal, attachment));
         Runnable cancel = () -> {
             cancelled.set(true);
             worker.cancel(true);
@@ -140,7 +155,8 @@ public class AgentService {
             SseEmitter emitter,
             AtomicBoolean cancelled,
             AgentChatRequest request,
-            AuthPrincipal principal
+            AuthPrincipal principal,
+            AgentAttachment attachment
     ) {
         AgentConversation conversation = null;
         try {
@@ -152,9 +168,10 @@ public class AgentService {
                 return;
             }
 
-            String message = normalizedMessage(request.message());
-            saveMessage(principal.id(), conversation.getId(), ROLE_USER, "text", message);
-            runAgent(emitter, cancelled, principal, conversation.getId(), message);
+            String message = normalizedMessage(request.message(), attachment);
+            String modelMessage = imageContext(emitter, cancelled, conversation.getId(), message, attachment);
+            saveMessage(principal.id(), conversation.getId(), ROLE_USER, "text", modelMessage);
+            runAgent(emitter, cancelled, principal, conversation.getId(), modelMessage, attachment);
             conversationMapper.touch(principal.id(), conversation.getId());
             sendOrCancel(emitter, cancelled, "done", Map.of("conversationId", conversation.getId()));
             emitter.complete();
@@ -180,18 +197,22 @@ public class AgentService {
             AtomicBoolean cancelled,
             AuthPrincipal principal,
             Long conversationId,
-            String userMessage
+            String userMessage,
+            AgentAttachment attachment
     ) {
         List<QwenAgentClient.ConversationMessage> messages = conversationHistory(principal.id(), conversationId);
         if (messages.isEmpty()) {
             messages.add(QwenAgentClient.ConversationMessage.user(userMessage));
         }
         int toolCallCount = 0;
-        boolean saveRequested = false;
+        boolean confirmationRequested = false;
         sendToolStarted(emitter, cancelled, "小厨灵正在理解你的需求");
 
         for (int round = 0; round < MAX_AGENT_ROUNDS; round++) {
-            QwenAgentClient.AgentTurn turn = qwenAgentClient.complete(messages, toolRegistry.functionDefinitions());
+            QwenAgentClient.AgentTurn turn = qwenAgentClient.complete(
+                    messages,
+                    toolRegistry.functionDefinitions(userMessage, attachment != null)
+            );
             messages.add(QwenAgentClient.ConversationMessage.assistant(turn));
             if (turn.toolCalls().isEmpty()) {
                 sendText(emitter, cancelled, conversationId, limit(turn.content(), 12_000));
@@ -207,15 +228,20 @@ public class AgentService {
                 JsonNode arguments = toolArguments(call.arguments());
                 sendToolStarted(emitter, cancelled, tool);
                 ToolExecution execution;
-                if (tool == AgentToolRegistry.Tool.RECIPE_SAVE && saveRequested) {
+                if ((tool == AgentToolRegistry.Tool.RECIPE_SAVE || kitchenToolService.isMutation(tool, arguments))
+                        && confirmationRequested) {
                     execution = new ToolExecution(
                             Map.of("status", "confirmation_already_requested"),
-                            "本轮已发起保存确认"
+                            "本轮已发起一项操作确认"
                     );
+                } else if (kitchenToolService.isMutation(tool, arguments)) {
+                    execution = requestActionConfirmation(
+                            emitter, cancelled, principal.id(), conversationId, tool, arguments);
                 } else {
-                    execution = executeTool(tool, arguments, emitter, cancelled, principal, conversationId, userMessage);
-                    saveRequested = saveRequested || execution.confirmationRequested();
+                    execution = executeTool(
+                            tool, arguments, emitter, cancelled, principal, conversationId, userMessage, attachment);
                 }
+                confirmationRequested = confirmationRequested || execution.confirmationRequested();
                 sendToolResult(emitter, cancelled, tool, execution.summary());
                 messages.add(QwenAgentClient.ConversationMessage.tool(call.id(), toolOutput(execution.output())));
             }
@@ -230,7 +256,8 @@ public class AgentService {
             AtomicBoolean cancelled,
             AuthPrincipal principal,
             Long conversationId,
-            String userMessage
+            String userMessage,
+            AgentAttachment attachment
     ) {
         return switch (tool) {
             case PANTRY_LIST -> pantry(emitter, cancelled, principal.id(), conversationId);
@@ -241,6 +268,9 @@ public class AgentService {
             case NUTRITION_PROFILE -> nutrition(emitter, cancelled, principal.id(), conversationId);
             case RECIPE_GENERATE -> recipe(emitter, cancelled, principal, conversationId, userMessage, arguments);
             case RECIPE_SAVE -> requestSave(emitter, cancelled, principal.id(), conversationId);
+            case CURRENT_DATETIME, PANTRY_MANAGE, NOTIFICATION_MANAGE, MEAL_PLAN_MANAGE,
+                    RECIPE_LIBRARY_MANAGE, PROFILE_MANAGE, FINISHED_DISH_MANAGE ->
+                    kitchenTool(emitter, cancelled, principal, conversationId, tool, arguments, attachment);
         };
     }
 
@@ -280,6 +310,97 @@ public class AgentService {
         }
     }
 
+    private ToolExecution kitchenTool(
+            SseEmitter emitter,
+            AtomicBoolean cancelled,
+            AuthPrincipal principal,
+            Long conversationId,
+            AgentToolRegistry.Tool tool,
+            JsonNode arguments,
+            AgentAttachment attachment
+    ) {
+        AgentKitchenToolService.ToolResult result = kitchenToolService.execute(tool, arguments, principal, attachment);
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("title", result.title());
+        payload.put("summary", result.summary());
+        payload.put("detail", result.payload());
+        sendCard(emitter, cancelled, conversationId, result.cardType(), payload, "来自当前账号 · 刚刚查询");
+        return new ToolExecution(payload, result.summary());
+    }
+
+    private ToolExecution requestActionConfirmation(
+            SseEmitter emitter,
+            AtomicBoolean cancelled,
+            Long userId,
+            Long conversationId,
+            AgentToolRegistry.Tool tool,
+            JsonNode arguments
+    ) {
+        String actionType = kitchenToolService.actionType(tool, arguments);
+        JsonNode payload = kitchenToolService.actionPayload(arguments);
+        AgentConfirmation confirmation = new AgentConfirmation();
+        confirmation.setConversationId(conversationId);
+        confirmation.setUserId(userId);
+        confirmation.setActionType(actionType);
+        confirmation.setIdempotencyKey(UUID.randomUUID().toString().replace("-", ""));
+        confirmation.setPayloadJson(toolOutput(payload));
+        confirmation.setStatus("PENDING");
+        confirmation.setCreatedAt(LocalDateTime.now());
+        confirmationMapper.insert(confirmation);
+
+        Map<String, Object> event = new LinkedHashMap<>();
+        event.put("confirmationId", confirmation.getId());
+        event.put("idempotencyKey", confirmation.getIdempotencyKey());
+        event.put("actionType", actionType);
+        event.put("title", tool.label());
+        event.put("impact", kitchenToolService.impact(tool, arguments));
+        event.put("actionLabel", "确认执行");
+        event.put("cancelLabel", "暂不执行");
+        event.put("expiresInMinutes", 30);
+        sendOrCancel(emitter, cancelled, "confirmation.required", event);
+        saveMessage(null, conversationId, ROLE_ASSISTANT, "confirmation-card", payloadForMessage("confirmation-card", event));
+        return new ToolExecution(
+                Map.of("status", "confirmation_required", "actionType", actionType, "expiresInMinutes", 30),
+                "已发起操作确认",
+                true
+        );
+    }
+
+    private String imageContext(
+            SseEmitter emitter,
+            AtomicBoolean cancelled,
+            Long conversationId,
+            String message,
+            AgentAttachment attachment
+    ) {
+        if (attachment == null) {
+            return message;
+        }
+        String normalized = message.toLowerCase(Locale.ROOT);
+        if (containsAny(normalized, "成品", "摆盘", "火候", "打分", "评价", "复盘", "做完")) {
+            Map<String, Object> payload = Map.of(
+                    "title", "已收到成品图片",
+                    "summary", "图片会在本轮成品评价中使用",
+                    "detail", Map.of("filename", attachment.originalFilename(), "contentType", attachment.contentType())
+            );
+            sendCard(emitter, cancelled, conversationId, "attachment-card", payload, "来自本轮对话附件");
+            return message + "\n\n[系统补充：用户本轮附带了一张成品图片，可调用 finished_dish_manage 的 review 动作。]";
+        }
+
+        IngredientRecognitionResponse recognition = ingredientRecognitionService.recognize(attachment.asMultipartFile());
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("title", "图片食材识别");
+        payload.put("summary", recognition.description());
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("ingredients", recognition.ingredients());
+        detail.put("provider", recognition.provider());
+        detail.put("model", recognition.model());
+        payload.put("detail", detail);
+        sendCard(emitter, cancelled, conversationId, "image-recognition-card", payload, "来自本轮对话附件 · 刚刚识别");
+        return message + "\n\n[图片识别结果：" + String.join("、", recognition.ingredients())
+                + "。识别说明：" + recognition.description() + "]";
+    }
+
     private void handleConfirmation(
             SseEmitter emitter,
             AtomicBoolean cancelled,
@@ -288,24 +409,27 @@ public class AgentService {
             AgentChatRequest request
     ) {
         if (request.idempotencyKey() == null || request.idempotencyKey().isBlank()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "确认保存需要幂等凭证");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "确认操作需要幂等凭证");
         }
         AgentConfirmation confirmation = confirmationMapper.findOwned(principal.id(), request.confirmationId());
         if (confirmation == null || !conversation.getId().equals(confirmation.getConversationId())) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "保存确认已失效");
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "操作确认已失效");
         }
-        sendToolStatus(emitter, cancelled, "小厨灵正在执行已确认的保存操作");
-        AgentWriteService.ConfirmationResult result = writeService.saveRecipe(
+        sendToolStatus(emitter, cancelled, "小厨灵正在执行已确认的操作");
+        AgentWriteService.ConfirmationResult result = writeService.execute(
                 principal,
                 request.confirmationId(),
                 request.idempotencyKey().trim()
         );
-        if (result.detail() != null) {
-            sendText(emitter, cancelled, conversation.getId(), result.message());
-            sendRecipeCard(emitter, cancelled, conversation.getId(), result.detail().recipe(),
-                    "来自我的菜谱收藏 · 刚刚保存");
+        sendText(emitter, cancelled, conversation.getId(), result.message());
+        if (result.detail() instanceof RecipeHistoryDetailResponse detail) {
+            sendRecipeCard(emitter, cancelled, conversation.getId(), detail.recipe(), "来自我的菜谱收藏 · 刚刚保存");
         } else {
-            sendText(emitter, cancelled, conversation.getId(), result.message());
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("title", "操作完成");
+            payload.put("summary", result.message());
+            payload.put("detail", result.detail());
+            sendCard(emitter, cancelled, conversation.getId(), "operation-result-card", payload, "来自当前账号 · 刚刚更新");
         }
         conversationMapper.touch(principal.id(), conversation.getId());
         sendOrCancel(emitter, cancelled, "done", Map.of("conversationId", conversation.getId()));
@@ -458,7 +582,8 @@ public class AgentService {
         List<String> expiringNames = expirySummary.expiringSoonItems().stream()
                 .map(PantryItemResponse::ingredientName).distinct().toList();
         String requested = textArgument(arguments, "request", userMessage);
-        boolean useExpiring = arguments.path("prefer_expiring").asBoolean(false)
+        boolean useExpiring = arguments.path("prioritize_expiring").asBoolean(false)
+                || arguments.path("prefer_expiring").asBoolean(false)
                 || containsAny(requested.toLowerCase(Locale.ROOT), "快过期", "临期", "用它们", "用这些");
         String requestedIngredients = useExpiring && !expiringNames.isEmpty()
                 ? String.join("、", expiringNames)
@@ -473,7 +598,7 @@ public class AgentService {
         RecipeGenerateRequest request = new RecipeGenerateRequest(
                 limit(requestedIngredients, 240),
                 mealTypeArgument(arguments, requested),
-                "balanced",
+                goalArgument(arguments, preference.defaultGoal()),
                 "agent",
                 null,
                 null,
@@ -655,18 +780,21 @@ public class AgentService {
         }
     }
 
-    private String normalizedMessage(String value) {
+    private String normalizedMessage(String value, AgentAttachment attachment) {
         if (!StringUtils.hasText(value)) {
+            if (attachment != null) {
+                return "请识别这张图片中的食材，并告诉我可以怎么处理";
+            }
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "请先输入想问的内容");
         }
         return limit(value.trim(), MAX_MESSAGE_LENGTH);
     }
 
-    private void validateRequest(AgentChatRequest request) {
+    private void validateRequest(AgentChatRequest request, AgentAttachment attachment) {
         if (request == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "助手请求不能为空");
         }
-        if (request.confirmationId() == null && !StringUtils.hasText(request.message())) {
+        if (request.confirmationId() == null && !StringUtils.hasText(request.message()) && attachment == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "请先输入想问的内容");
         }
     }
@@ -700,6 +828,16 @@ public class AgentService {
             return value;
         }
         return mealType(fallbackText == null ? "" : fallbackText);
+    }
+
+    private String goalArgument(JsonNode arguments, String fallback) {
+        String value = arguments.path("goal").asText("").trim().toLowerCase(Locale.ROOT);
+        if (Set.of("balanced", "fat_loss", "muscle_gain", "low_sugar").contains(value)) {
+            return value;
+        }
+        return Set.of("balanced", "fat_loss", "muscle_gain", "low_sugar").contains(fallback)
+                ? fallback
+                : "balanced";
     }
 
     private String mealType(String message) {

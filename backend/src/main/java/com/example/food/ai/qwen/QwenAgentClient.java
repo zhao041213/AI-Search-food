@@ -18,17 +18,25 @@ import org.springframework.web.client.RestTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Duration;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 @Component
 public class QwenAgentClient {
 
+    private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Shanghai");
+    private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy年M月d日 EEEE HH:mm:ss z", Locale.CHINA);
     private static final String SYSTEM_PROMPT = """
             你是“小厨灵”，一个中文家庭厨房智能助手。
             你的职责是理解用户目标，自主选择已提供的工具，并根据真实工具结果回答。
+
+            当前服务器时间：%s。
 
             必须遵守：
             1. 查询库存、临期、提醒、周菜单、收藏或营养信息时必须调用对应工具，不得编造。
@@ -37,6 +45,8 @@ public class QwenAgentClient {
             4. 只能调用 tools 中声明的函数，工具参数必须符合 JSON Schema。
             5. 工具返回错误时如实说明，不要假装执行成功。
             6. 回答简洁、友好，使用中文；营养内容仅作一般饮食参考，不作医疗判断。
+            7. 普通知识、闲聊、日期时间等不需要厨房数据的问题直接回答，不要强行调用工具。
+            8. 任何会修改用户数据的工具只会创建确认请求；必须等待用户在确认卡片中确认后才能执行。
             """;
 
     private final RestTemplate restTemplate;
@@ -111,7 +121,7 @@ public class QwenAgentClient {
             AiModelRuntimeConfig runtimeConfig
     ) {
         List<Map<String, Object>> messages = new ArrayList<>();
-        messages.add(Map.of("role", "system", "content", SYSTEM_PROMPT));
+        messages.add(Map.of("role", "system", "content", systemPrompt()));
         if (conversation != null) {
             conversation.forEach(message -> messages.add(message.toPayload()));
         }
@@ -119,11 +129,17 @@ public class QwenAgentClient {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", runtimeConfig.modelName());
         body.put("messages", messages);
-        body.put("tools", tools == null ? List.of() : tools);
-        body.put("tool_choice", "auto");
-        body.put("parallel_tool_calls", false);
+        if (tools != null && !tools.isEmpty()) {
+            body.put("tools", tools);
+            body.put("tool_choice", "auto");
+            body.put("parallel_tool_calls", false);
+        }
         body.put("temperature", 0.2);
         return body;
+    }
+
+    private String systemPrompt() {
+        return SYSTEM_PROMPT.formatted(ZonedDateTime.now(BUSINESS_ZONE).format(TIME_FORMATTER));
     }
 
     private HttpHeaders headers(AiModelRuntimeConfig runtimeConfig) {

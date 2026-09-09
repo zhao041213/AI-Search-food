@@ -11,7 +11,9 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @RestController
@@ -24,7 +26,7 @@ public class AgentController {
         this.agentService = agentService;
     }
 
-    @PostMapping(value = "/chat/stream", produces = {
+    @PostMapping(value = "/chat/stream", consumes = MediaType.APPLICATION_JSON_VALUE, produces = {
             MediaType.TEXT_EVENT_STREAM_VALUE,
             MediaType.APPLICATION_JSON_VALUE
     })
@@ -33,6 +35,18 @@ public class AgentController {
             @AuthenticationPrincipal AuthPrincipal principal
     ) {
         return agentService.stream(request, principal);
+    }
+
+    @PostMapping(value = "/chat/stream", consumes = MediaType.MULTIPART_FORM_DATA_VALUE, produces = {
+            MediaType.TEXT_EVENT_STREAM_VALUE,
+            MediaType.APPLICATION_JSON_VALUE
+    })
+    public SseEmitter streamWithImage(
+            @Valid @RequestPart("request") AgentChatRequest request,
+            @RequestPart("image") MultipartFile image,
+            @AuthenticationPrincipal AuthPrincipal principal
+    ) {
+        return agentService.stream(request, principal, image);
     }
 
     @DeleteMapping("/conversations/{conversationId}")

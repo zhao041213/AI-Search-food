@@ -20,6 +20,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
@@ -36,6 +37,9 @@ class AgentWriteServiceTest {
     private SavedRecipeService savedRecipeService;
 
     @Mock
+    private AgentKitchenActionService actionService;
+
+    @Mock
     private UserSecurityLogService securityLogService;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -44,7 +48,7 @@ class AgentWriteServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new AgentWriteService(confirmationMapper, savedRecipeService, securityLogService, objectMapper);
+        service = new AgentWriteService(confirmationMapper, savedRecipeService, actionService, securityLogService, objectMapper);
     }
 
     @Test
@@ -60,14 +64,14 @@ class AgentWriteServiceTest {
 
         AgentWriteService.ConfirmationResult result = service.saveRecipe(principal, 9L, "key-9");
 
-        assertThat(result.status()).isEqualTo("saved");
+        assertThat(result.status()).isEqualTo("completed");
         assertThat(result.detail()).isEqualTo(detail);
         ArgumentCaptor<SaveRecipeRequest> request = ArgumentCaptor.forClass(SaveRecipeRequest.class);
         verify(savedRecipeService).save(request.capture(), eq(principal), isNull());
         assertThat(request.getValue().searchLogId()).isEqualTo(42L);
         assertThat(request.getValue().title()).isEqualTo("番茄炒蛋");
         verify(confirmationMapper).markConfirmed(7L, 9L);
-        verify(securityLogService).record(7L, "AGENT_SAVE_RECIPE", "/api/agent/chat/stream", "confirmationId=9, recipeId=88");
+        verify(securityLogService).record(7L, "AGENT_SAVE_RECIPE", "/api/agent/chat/stream", "confirmationId=9");
     }
 
     @Test
@@ -77,9 +81,26 @@ class AgentWriteServiceTest {
 
         AgentWriteService.ConfirmationResult result = service.saveRecipe(principal, 9L, "key-9");
 
-        assertThat(result.status()).isEqualTo("already-saved");
+        assertThat(result.status()).isEqualTo("already-completed");
         verify(confirmationMapper, never()).claim(7L, 9L);
         verify(savedRecipeService, never()).save(any(), any(), any());
+    }
+
+    @Test
+    void executesGenericKitchenActionOnlyAfterAtomicClaim() {
+        AgentConfirmation confirmation = confirmation("PENDING", "{\"id\":12}");
+        confirmation.setActionType("PANTRY_DELETE");
+        when(confirmationMapper.findOwned(7L, 9L)).thenReturn(confirmation);
+        when(confirmationMapper.claim(7L, 9L)).thenReturn(1);
+        when(actionService.execute(eq("PANTRY_DELETE"), any(), eq(principal), anyString()))
+                .thenReturn(new AgentKitchenActionService.ActionResult("食材已删除", null));
+
+        AgentWriteService.ConfirmationResult result = service.execute(principal, 9L, "key-9");
+
+        assertThat(result.status()).isEqualTo("completed");
+        assertThat(result.message()).isEqualTo("食材已删除");
+        verify(confirmationMapper).markConfirmed(7L, 9L);
+        verify(securityLogService).record(7L, "AGENT_PANTRY_DELETE", "/api/agent/chat/stream", "confirmationId=9");
     }
 
     private AgentConfirmation confirmation(String status, String payload) {
