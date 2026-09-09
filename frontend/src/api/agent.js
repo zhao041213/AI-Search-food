@@ -1,0 +1,97 @@
+import { useAuthStore } from '../stores/auth.js'
+import { getAnonymousId } from '../utils/anonymousId.js'
+import { http } from './http.js'
+
+export async function streamAgentChat(payload, { image, onEvent, signal } = {}) {
+  const auth = useAuthStore()
+  const headers = {
+    Accept: 'text/event-stream',
+    'X-Anonymous-Id': getAnonymousId()
+  }
+  if (auth.token) {
+    headers.Authorization = `Bearer ${auth.token}`
+  }
+
+  let body
+  if (image) {
+    body = new FormData()
+    body.append('request', new Blob([JSON.stringify(payload)], { type: 'application/json' }))
+    body.append('image', image)
+  } else {
+    headers['Content-Type'] = 'application/json'
+    body = JSON.stringify(payload)
+  }
+
+  const response = await fetch('/api/agent/chat/stream', {
+    method: 'POST',
+    headers,
+    body,
+    signal
+  })
+  if (!response.ok) {
+    let message = response.status === 401 ? '请先登录普通用户账号' : '小厨灵暂时无法回应，请稍后重试'
+    try {
+      const body = await response.json()
+      message = body?.message || message
+    } catch {
+      // The status-specific fallback is enough when the server closes early.
+    }
+    const error = new Error(message)
+    error.status = response.status
+    throw error
+  }
+  if (!response.body) {
+    throw new Error('浏览器没有提供流式响应，请刷新后重试')
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let eventName = 'message'
+  let dataLines = []
+
+  const flush = () => {
+    if (!dataLines.length) return
+    const rawData = dataLines.join('\n')
+    let data = rawData
+    try {
+      data = JSON.parse(rawData)
+    } catch {
+      // Keep non-JSON event payloads readable for future server events.
+    }
+    onEvent?.({ type: eventName, data })
+    eventName = 'message'
+    dataLines = []
+  }
+
+  const consume = (chunk) => {
+    buffer += chunk
+    const blocks = buffer.split(/\r?\n\r?\n/)
+    buffer = blocks.pop() || ''
+    blocks.forEach((block) => {
+      block.split(/\r?\n/).forEach((line) => {
+        if (line.startsWith('event:')) eventName = line.slice(6).trim()
+        if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart())
+      })
+      flush()
+    })
+  }
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    consume(decoder.decode(value, { stream: true }))
+  }
+  consume(decoder.decode())
+  if (buffer.trim()) {
+    buffer.split(/\r?\n/).forEach((line) => {
+      if (line.startsWith('event:')) eventName = line.slice(6).trim()
+      if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart())
+    })
+    flush()
+  }
+}
+
+export function deleteAgentConversation(conversationId) {
+  return http.delete(`/agent/conversations/${conversationId}`)
+}

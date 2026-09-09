@@ -1,5 +1,8 @@
 package com.example.food.security;
 
+import com.example.food.agent.AgentController;
+import com.example.food.agent.AgentService;
+import com.example.food.agent.dto.AgentChatRequest;
 import com.example.food.common.ApiResponse;
 import com.example.food.stats.HotIngredientStatsController;
 import com.example.food.stats.HotIngredientStatsService;
@@ -14,22 +17,30 @@ import com.example.food.user.preference.dto.DietPreferenceResponse;
 import com.example.food.video.VideoSearchController;
 import com.example.food.video.VideoSearchService;
 import com.example.food.video.dto.VideoSearchResponse;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(controllers = {
@@ -37,13 +48,17 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         HotIngredientStatsController.class,
         UserDietPreferenceController.class,
         IngredientImageController.class,
-        VideoSearchController.class
+        VideoSearchController.class,
+        AgentController.class
 })
 @Import(SecurityConfig.class)
 class SecurityConfigTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     @MockBean
     private JwtService jwtService;
@@ -62,6 +77,9 @@ class SecurityConfigTest {
 
     @MockBean
     private VideoSearchService videoSearchService;
+
+    @MockBean
+    private AgentService agentService;
 
     @Test
     void unauthenticatedProtectedEndpointReturnsJsonUnauthorized() throws Exception {
@@ -177,6 +195,81 @@ class SecurityConfigTest {
                         .header("Authorization", "Bearer user-token"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.taste").value("any"));
+    }
+
+    @Test
+    void unauthenticatedAgentStreamRequestIsRejected() throws Exception {
+        mockMvc.perform(post("/api/agent/chat/stream")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"message\":\"我的食材\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(401));
+    }
+
+    @Test
+    void unauthenticatedAgentMultipartStreamRequestIsRejected() throws Exception {
+        MockMultipartFile request = new MockMultipartFile(
+                "request",
+                "request.json",
+                MediaType.APPLICATION_JSON_VALUE,
+                "{\"message\":\"识别这张图片\"}".getBytes()
+        );
+        MockMultipartFile image = new MockMultipartFile(
+                "image",
+                "food.png",
+                MediaType.IMAGE_PNG_VALUE,
+                new byte[]{1, 2, 3}
+        );
+
+        mockMvc.perform(multipart("/api/agent/chat/stream")
+                        .file(request)
+                        .file(image))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(401));
+    }
+
+    @Test
+    void authenticatedUserCanStartAgentMultipartStream() throws Exception {
+        when(jwtService.parseToken("user-token"))
+                .thenReturn(new AuthPrincipal(7L, "13800138000", AppRole.USER));
+        when(agentService.stream(
+                any(AgentChatRequest.class),
+                any(AuthPrincipal.class),
+                any(MultipartFile.class)
+        )).thenReturn(new SseEmitter());
+        MockMultipartFile requestPart = new MockMultipartFile(
+                "request",
+                "request.json",
+                MediaType.APPLICATION_JSON_VALUE,
+                objectMapper.writeValueAsBytes(new AgentChatRequest(
+                        null, "识别这张图片", null, null
+                ))
+        );
+        MockMultipartFile image = new MockMultipartFile(
+                "image",
+                "food.png",
+                MediaType.IMAGE_PNG_VALUE,
+                new byte[]{1, 2, 3}
+        );
+
+        mockMvc.perform(multipart("/api/agent/chat/stream")
+                        .file(requestPart)
+                        .file(image)
+                        .header("Authorization", "Bearer user-token"))
+                .andExpect(request().asyncStarted());
+    }
+
+    @Test
+    void adminCannotUseAgentStream() throws Exception {
+        when(jwtService.parseToken("admin-token"))
+                .thenReturn(new AuthPrincipal(1L, "admin", AppRole.ADMIN));
+
+        mockMvc.perform(post("/api/agent/chat/stream")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"message\":\"我的食材\"}")
+                        .header("Authorization", "Bearer admin-token"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403));
     }
 
     @RestController
