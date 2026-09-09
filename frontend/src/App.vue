@@ -119,6 +119,7 @@
             <span>管理后台</span>
           </a>
         </RouterLink>
+        <KitchenAgentWidget v-if="route.name !== 'login' && !auth.isAdmin" />
       </aside>
 
       <el-main class="app-main">
@@ -181,6 +182,7 @@ import { Bell, CircleAlert, ClipboardList, Flame, Gauge, Home, LogIn, LogOut, Pa
 import { useRoute, useRouter } from 'vue-router'
 import { getUnreadNotificationCount } from './api/notifications'
 import { getMyAccount, loadMyAvatar } from './api/userAccount'
+import KitchenAgentWidget from './components/KitchenAgentWidget.vue'
 import { useAuthStore } from './stores/auth'
 import { useKitchenStore } from './stores/kitchen'
 import {

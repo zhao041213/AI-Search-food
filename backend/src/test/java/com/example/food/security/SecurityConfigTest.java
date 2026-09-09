@@ -1,5 +1,7 @@
 package com.example.food.security;
 
+import com.example.food.agent.AgentController;
+import com.example.food.agent.AgentService;
 import com.example.food.common.ApiResponse;
 import com.example.food.stats.HotIngredientStatsController;
 import com.example.food.stats.HotIngredientStatsService;
@@ -28,6 +30,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -37,7 +40,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         HotIngredientStatsController.class,
         UserDietPreferenceController.class,
         IngredientImageController.class,
-        VideoSearchController.class
+        VideoSearchController.class,
+        AgentController.class
 })
 @Import(SecurityConfig.class)
 class SecurityConfigTest {
@@ -62,6 +66,9 @@ class SecurityConfigTest {
 
     @MockBean
     private VideoSearchService videoSearchService;
+
+    @MockBean
+    private AgentService agentService;
 
     @Test
     void unauthenticatedProtectedEndpointReturnsJsonUnauthorized() throws Exception {
@@ -177,6 +184,28 @@ class SecurityConfigTest {
                         .header("Authorization", "Bearer user-token"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.taste").value("any"));
+    }
+
+    @Test
+    void unauthenticatedAgentStreamRequestIsRejected() throws Exception {
+        mockMvc.perform(post("/api/agent/chat/stream")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"message\":\"我的食材\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(401));
+    }
+
+    @Test
+    void adminCannotUseAgentStream() throws Exception {
+        when(jwtService.parseToken("admin-token"))
+                .thenReturn(new AuthPrincipal(1L, "admin", AppRole.ADMIN));
+
+        mockMvc.perform(post("/api/agent/chat/stream")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"message\":\"我的食材\"}")
+                        .header("Authorization", "Bearer admin-token"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403));
     }
 
     @RestController
