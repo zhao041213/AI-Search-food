@@ -93,7 +93,7 @@ rollback the last modification made by the agent:
 ## Git And GitHub Rules
 
 - Before adding a feature, fixing a bug, adding or changing tests, or making other implementation changes, create and work on a dedicated branch. Do not make these changes directly on `main`.
-- Use concise, descriptive branch names that make the purpose clear. Use a type prefix and lowercase hyphen-separated words, such as `feature/ingredient-image-cache`, `fix/eggplant-image`, or `test/recipe-search-coverage`.
+- Use concise, descriptive branch names that make the purpose clear. Keep a professional type prefix such as `feature/`, `fix/`, `chore/`, `docs/`, or `test/`; write non-technical business and feature terms in Chinese, and keep English only for established technical terms, identifiers, or tool-required names. Examples: `feature/用户密码登录`, `fix/首页响应式布局`, or `docs/更新项目说明`.
 - Git worktrees are not used in this project. Keep all work in the current `D:\AI-Search-food` directory and use dedicated branches for code changes; never modify `main` directly.
 - Non-code activities, including downloading or installing skills, reading documentation, repository inspection, and other setup work, may use the current worktree without creating a new one.
 - Do not commit unless the user explicitly approves.
