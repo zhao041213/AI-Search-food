@@ -127,50 +127,6 @@
       </el-main>
     </el-container>
 
-    <div class="floating-theme-control">
-      <el-popover
-        placement="top-end"
-        trigger="click"
-        :width="320"
-        popper-class="theme-popover"
-      >
-        <template #reference>
-          <button class="theme-trigger" type="button" aria-label="主题设置">
-            <Palette :size="16" aria-hidden="true" />
-            <span>{{ activeThemeLabel }}</span>
-          </button>
-        </template>
-
-        <div class="theme-panel">
-          <div class="theme-panel-head">
-            <strong>主题设置</strong>
-            <span>选择后立即保存到本地</span>
-          </div>
-
-          <button
-            v-for="theme in themeOptions"
-            :key="theme.key"
-            class="theme-option"
-            :class="{ active: theme.key === activeTheme }"
-            type="button"
-            :aria-pressed="theme.key === activeTheme"
-            @click="setTheme(theme.key)"
-          >
-            <span class="theme-swatch" aria-hidden="true">
-              <i
-                v-for="color in theme.preview"
-                :key="color"
-                :style="{ background: color }"
-              />
-            </span>
-            <span class="theme-option-copy">
-              <strong>{{ theme.label }}</strong>
-              <em>{{ theme.description }}</em>
-            </span>
-          </button>
-        </div>
-      </el-popover>
-    </div>
     </el-container>
   </el-config-provider>
 </template>
@@ -178,7 +134,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
-import { Bell, CircleAlert, ClipboardList, Flame, Gauge, Home, LogIn, LogOut, Palette, Settings, ShieldCheck, Users, UserCircle, Utensils } from 'lucide-vue-next'
+import { Bell, CircleAlert, ClipboardList, Flame, Gauge, Home, LogIn, LogOut, Settings, ShieldCheck, Users, UserCircle, Utensils } from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
 import { getUnreadNotificationCount } from './api/notifications'
 import { getMyAccount, loadMyAvatar } from './api/userAccount'
@@ -202,12 +158,9 @@ import {
 } from './utils/kitchenFeatures'
 
 const RECIPE_THEME_KEY = 'ai-recipe-theme'
-const themeOptions = [
+const themeConfigs = [
   {
     key: 'business',
-    label: '专业商务',
-    description: '深蓝、蓝绿与琥珀金，适合企业和 SaaS',
-    preview: ['#1E3A5F', '#4A90A4', '#E8B339', '#F5F7FA'],
     variables: {
       '--app-bg': '#F5F7FA',
       '--app-surface': '#FFFFFF',
@@ -235,9 +188,6 @@ const themeOptions = [
   },
   {
     key: 'minimal',
-    label: '现代极简',
-    description: '近黑、中灰与翠绿，适合作品集和展示页',
-    preview: ['#111827', '#6B7280', '#10B981', '#FFFFFF'],
     variables: {
       '--app-bg': '#FFFFFF',
       '--app-surface': '#FFFFFF',
@@ -265,9 +215,6 @@ const themeOptions = [
   },
   {
     key: 'warm',
-    label: '温暖活力',
-    description: '赭石、亮橙与青绿，适合促销和电商',
-    preview: ['#C05621', '#ED8936', '#38B2AC', '#FFFAF0'],
     variables: {
       '--app-bg': '#FFFAF0',
       '--app-surface': '#FFFFFF',
@@ -295,9 +242,6 @@ const themeOptions = [
   },
   {
     key: 'tech-dark',
-    label: '科技深色',
-    description: '深蓝黑与亮蓝，适合仪表盘和深色模式',
-    preview: ['#0B1120', '#0F172A', '#3B82F6', '#E5E7EB'],
     variables: {
       '--app-bg': '#0B1120',
       '--app-surface': '#0F172A',
@@ -325,9 +269,6 @@ const themeOptions = [
   },
   {
     key: 'youth',
-    label: '年轻活泼',
-    description: '珊瑚红与蒂芙尼蓝，适合社交移动产品',
-    preview: ['#FF6B6B', '#4ECDC4', '#F7F9FC', '#263238'],
     variables: {
       '--app-bg': '#F7F9FC',
       '--app-surface': '#FFFFFF',
@@ -380,9 +321,8 @@ const activeTheme = ref(getInitialTheme())
 const headerAvatarUrl = ref('')
 const roleDisplay = computed(() => ({ ADMIN: '管理员', USER: '普通用户' })[auth.role] || auth.role)
 const activeThemeConfig = computed(
-  () => themeOptions.find((theme) => theme.key === activeTheme.value) || themeOptions[0]
+  () => themeConfigs.find((theme) => theme.key === activeTheme.value) || themeConfigs[0]
 )
-const activeThemeLabel = computed(() => activeThemeConfig.value.label)
 const notificationUnreadCount = ref(0)
 let headerAvatarRequestId = 0
 let notificationCountTimer = null
@@ -502,17 +442,11 @@ function clearNotificationCountTimer() {
 
 function getInitialTheme() {
   if (typeof window === 'undefined') {
-    return themeOptions[0].key
+    return themeConfigs[0].key
   }
 
   const savedTheme = window.localStorage.getItem(RECIPE_THEME_KEY)
-  return themeOptions.some((theme) => theme.key === savedTheme) ? savedTheme : themeOptions[0].key
-}
-
-function setTheme(themeKey) {
-  if (themeOptions.some((theme) => theme.key === themeKey)) {
-    activeTheme.value = themeKey
-  }
+  return themeConfigs.some((theme) => theme.key === savedTheme) ? savedTheme : themeConfigs[0].key
 }
 
 function applyTheme(theme) {
@@ -678,18 +612,6 @@ function applyTheme(theme) {
 
 :global(.el-empty__description p) {
   color: var(--app-text-muted);
-}
-
-:global(.theme-popover.el-popper) {
-  border-color: var(--app-line);
-  background: var(--app-surface-strong);
-  color: var(--app-text);
-  box-shadow: var(--app-panel-shadow);
-}
-
-:global(.theme-popover .el-popper__arrow::before) {
-  border-color: var(--app-line);
-  background: var(--app-surface-strong);
 }
 
 .app-shell {
@@ -886,125 +808,6 @@ function applyTheme(theme) {
   font-weight: 700;
 }
 
-.floating-theme-control {
-  position: fixed;
-  right: clamp(16px, 2.8vw, 36px);
-  bottom: clamp(16px, 3vw, 32px);
-  z-index: 40;
-}
-
-.theme-trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 44px;
-  padding: 0 14px;
-  border: 1px solid var(--app-line-strong);
-  border-radius: 999px;
-  color: var(--app-text);
-  background: var(--app-surface);
-  font: inherit;
-  font-size: 14px;
-  font-weight: 800;
-  cursor: pointer;
-  box-shadow: 0 10px 26px rgba(38, 50, 56, 0.14);
-  transition:
-    border-color 180ms ease,
-    background-color 180ms ease,
-    color 180ms ease;
-}
-
-.theme-trigger:hover,
-.theme-trigger:focus-visible {
-  border-color: var(--app-accent);
-  background: var(--app-surface-strong);
-  outline: 2px solid var(--app-text-muted);
-  outline-offset: 2px;
-}
-
-.theme-panel {
-  display: grid;
-  gap: 10px;
-}
-
-.theme-panel-head {
-  display: grid;
-  gap: 4px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--app-line);
-}
-
-.theme-panel-head strong {
-  color: var(--app-text);
-  font-size: 16px;
-}
-
-.theme-panel-head span {
-  color: var(--app-text-muted);
-  font-size: 13px;
-}
-
-.theme-option {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  min-height: 64px;
-  padding: 10px;
-  border: 1px solid var(--app-line);
-  border-radius: 8px;
-  color: var(--app-text);
-  background: var(--app-surface);
-  text-align: left;
-  cursor: pointer;
-  transition:
-    border-color 180ms ease,
-    background-color 180ms ease;
-}
-
-.theme-option:hover,
-.theme-option:focus-visible,
-.theme-option.active {
-  border-color: var(--app-accent);
-  background: var(--app-surface-soft);
-  outline: none;
-}
-
-.theme-swatch {
-  display: grid;
-  grid-template-columns: repeat(4, 14px);
-  overflow: hidden;
-  border: 1px solid var(--app-line-strong);
-  border-radius: 999px;
-}
-
-.theme-swatch i {
-  display: block;
-  width: 14px;
-  height: 30px;
-}
-
-.theme-option-copy {
-  display: grid;
-  gap: 3px;
-  min-width: 0;
-}
-
-.theme-option-copy strong {
-  color: var(--app-text);
-  font-size: 14px;
-}
-
-.theme-option-copy em {
-  overflow: hidden;
-  color: var(--app-text-muted);
-  font-size: 12px;
-  font-style: normal;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .app-main {
   padding: 0;
   min-width: 0;
@@ -1144,10 +947,6 @@ function applyTheme(theme) {
 
   .account {
     min-width: auto;
-  }
-
-  .theme-trigger span {
-    display: none;
   }
 
   .account-name {
