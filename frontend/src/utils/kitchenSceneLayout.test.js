@@ -6,12 +6,16 @@ const sceneSource = fs.readFileSync(new URL('../components/kitchen/KitchenScene.
 const worldSource = fs.readFileSync(new URL('../views/KitchenWorldView.vue', import.meta.url), 'utf8')
 const windowSource = fs.readFileSync(new URL('../components/kitchen/SceneWindow.vue', import.meta.url), 'utf8')
 const homeSource = fs.readFileSync(new URL('../views/HomeView.vue', import.meta.url), 'utf8')
+const appSource = fs.readFileSync(new URL('../App.vue', import.meta.url), 'utf8')
 
-test('厨房场景外部几何常量保持不变', () => {
-  assert.match(sceneSource, /const SCENE_HEIGHT = 760/)
-  assert.match(sceneSource, /const MIN_SCENE_WIDTH = 1080/)
-  assert.match(sceneSource, /height: SCENE_HEIGHT/)
-  assert.match(worldSource, /max-width: 1520px/)
+test('厨房场景使用统一设计尺寸并按工作区宽高等比缩放', () => {
+  assert.match(sceneSource, /const DESIGN_WIDTH = 1520/)
+  assert.match(sceneSource, /const DESIGN_HEIGHT = 760/)
+  assert.match(sceneSource, /availableWidth \/ DESIGN_WIDTH/)
+  assert.match(sceneSource, /availableHeight \/ DESIGN_HEIGHT/)
+  assert.match(sceneSource, /new ResizeObserver\(fitScene\)/)
+  assert.match(sceneSource, /app\.stage\.scale\.set\(fittedScale\)/)
+  assert.doesNotMatch(sceneSource, /MIN_SCENE_WIDTH/)
   assert.match(windowSource, /height: min\(760px/)
 })
 
@@ -51,7 +55,7 @@ test('像素布景配置覆盖七个区域的关键家具', () => {
 
   assert.match(sceneSource, /drawHeroRoom\(staticLayer, characterLayer, effectsLayer, foregroundLayer, innerX, 30, innerW, 166\)/)
   assert.match(sceneSource, /drawBreakRoom\(staticLayer, innerX, 606, innerW, 132\)/)
-  assert.match(sceneSource, /drawPixelGrid\(staticLayer, 0, 0, width, SCENE_HEIGHT, 32/)
+  assert.match(sceneSource, /drawPixelGrid\(staticLayer, 0, 0, width, DESIGN_HEIGHT, 32/)
 })
 
 test('六处截图标记按三删三增落实', () => {
@@ -105,15 +109,28 @@ test('工作台两侧提供炒锅、砧板和蔬菜且人物中线保持留空',
   assert.match(sceneSource, /screen\.roundRect\(-10, 2, 20, 13/)
 })
 
-test('移动端保持场景比例并在场景视窗内横向查看', () => {
-  assert.match(worldSource, /class="kitchen-scene-viewport" tabindex="0"/)
-  assert.match(worldSource, /可左右滑动查看完整厨房场景/)
-  assert.match(worldSource, /\.kitchen-scene-viewport \{[\s\S]*?overflow-x: auto;/)
-  assert.match(worldSource, /\.kitchen-scene-viewport :deep\(\.kitchen-scene\),[\s\S]*?width: 1080px;/)
+test('首页工作区占满剩余空间且不依赖固定场景尺寸产生滚动', () => {
+  assert.match(worldSource, /class="kitchen-scene-viewport" aria-label="完整厨房场景将自动适配当前窗口"/)
+  assert.match(worldSource, /\.kitchen-world-page \{[\s\S]*?display: flex;[\s\S]*?height: 100%;[\s\S]*?overflow: hidden;/)
+  assert.match(worldSource, /grid-template-rows: minmax\(0, 1fr\);/)
+  assert.match(worldSource, /\.kitchen-scene-viewport \{[\s\S]*?min-height: 0;[\s\S]*?overflow: hidden;/)
+  assert.match(appSource, /:global\(html\),[\s\S]*?:global\(#app\) \{[\s\S]*?height: 100%;/)
+  assert.match(appSource, /\.app-shell \{[\s\S]*?height: 100dvh;[\s\S]*?overflow: hidden;/)
+  assert.match(appSource, /\.app-body \{[\s\S]*?min-height: 0;[\s\S]*?overflow: hidden;/)
+  assert.match(appSource, /\.app-shell\.kitchen-world-chrome \.app-main \{[\s\S]*?overflow: hidden;/)
   assert.match(worldSource, /max-width: 1023px\) and \(orientation: portrait\) and \(pointer: coarse\)/)
   assert.match(worldSource, /为了您的体验，请横屏使用/)
-  assert.match(worldSource, /min-height: calc\(100dvh - 126px\)/)
-  assert.match(sceneSource, /width: 100%;[\s\S]*?height: 760px;/)
+  assert.doesNotMatch(worldSource, /min-width: 1080px/)
+  assert.doesNotMatch(sceneSource, /min-height: 760px/)
+})
+
+test('首页移除底部操作提示和暂停入口并释放布局空间', () => {
+  assert.doesNotMatch(worldSource, /class="scene-caption"/)
+  assert.doesNotMatch(worldSource, /class="motion-toggle"/)
+  assert.doesNotMatch(worldSource, /操作提示/)
+  assert.doesNotMatch(worldSource, /暂停动态/)
+  assert.doesNotMatch(worldSource, /grid-template-rows: minmax\(0, 1fr\) auto;/)
+  assert.match(worldSource, /padding: clamp\(8px, 1\.2vw, 16px\);/)
 })
 
 test('主厨料理大厅内容区域允许滚动查看完整工作台', () => {

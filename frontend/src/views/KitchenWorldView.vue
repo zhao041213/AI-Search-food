@@ -10,25 +10,13 @@
     </div>
 
     <section class="kitchen-world-stage" aria-label="厨房功能入口">
-      <div class="kitchen-scene-viewport" tabindex="0" aria-label="可左右滑动查看完整厨房场景">
+      <div class="kitchen-scene-viewport" aria-label="完整厨房场景将自动适配当前窗口">
         <Suspense>
           <KitchenScene :motion-paused="motionPaused" @select-station="openStation" />
           <template #fallback>
             <div class="kitchen-scene-loading" role="status">正在准备厨房……</div>
           </template>
         </Suspense>
-      </div>
-      <div class="scene-caption">
-        <span class="caption-key">操作提示</span>
-        <span>看铭牌辨功能 · 点击人物打开窗口</span>
-        <button
-          type="button"
-          class="motion-toggle"
-          :aria-pressed="motionPaused"
-          @click="motionPaused = !motionPaused"
-        >
-          {{ motionPaused ? '继续动态' : '暂停动态' }}
-        </button>
       </div>
     </section>
 
@@ -86,8 +74,14 @@ function handlePanelVisibility(visible) {
 
 <style scoped>
 .kitchen-world-page {
-  min-height: calc(100vh - 58px);
-  padding: 22px clamp(16px, 2.6vw, 34px) 42px;
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  padding: clamp(8px, 1.2vw, 16px);
   color: #3b2b21;
   background:
     linear-gradient(180deg, rgba(242, 226, 190, 0.18), transparent 180px),
@@ -95,12 +89,22 @@ function handlePanelVisibility(visible) {
 }
 
 .kitchen-world-stage {
-  max-width: 1520px;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  width: 100%;
+  min-height: 0;
+  flex: 1 1 auto;
+  min-width: 0;
   margin: 0 auto;
 }
 
 .kitchen-scene-viewport {
+  display: grid;
   width: 100%;
+  min-width: 0;
+  min-height: 0;
+  place-items: center;
+  overflow: hidden;
 }
 
 .landscape-hint {
@@ -109,7 +113,9 @@ function handlePanelVisibility(visible) {
 
 .kitchen-scene-loading {
   display: grid;
-  min-height: 760px;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
   place-items: center;
   overflow: hidden;
   border: 1px solid #8b6e4e;
@@ -117,72 +123,6 @@ function handlePanelVisibility(visible) {
   background: #e6d2a8;
   box-shadow: 0 16px 30px rgba(53, 35, 23, 0.2);
   font-weight: 800;
-}
-
-.scene-caption {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 34px;
-  padding: 0 12px;
-  border: 1px solid #c8aa7b;
-  border-top: 0;
-  color: #7b6044;
-  background: #ead7ae;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.caption-key {
-  color: #4a3627;
-  font-weight: 900;
-  letter-spacing: 0.08em;
-}
-
-.motion-toggle {
-  min-height: 40px;
-  margin-left: auto;
-  padding: 3px 10px;
-  border: 1px solid #967044;
-  border-radius: 3px;
-  color: #4a3627;
-  background: #f5e6c3;
-  font: inherit;
-  font-size: 11px;
-  font-weight: 900;
-  cursor: pointer;
-}
-
-.motion-toggle:hover {
-  background: #fff3d8;
-}
-
-.motion-toggle:focus-visible {
-  outline: 2px solid #4f8ca5;
-  outline-offset: 2px;
-}
-
-@media (max-width: 1023px) {
-  .kitchen-world-page {
-    min-height: calc(100vh - 126px);
-    min-height: calc(100dvh - 126px);
-    padding: 12px 10px 24px;
-  }
-
-  .kitchen-scene-viewport {
-    max-width: 100%;
-    overflow-x: auto;
-    overflow-y: hidden;
-    overscroll-behavior-x: contain;
-    scrollbar-width: thin;
-    touch-action: pan-x;
-  }
-
-  .kitchen-scene-viewport :deep(.kitchen-scene),
-  .kitchen-scene-loading {
-    width: 1080px;
-    min-width: 1080px;
-  }
 }
 
 @media (max-width: 1023px) and (orientation: portrait) and (pointer: coarse) {
@@ -239,23 +179,6 @@ function handlePanelVisibility(visible) {
     background: #fff8e9;
     outline: 2px solid #4f8ca5;
     outline-offset: 2px;
-  }
-}
-
-@media (max-width: 720px) {
-  .scene-caption {
-    flex-wrap: wrap;
-    align-items: center;
-    padding: 8px 10px;
-  }
-
-  .scene-caption > span:nth-child(2) {
-    order: 3;
-    flex: 1 1 100%;
-  }
-
-  .motion-toggle {
-    margin-left: auto;
   }
 }
 

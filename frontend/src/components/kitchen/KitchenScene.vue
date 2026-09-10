@@ -22,8 +22,8 @@ const kitchen = useKitchenStore()
 const sceneHost = ref(null)
 const loading = ref(true)
 
-const SCENE_HEIGHT = 760
-const MIN_SCENE_WIDTH = 1080
+const DESIGN_WIDTH = 1520
+const DESIGN_HEIGHT = 760
 const INITIAL_SPRITE_FRAME = 1
 const ANIMATION_SPRITE_FRAMES = [2, 3]
 const SPRITE_FRAMES = [INITIAL_SPRITE_FRAME, ...ANIMATION_SPRITE_FRAMES]
@@ -178,8 +178,8 @@ onMounted(async () => {
 
   app = new Application()
   await app.init({
-    width: Math.max(sceneHost.value.clientWidth, MIN_SCENE_WIDTH),
-    height: SCENE_HEIGHT,
+    width: DESIGN_WIDTH,
+    height: DESIGN_HEIGHT,
     backgroundAlpha: 0,
     antialias: false,
     resolution: Math.min(window.devicePixelRatio || 1, 2),
@@ -199,10 +199,29 @@ onMounted(async () => {
   prefersReducedMotion = reducedMotionQuery.matches
   reducedMotionQuery.addEventListener?.('change', handleReducedMotionChange)
 
+  const fitScene = () => {
+    if (!app || app.destroyed || !sceneHost.value) return
+    const availableWidth = sceneHost.value.clientWidth
+    const availableHeight = sceneHost.value.clientHeight
+    if (availableWidth <= 0 || availableHeight <= 0) return
+
+    const scale = Math.min(
+      availableWidth / DESIGN_WIDTH,
+      availableHeight / DESIGN_HEIGHT
+    )
+    const displayWidth = Math.max(1, Math.floor(DESIGN_WIDTH * scale))
+    const displayHeight = Math.max(1, Math.floor(DESIGN_HEIGHT * scale))
+    const fittedScale = Math.min(
+      displayWidth / DESIGN_WIDTH,
+      displayHeight / DESIGN_HEIGHT
+    )
+
+    app.renderer.resize(displayWidth, displayHeight)
+    app.stage.scale.set(fittedScale)
+  }
+
   const draw = () => {
     if (!app || app.destroyed) return
-    const width = Math.max(sceneHost.value?.clientWidth || MIN_SCENE_WIDTH, MIN_SCENE_WIDTH)
-    app.renderer.resize(width, SCENE_HEIGHT)
     app.stage.removeChildren().forEach((child) => child.destroy({ children: true }))
     characterVisuals = []
     workstationVisuals = []
@@ -211,14 +230,15 @@ onMounted(async () => {
     activeSpeech = null
     headerGuideText = null
     nextSpeechAt = animationTick + randomBetween(30, 60)
-    drawKitchen(app.stage, width)
+    drawKitchen(app.stage, DESIGN_WIDTH)
+    fitScene()
   }
 
   animationTick = 0
   draw()
   void loadAnimationSpriteTextures(draw)
   stopCharacterNameWatch = watch(() => kitchen.characterNames, syncCharacterNames, { deep: true })
-  resizeObserver = new ResizeObserver(draw)
+  resizeObserver = new ResizeObserver(fitScene)
   resizeObserver.observe(sceneHost.value)
 
   app.ticker.add(() => {
@@ -304,12 +324,12 @@ function drawKitchen(stage, width) {
   const uiLayer = createSceneLayer(stage, 'kitchen-ui-layer', 30, 'none')
 
   const outer = new Graphics()
-  outer.rect(0, 0, width, SCENE_HEIGHT).fill(0xe6d2a8)
+  outer.rect(0, 0, width, DESIGN_HEIGHT).fill(0xe6d2a8)
   staticLayer.addChild(outer)
 
   // Keep the checkerboard as a quiet floor texture so the furniture reads first.
-  drawPixelGrid(staticLayer, 0, 0, width, SCENE_HEIGHT, 32, 0xe6d2a8, 0xe0cfa4)
-  drawFrame(staticLayer, 12, 12, width - 24, SCENE_HEIGHT - 24)
+  drawPixelGrid(staticLayer, 0, 0, width, DESIGN_HEIGHT, 32, 0xe6d2a8, 0xe0cfa4)
+  drawFrame(staticLayer, 12, 12, width - 24, DESIGN_HEIGHT - 24)
 
   const innerX = 22
   const innerW = width - 44
@@ -1620,7 +1640,12 @@ function drawSteam(parent, x, y) {
 <style scoped>
 .kitchen-scene {
   position: relative;
-  min-height: 760px;
+  display: grid;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  place-items: center;
   overflow: hidden;
   border: 1px solid #8b6e4e;
   background: #e6d2a8;
@@ -1629,8 +1654,8 @@ function drawSteam(parent, x, y) {
 
 .kitchen-scene :deep(.kitchen-scene-canvas) {
   display: block;
-  width: 100%;
-  height: 760px;
+  max-width: 100%;
+  max-height: 100%;
   image-rendering: pixelated;
 }
 

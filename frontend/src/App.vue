@@ -513,9 +513,17 @@ function applyTheme(theme) {
   box-sizing: border-box;
 }
 
+:global(html),
+:global(body),
+:global(#app) {
+  width: 100%;
+  height: 100%;
+}
+
 :global(body) {
   margin: 0;
   min-width: 320px;
+  overflow: hidden;
   background: var(--app-bg);
 }
 
@@ -616,8 +624,12 @@ function applyTheme(theme) {
 }
 
 .app-shell {
-  min-height: 100vh;
-  min-height: 100dvh;
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
   background:
     linear-gradient(var(--app-grid-line) 1px, transparent 1px),
     linear-gradient(90deg, var(--app-grid-line) 1px, transparent 1px),
@@ -634,6 +646,7 @@ function applyTheme(theme) {
   justify-content: space-between;
   gap: 14px;
   height: 58px;
+  flex: 0 0 58px;
   padding: 0 clamp(12px, 3vw, 36px);
   border-bottom: 1px solid var(--app-line);
   background: var(--app-header-bg);
@@ -811,24 +824,34 @@ function applyTheme(theme) {
 }
 
 .app-main {
+  flex: 1 1 auto;
   padding: 0;
   min-width: 0;
+  min-height: 0;
+  overflow: auto;
 }
 
 .app-body {
-  min-height: calc(100vh - 58px);
-  min-height: calc(100dvh - 58px);
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.app-shell.kitchen-world-chrome .app-main {
+  overflow: hidden;
 }
 
 .app-sidebar {
   display: flex;
   width: 190px;
   flex: 0 0 190px;
+  min-height: 0;
   flex-direction: column;
   gap: 6px;
   padding: 24px 14px;
   border-right: 1px solid var(--app-line);
   background: var(--app-surface);
+  overflow-y: auto;
 }
 
 .app-shell.kitchen-world-chrome .app-sidebar {
@@ -909,8 +932,7 @@ function applyTheme(theme) {
 @media (max-width: 720px) {
   .app-body {
     flex-direction: column;
-    min-height: calc(100vh - 126px);
-    min-height: calc(100dvh - 126px);
+    min-height: 0;
   }
 
   .app-sidebar {
@@ -919,6 +941,7 @@ function applyTheme(theme) {
     flex-direction: row;
     align-items: center;
     overflow-x: auto;
+    overflow-y: hidden;
     padding: 8px 12px;
     border-right: 0;
     border-bottom: 1px solid var(--app-line);
@@ -942,6 +965,7 @@ function applyTheme(theme) {
   .app-header {
     flex-wrap: wrap;
     height: auto;
+    flex-basis: auto;
     padding: 12px 16px;
   }
 
