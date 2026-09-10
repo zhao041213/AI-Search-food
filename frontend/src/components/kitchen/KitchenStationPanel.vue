@@ -145,7 +145,7 @@ const activeFeatureProps = computed(() => {
   return componentProps
 })
 const featureHandoffHandlers = {
-  recognition: openChefWithIngredient,
+  recognition: openChefWithRecognizedIngredients,
   history: openChefWithSearch,
   hot: openChefWithIngredient
 }
@@ -280,6 +280,19 @@ function openChefWithIngredient(ingredientName) {
   openFeature('chef', { rememberCurrent: true })
 }
 
+function openChefWithRecognizedIngredients(ingredientName) {
+  const name = String(ingredientName || '').trim()
+  if (!name) return
+  chefSearchPreset.value = {
+    ingredients: name,
+    mealType: 'any',
+    goal: 'balanced',
+    searchMode: 'image',
+    source: 'ingredient-recognition'
+  }
+  openFeature('chef', { rememberCurrent: true })
+}
+
 function openChefWithSearch(search) {
   chefSearchPreset.value = {
     ingredients: String(search?.ingredients || '').trim(),
@@ -377,7 +390,9 @@ function getErrorMessage(error, fallback) {
 .scene-feature-host--hot {
   height: 100%;
   min-height: 0;
-  overflow: hidden;
+  overflow: auto;
+  scrollbar-color: #9e7b50 #eadfc9;
+  scrollbar-width: thin;
 }
 
 .scene-feature-toolbar {

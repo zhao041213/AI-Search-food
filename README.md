@@ -293,6 +293,8 @@ docker compose down
 
 普通 `docker compose down` 会保留 `mysql_data` 和 `review_uploads` 数据卷。只有明确需要清空数据时才使用 `docker compose down -v`。
 
+生产服务器推荐直接拉取 TCR 版本镜像，不在服务器现场构建。完整的腾讯云 TCR 发布、4C4G 资源限制、CDN 缓存/压缩配置及回滚流程见 [腾讯云 TCR 镜像发布与 CDN 部署](docs/tencent-cloud-tcr-cdn-deployment.md)。
+
 ## 安全与开发约定
 
 - 不提交 `.env`、API Key、短信密钥、数据库密码或真实用户数据。

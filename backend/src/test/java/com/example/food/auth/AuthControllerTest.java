@@ -5,6 +5,9 @@ import com.example.food.admin.AdminAccount;
 import com.example.food.admin.AdminMapper;
 import com.example.food.auth.verification.PhoneVerificationCode;
 import com.example.food.auth.verification.PhoneVerificationCodeMapper;
+import com.example.food.security.AppRole;
+import com.example.food.security.AuthPrincipal;
+import com.example.food.security.JwtService;
 import com.example.food.user.User;
 import com.example.food.user.UserMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -22,6 +25,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -51,6 +55,9 @@ class AuthControllerTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    private JwtService jwtService;
 
     @BeforeEach
     void cleanTestAccounts() {
@@ -91,6 +98,20 @@ class AuthControllerTest {
         User stored = userMapper.selectOne(new QueryWrapper<User>().eq("phone", phone));
         assertThat(stored).isNotNull();
         assertThat(stored.getNickname()).isEqualTo("注册用户");
+    }
+
+    @Test
+    void smsRegisteredPhoneAppearsInAdminUserList() throws Exception {
+        String phone = "13900000011";
+        register(phone, "管理员可见用户");
+
+        mockMvc.perform(get("/api/admin/users")
+                        .param("keyword", phone)
+                        .header("Authorization", adminToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.items[0].phone").value("139****0011"))
+                .andExpect(jsonPath("$.data.items[0].nickname").value("管理员可见用户"));
     }
 
     @Test
@@ -372,5 +393,9 @@ class AuthControllerTest {
         admin.setCreatedAt(LocalDateTime.now());
         admin.setUpdatedAt(LocalDateTime.now());
         adminMapper.insert(admin);
+    }
+
+    private String adminToken() {
+        return "Bearer " + jwtService.generateToken(new AuthPrincipal(1L, "admin", AppRole.ADMIN));
     }
 }

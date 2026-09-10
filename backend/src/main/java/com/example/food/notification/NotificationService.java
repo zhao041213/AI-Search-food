@@ -64,6 +64,38 @@ public class NotificationService {
         return notificationMapper.countUnread(userId);
     }
 
+    public void notifyUser(
+            Long userId,
+            NotificationType type,
+            String title,
+            String summary,
+            String content,
+            String targetPath,
+            String dedupeKey
+    ) {
+        if (userId == null || type == null || !StringUtils.hasText(dedupeKey)) {
+            return;
+        }
+        if (notificationMapper.findByDedupeKey(userId, dedupeKey) != null) {
+            return;
+        }
+        UserNotification notification = new UserNotification();
+        notification.setUserId(userId);
+        notification.setNotificationType(type.name());
+        notification.setTitle(title);
+        notification.setSummary(summary);
+        notification.setContent(content);
+        notification.setTargetPath(targetPath);
+        notification.setStatus(NotificationStatus.UNREAD.name());
+        notification.setDedupeKey(dedupeKey);
+        notification.setCreatedAt(LocalDateTime.now(clock));
+        try {
+            notificationMapper.insert(notification);
+        } catch (DuplicateKeyException ignored) {
+            // A repeated admin update should not make the suggestion update fail.
+        }
+    }
+
     public NotificationResponse detail(Long userId, Long notificationId) {
         UserNotification notification = requireOwned(userId, notificationId);
         if (NotificationStatus.UNREAD.name().equals(notification.getStatus())) {

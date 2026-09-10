@@ -204,6 +204,42 @@ class WeeklyMenuServiceTest {
     }
 
     @Test
+    void randomAutoGenerationDoesNotUsePantryAsGenerationContext() {
+        LocalDate monday = LocalDate.of(2026, 8, 31);
+        RecipeRecord recipe = recipe(1L, "随机菜谱");
+        List<WeeklyMenuItem> persistedItems = fullWeekItems(monday, 1L, 1L);
+        when(planMapper.findByUserIdAndWeekStart(7L, monday)).thenReturn(null, null, plan(99L, 7L, monday));
+        when(recipeRecordMapper.findSavedRecipes(7L, null, null, null, 30, 0)).thenReturn(List.of(recipe));
+        when(recipeIngredientMapper.selectList(any(QueryWrapper.class))).thenReturn(List.of(), List.of());
+        when(userHealthProfileService.getRecommendationContext(7L)).thenReturn(null);
+        when(userDietPreferenceService.get(7L)).thenReturn(
+                com.example.food.user.preference.dto.DietPreferenceResponse.empty()
+        );
+        when(userPantryService.listIngredientNames(7L)).thenReturn(List.of("番茄"));
+        when(qwenRecipeClient.generateWeeklyMenu(anyString())).thenReturn(List.of(
+                new QwenRecipeClient.WeeklyMenuSelection(monday.toString(), "BREAKFAST", 1L)
+        ));
+        when(recipeRecordMapper.selectList(any(QueryWrapper.class))).thenReturn(List.of(recipe));
+        doAnswer(invocation -> {
+            WeeklyMenuPlan target = invocation.getArgument(0);
+            target.setId(99L);
+            return 1;
+        }).when(planMapper).insert(any(WeeklyMenuPlan.class));
+        when(itemMapper.findByPlanId(99L)).thenReturn(persistedItems);
+        when(shoppingCheckMapper.findByUserIdAndPlanId(7L, 99L)).thenReturn(List.of());
+
+        service.autoGenerate(7L, new WeeklyMenuAutoGenerateRequest(monday, false, "random"));
+
+        ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(qwenRecipeClient).generateWeeklyMenu(promptCaptor.capture());
+        assertThat(promptCaptor.getValue())
+                .contains("随机安排")
+                .contains("不参考菜谱生成历史记录")
+                .contains("用户已有食材：不参考库存")
+                .doesNotContain("用户已有食材：番茄");
+    }
+
+    @Test
     void autoGenerationPromptIncludesEnabledNutritionTarget() {
         LocalDate monday = LocalDate.of(2026, 8, 31);
         when(planMapper.findByUserIdAndWeekStart(7L, monday)).thenReturn(null);

@@ -1,0 +1,143 @@
+name: ai-search-food
+
+services:
+  mysql:
+    image: mysql:8.4.3
+    restart: unless-stopped
+    command:
+      - --max-connections=80
+      - --innodb-buffer-pool-size=384M
+      - --tmp-table-size=32M
+      - --max-heap-table-size=32M
+    environment:
+      TZ: Asia/Shanghai
+      MYSQL_DATABASE: ${MYSQL_DATABASE:?set MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER:?set MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - database_network
+    mem_limit: 1g
+    mem_reservation: 512m
+    cpus: 1.5
+    pids_limit: 512
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping --host=127.0.0.1 --user=root --password=$${MYSQL_ROOT_PASSWORD} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  backend:
+    image: "${TCR_REGISTRY:?set TCR_REGISTRY}/${TCR_NAMESPACE:?set TCR_NAMESPACE}/${BACKEND_IMAGE_NAME:-ai-search-food-backend}:${IMAGE_TAG:?set immutable IMAGE_TAG}"
+    pull_policy: always
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+      JAVA_TOOL_OPTIONS: "-Xms256m -Xmx1024m -XX:+ExitOnOutOfMemoryError -XX:+UseG1GC"
+      SPRING_PROFILES_ACTIVE: mysql,prod,docker
+      SERVER_PORT: 7068
+      MYSQL_URL: "jdbc:mysql://mysql:3306/${MYSQL_DATABASE:?set MYSQL_DATABASE}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true"
+      MYSQL_USERNAME: ${MYSQL_USER:?set MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET_at_least_32_bytes}
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:?set DASHSCOPE_API_KEY}
+      DASHSCOPE_MODEL: ${DASHSCOPE_MODEL:-qwen-plus}
+      DASHSCOPE_VISION_MODEL: ${DASHSCOPE_VISION_MODEL:-qwen-vl-plus}
+      DASHSCOPE_BASE_URL: ${DASHSCOPE_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions}
+      SMS_PROVIDER: aliyun-pnvs
+      ALIBABA_CLOUD_ACCESS_KEY_ID: ${ALIBABA_CLOUD_ACCESS_KEY_ID:?set ALIBABA_CLOUD_ACCESS_KEY_ID}
+      ALIBABA_CLOUD_ACCESS_KEY_SECRET: ${ALIBABA_CLOUD_ACCESS_KEY_SECRET:?set ALIBABA_CLOUD_ACCESS_KEY_SECRET}
+      ALIYUN_PNVS_SIGN_NAME: ${ALIYUN_PNVS_SIGN_NAME:?set ALIYUN_PNVS_SIGN_NAME}
+      ALIYUN_PNVS_TEMPLATE_CODE: ${ALIYUN_PNVS_TEMPLATE_CODE:?set ALIYUN_PNVS_TEMPLATE_CODE}
+      ALIYUN_PNVS_ENDPOINT: ${ALIYUN_PNVS_ENDPOINT:-dypnsapi.aliyuncs.com}
+      ALIYUN_PNVS_SCHEME_NAME: ${ALIYUN_PNVS_SCHEME_NAME:-}
+      SMS_CODE_EXPIRY: ${SMS_CODE_EXPIRY:-5m}
+      SMS_RESEND_INTERVAL: ${SMS_RESEND_INTERVAL:-60s}
+      SMS_MAX_ATTEMPTS: ${SMS_MAX_ATTEMPTS:-5}
+      PNVS_CONNECT_TIMEOUT: ${PNVS_CONNECT_TIMEOUT:-5s}
+      PNVS_READ_TIMEOUT: ${PNVS_READ_TIMEOUT:-10s}
+      FINISHED_DISH_REVIEW_STORAGE_DIR: /app/data/finished-dish-reviews
+      USER_AVATAR_STORAGE_DIR: /app/data/user-avatars
+      FEATURE_SUGGESTION_STORAGE_DIR: /app/data/feature-suggestions
+      BILIBILI_VIDEO_SEARCH_ENABLED: ${BILIBILI_VIDEO_SEARCH_ENABLED:-true}
+      BILIBILI_VIDEO_SEARCH_BASE_URL: ${BILIBILI_VIDEO_SEARCH_BASE_URL:-https://api.bilibili.com/x/web-interface/search/type}
+      BILIBILI_VIDEO_SEARCH_CACHE_TTL: ${BILIBILI_VIDEO_SEARCH_CACHE_TTL:-PT45M}
+      BILIBILI_VIDEO_SEARCH_CACHE_MAX_ENTRIES: ${BILIBILI_VIDEO_SEARCH_CACHE_MAX_ENTRIES:-256}
+      BILIBILI_VIDEO_SEARCH_CONNECT_TIMEOUT: ${BILIBILI_VIDEO_SEARCH_CONNECT_TIMEOUT:-PT3S}
+      BILIBILI_VIDEO_SEARCH_READ_TIMEOUT: ${BILIBILI_VIDEO_SEARCH_READ_TIMEOUT:-PT5S}
+      BILIBILI_VIDEO_SEARCH_MAX_RESULTS: ${BILIBILI_VIDEO_SEARCH_MAX_RESULTS:-6}
+      BILIBILI_VIDEO_SEARCH_RATE_LIMIT_WINDOW: ${BILIBILI_VIDEO_SEARCH_RATE_LIMIT_WINDOW:-PT1M}
+      BILIBILI_VIDEO_SEARCH_RATE_LIMIT_MAX_REQUESTS: ${BILIBILI_VIDEO_SEARCH_RATE_LIMIT_MAX_REQUESTS:-12}
+    volumes:
+      - review_uploads:/app/data/finished-dish-reviews
+      - user_avatars:/app/data/user-avatars
+      - feature_suggestions:/app/data/feature-suggestions
+    networks:
+      - app_network
+      - database_network
+    depends_on:
+      mysql:
+        condition: service_healthy
+    mem_limit: 1536m
+    mem_reservation: 768m
+    cpus: 2.5
+    pids_limit: 512
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "3"
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent http://127.0.0.1:7068/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 60s
+
+  frontend:
+    image: "${TCR_REGISTRY:?set TCR_REGISTRY}/${TCR_NAMESPACE:?set TCR_NAMESPACE}/${FRONTEND_IMAGE_NAME:-ai-search-food-frontend}:${IMAGE_TAG:?set immutable IMAGE_TAG}"
+    pull_policy: always
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+    ports:
+      - "${FRONTEND_PORT:-80}:8080"
+    networks:
+      - app_network
+    depends_on:
+      backend:
+        condition: service_healthy
+    mem_limit: 256m
+    mem_reservation: 64m
+    cpus: 0.5
+    pids_limit: 128
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --output-document=- http://127.0.0.1:8080/healthz | grep -q '^ok$' || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  mysql_data:
+  review_uploads:
+  user_avatars:
+  feature_suggestions:
+
+networks:
+  app_network:
+  database_network:
+    internal: true

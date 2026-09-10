@@ -31,6 +31,8 @@ app:
     storage-dir: ${FINISHED_DISH_REVIEW_STORAGE_DIR:./data/finished-dish-reviews}
   user-avatars:
     storage-dir: ${USER_AVATAR_STORAGE_DIR:./data/user-avatars}
+  feature-suggestions:
+    storage-dir: ${FEATURE_SUGGESTION_STORAGE_DIR:./data/feature-suggestions}
   notifications:
     scheduler:
       enabled: ${NOTIFICATION_SCHEDULER_ENABLED:true}

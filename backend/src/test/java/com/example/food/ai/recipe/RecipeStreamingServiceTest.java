@@ -26,7 +26,9 @@ class RecipeStreamingServiceTest {
     @Test
     void persistsExactlyOnceAfterACompleteRecipe() {
         RecipeGenerateResponse response = recipe().withSearchLogId(19L);
-        when(recommendationService.promptFor(any(), any())).thenReturn("prompt");
+        when(recommendationService.preparePrompt(any(), any())).thenReturn(
+                new RecipeRecommendationService.PreparedPrompt("prompt", false, false, false)
+        );
         when(recommendationService.persist(any(), any(), any(), anyString())).thenReturn(response);
         when(qwenClient.streamRecipe(anyString(), any(), any())).thenAnswer(invocation -> {
             Consumer<String> onDelta = invocation.getArgument(1);
@@ -41,6 +43,7 @@ class RecipeStreamingServiceTest {
         );
 
         verify(recommendationService, timeout(2000).times(1)).persist(any(), any(), any(), anyString());
+        verify(recommendationService, timeout(2000).times(1)).validateIngredientAlignment(any(), any());
         verify(qwenClient, timeout(2000)).streamRecipe(anyString(), any(), any());
         emitter.complete();
     }
@@ -58,7 +61,9 @@ class RecipeStreamingServiceTest {
                 "qwen",
                 "qwen-plus"
         );
-        when(recommendationService.promptFor(any(), any())).thenReturn("prompt");
+        when(recommendationService.preparePrompt(any(), any())).thenReturn(
+                new RecipeRecommendationService.PreparedPrompt("prompt", false, false, false)
+        );
         when(qwenClient.streamRecipe(anyString(), any(), any())).thenReturn(
                 new QwenRecipeClient.RecipeStreamResult("", response, "qwen", "qwen-plus", false)
         );

@@ -19,6 +19,7 @@ import com.example.food.recipe.dto.RecipeHistorySummaryResponse;
 import com.example.food.security.AppRole;
 import com.example.food.security.AuthPrincipal;
 import com.example.food.user.health.UserHealthProfileService;
+import com.example.food.user.healthnutrition.HealthNutritionService;
 import com.example.food.user.nutrition.UserNutritionTargetService;
 import com.example.food.user.preference.UserDietPreferenceService;
 import com.example.food.user.preference.dto.DietPreferenceResponse;
@@ -74,6 +75,7 @@ public class AgentService {
     private final SavedRecipeService savedRecipeService;
     private final UserHealthProfileService healthProfileService;
     private final UserNutritionTargetService nutritionTargetService;
+    private final HealthNutritionService healthNutritionService;
     private final UserDietPreferenceService dietPreferenceService;
     private final RecipeRecommendationService recipeRecommendationService;
     private final QwenAgentClient qwenAgentClient;
@@ -100,6 +102,7 @@ public class AgentService {
             SavedRecipeService savedRecipeService,
             UserHealthProfileService healthProfileService,
             UserNutritionTargetService nutritionTargetService,
+            HealthNutritionService healthNutritionService,
             UserDietPreferenceService dietPreferenceService,
             RecipeRecommendationService recipeRecommendationService,
             QwenAgentClient qwenAgentClient,
@@ -118,6 +121,7 @@ public class AgentService {
         this.savedRecipeService = savedRecipeService;
         this.healthProfileService = healthProfileService;
         this.nutritionTargetService = nutritionTargetService;
+        this.healthNutritionService = healthNutritionService;
         this.dietPreferenceService = dietPreferenceService;
         this.recipeRecommendationService = recipeRecommendationService;
         this.qwenAgentClient = qwenAgentClient;
@@ -552,6 +556,7 @@ public class AgentService {
 
     private ToolExecution nutrition(SseEmitter emitter, AtomicBoolean cancelled, Long userId, Long conversationId) {
         Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("healthNutrition", healthNutritionService.get(userId));
         payload.put("healthProfile", healthProfileService.get(userId));
         payload.put("dietPreference", dietPreferenceService.get(userId));
         payload.put("nutritionTarget", nutritionTargetService.get(userId));
@@ -602,7 +607,9 @@ public class AgentService {
                 "agent",
                 null,
                 null,
-                dietPreference(preference)
+                dietPreference(preference),
+                true,
+                true
         );
         RecipeGenerateResponse recipe = recipeRecommendationService.generate(request, principal, null);
         sendRecipeCard(emitter, cancelled, conversationId, recipe, "来自我的食材库存与阿灶菜谱生成 · 刚刚生成");

@@ -5,6 +5,7 @@ import test from 'node:test'
 const sceneSource = fs.readFileSync(new URL('../components/kitchen/KitchenScene.vue', import.meta.url), 'utf8')
 const worldSource = fs.readFileSync(new URL('../views/KitchenWorldView.vue', import.meta.url), 'utf8')
 const windowSource = fs.readFileSync(new URL('../components/kitchen/SceneWindow.vue', import.meta.url), 'utf8')
+const homeSource = fs.readFileSync(new URL('../views/HomeView.vue', import.meta.url), 'utf8')
 
 test('厨房场景外部几何常量保持不变', () => {
   assert.match(sceneSource, /const SCENE_HEIGHT = 760/)
@@ -102,4 +103,29 @@ test('工作台两侧提供炒锅、砧板和蔬菜且人物中线保持留空',
   assert.match(sceneSource, /ingredients\.ellipse\(-20, -2/)
   assert.match(sceneSource, /body\.roundRect\(-30, 0, 60, 20/)
   assert.match(sceneSource, /screen\.roundRect\(-10, 2, 20, 13/)
+})
+
+test('移动端保持场景比例并在场景视窗内横向查看', () => {
+  assert.match(worldSource, /class="kitchen-scene-viewport" tabindex="0"/)
+  assert.match(worldSource, /可左右滑动查看完整厨房场景/)
+  assert.match(worldSource, /\.kitchen-scene-viewport \{[\s\S]*?overflow-x: auto;/)
+  assert.match(worldSource, /\.kitchen-scene-viewport :deep\(\.kitchen-scene\),[\s\S]*?width: 1080px;/)
+  assert.match(worldSource, /max-width: 1023px\) and \(orientation: portrait\) and \(pointer: coarse\)/)
+  assert.match(worldSource, /为了您的体验，请横屏使用/)
+  assert.match(worldSource, /min-height: calc\(100dvh - 126px\)/)
+  assert.match(sceneSource, /width: 100%;[\s\S]*?height: 760px;/)
+})
+
+test('主厨料理大厅内容区域允许滚动查看完整工作台', () => {
+  const stationPanelSource = fs.readFileSync(new URL('../components/kitchen/KitchenStationPanel.vue', import.meta.url), 'utf8')
+  assert.match(stationPanelSource, /\.scene-feature-host--chef,[\s\S]*?overflow: auto;/)
+  assert.match(stationPanelSource, /\.scene-feature-host--hot[\s\S]*?overflow: auto;/)
+})
+
+test('食材识别结果流转到阿灶时保留图片识别来源', () => {
+  const stationPanelSource = fs.readFileSync(new URL('../components/kitchen/KitchenStationPanel.vue', import.meta.url), 'utf8')
+  assert.match(stationPanelSource, /recognition: openChefWithRecognizedIngredients/)
+  assert.match(stationPanelSource, /searchMode: 'image'/)
+  assert.match(homeSource, /searchMode\.value = \['image', 'camera'\]\.includes\(props\.initialSearch\?\.searchMode\)/)
+  assert.match(homeSource, /if \(!generationCompleted\.value\) \{[\s\S]*?recipe\.value = createRecipeDraft\(\)/)
 })

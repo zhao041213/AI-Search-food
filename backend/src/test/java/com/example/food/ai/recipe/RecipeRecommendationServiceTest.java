@@ -4,11 +4,13 @@ import com.example.food.ai.qwen.QwenRecipeClient;
 import com.example.food.ai.recipe.dto.RecipeGenerateRequest;
 import com.example.food.ai.recipe.dto.RecipeGenerateResponse;
 import com.example.food.pantry.UserPantryService;
+import com.example.food.pantry.dto.PantryItemResponse;
 import com.example.food.recipe.RecommendationFeedbackService;
 import com.example.food.recipe.SearchLogService;
 import com.example.food.security.AppRole;
 import com.example.food.security.AuthPrincipal;
 import com.example.food.user.health.UserHealthProfileService;
+import com.example.food.user.healthnutrition.HealthNutritionService;
 import com.example.food.user.nutrition.UserNutritionTargetService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -47,6 +49,9 @@ class RecipeRecommendationServiceTest {
     private UserNutritionTargetService userNutritionTargetService;
 
     @Mock
+    private HealthNutritionService healthNutritionService;
+
+    @Mock
     private RecommendationFeedbackService recommendationFeedbackService;
 
     @InjectMocks
@@ -76,6 +81,63 @@ class RecipeRecommendationServiceTest {
         assertThat(request.regenerationPreference()).isNull();
         assertThat(request.previousTitle()).isNull();
         assertThat(request.dietPreference()).isNull();
+        assertThat(request.includePantry()).isFalse();
+        assertThat(request.includeHealthNutrition()).isFalse();
+    }
+
+    @Test
+    void aiIngredientRecommendationDoesNotReusePreviousIngredientInput() {
+        RecipeGenerateRequest request = new RecipeGenerateRequest(
+                null,
+                "dinner",
+                "balanced",
+                "text",
+                "换一份更有创意的做法",
+                "上一道家常菜",
+                null,
+                false,
+                false,
+                true
+        );
+        when(qwenRecipeClient.generateRecipe(anyString())).thenReturn(recipeResponse());
+
+        recipeRecommendationService.generate(request);
+
+        ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(qwenRecipeClient).generateRecipe(promptCaptor.capture());
+        assertThat(promptCaptor.getValue())
+                .contains("AI 自主推荐食材")
+                .contains("不得参考上一次输入的食材")
+                .doesNotContain("番茄、鸡蛋");
+    }
+
+    @Test
+    void recognitionInputPromptRequiresEveryRecognizedIngredientToBeUsed() {
+        RecipeGenerateRequest request = new RecipeGenerateRequest(
+                "西红柿、鸡蛋",
+                "dinner",
+                "balanced",
+                "image"
+        );
+
+        String prompt = recipeRecommendationService.promptFor(request, null);
+
+        assertThat(prompt)
+                .contains("输入方式：image")
+                .contains("本次指定食材来自食材识别台")
+                .contains("每一种指定食材都必须出现在 ingredients 中并在 steps 中实际使用")
+                .contains("不得忽略、替换为无关食材");
+    }
+
+    @Test
+    void rejectsRecipeThatDoesNotContainRequestedIngredients() {
+        RecipeGenerateRequest request = new RecipeGenerateRequest("鸡肉", "dinner", "balanced", "image");
+        when(qwenRecipeClient.generateRecipe(anyString())).thenReturn(recipeResponse());
+
+        assertThatThrownBy(() -> recipeRecommendationService.generate(request))
+                .hasMessageContaining("未围绕输入食材生成")
+                .hasMessageContaining("鸡肉");
+        verifyNoInteractions(searchLogService);
     }
 
     @Test
@@ -135,9 +197,12 @@ class RecipeRecommendationServiceTest {
 
     @Test
     void generationPromptIncludesLoggedInUsersPantryIngredients() {
-        RecipeGenerateRequest request = new RecipeGenerateRequest("番茄", "dinner", "balanced", "text");
+        RecipeGenerateRequest request = new RecipeGenerateRequest("番茄", "dinner", "balanced", "text", null, null, null, true, false);
         AuthPrincipal principal = new AuthPrincipal(7L, "13800138000", AppRole.USER);
-        when(userPantryService.listIngredientNames(7L)).thenReturn(List.of("鸡蛋", "土豆"));
+        when(userPantryService.list(7L)).thenReturn(List.of(
+                new PantryItemResponse(1L, "鸡蛋", "蛋奶", new BigDecimal("2"), "个", null, null),
+                new PantryItemResponse(2L, "土豆", "蔬菜", new BigDecimal("3"), "个", null, null)
+        ));
         when(qwenRecipeClient.generateRecipe(anyString())).thenReturn(recipeResponse());
 
         recipeRecommendationService.generate(request, principal, null);
@@ -148,12 +213,12 @@ class RecipeRecommendationServiceTest {
                 .contains("本次指定食材：番茄")
                 .contains("用户库存食材：鸡蛋、土豆")
                 .contains("将“本次指定食材”和“用户库存食材”都视为用户可用的已有食材");
-        verify(userPantryService).listIngredientNames(7L);
+        verify(userPantryService).list(7L);
     }
 
     @Test
     void generationPromptIncludesLoggedInUsersHealthProfileWithoutMedicalClaims() {
-        RecipeGenerateRequest request = new RecipeGenerateRequest("番茄", "dinner", "fat_loss", "text");
+        RecipeGenerateRequest request = new RecipeGenerateRequest("番茄", "dinner", "fat_loss", "text", null, null, null, false, true);
         AuthPrincipal principal = new AuthPrincipal(7L, "13800138000", AppRole.USER);
         when(userHealthProfileService.getRecommendationContext(7L)).thenReturn(
                 new UserHealthProfileService.RecommendationContext(
@@ -184,7 +249,7 @@ class RecipeRecommendationServiceTest {
 
     @Test
     void generationPromptIncludesEnabledNutritionTargetAsSoftPreference() {
-        RecipeGenerateRequest request = new RecipeGenerateRequest("番茄", "dinner", "balanced", "text");
+        RecipeGenerateRequest request = new RecipeGenerateRequest("番茄", "dinner", "balanced", "text", null, null, null, false, true);
         AuthPrincipal principal = new AuthPrincipal(7L, "13800138000", AppRole.USER);
         when(userNutritionTargetService.getRecommendationContext(7L)).thenReturn(
                 new UserNutritionTargetService.RecommendationContext(
@@ -207,6 +272,16 @@ class RecipeRecommendationServiceTest {
                 .contains("不保证精确达到目标")
                 .contains("本次输入、忌口和过敏等更高优先级约束");
         verify(userNutritionTargetService).getRecommendationContext(7L);
+    }
+
+    @Test
+    void doesNotQueryPantryWhenSwitchIsOff() {
+        RecipeGenerateRequest request = new RecipeGenerateRequest("番茄", "dinner", "balanced", "text");
+        AuthPrincipal principal = new AuthPrincipal(7L, "13800138000", AppRole.USER);
+
+        recipeRecommendationService.promptFor(request, principal);
+
+        verifyNoInteractions(userPantryService);
     }
 
     @Test
