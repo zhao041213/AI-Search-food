@@ -23,6 +23,15 @@ export function createRecipeDraft() {
   }
 }
 
+export function createRecipeBatchDraft(total = 3) {
+  return Array.from({ length: total }, (_, index) => ({
+    id: `pending-recipe-${index + 1}`,
+    index,
+    label: '',
+    ...createRecipeDraft()
+  }))
+}
+
 export function isRecipeResultPriority(lastSearch, editingConditions) {
   return Boolean(lastSearch && !editingConditions)
 }
@@ -50,19 +59,22 @@ export function applyRecipeStreamEvent(recipe, event) {
     return current
   }
 
-  if (event.event === 'details' && data.explanation && typeof data.explanation === 'object') {
+  const recipeData = { ...data }
+  delete recipeData.recipeId
+  delete recipeData.index
+  if (event.event === 'details' && recipeData.explanation && typeof recipeData.explanation === 'object') {
     return {
       ...current,
-      ...data,
+      ...recipeData,
       explanation: {
         ...current.explanation,
-        ...data.explanation
+        ...recipeData.explanation
       }
     }
   }
   return {
     ...current,
-    ...data
+    ...recipeData
   }
 }
 

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import {
   applyRecipeStreamEvent,
+  createRecipeBatchDraft,
   createRecipeDraft,
   isRecipeReady,
   isRecipeResultPriority,
@@ -35,6 +36,25 @@ test('merges progressive fields without dropping previous modules', () => {
   assert.equal(recipe.title, '番茄炒蛋')
   assert.equal(recipe.summary, '家常菜')
   assert.equal(recipe.explanation.nutrition, '均衡搭配')
+})
+
+test('creates three independent recipe drafts and keeps stream metadata out of recipe fields', () => {
+  const drafts = createRecipeBatchDraft(3)
+  assert.equal(drafts.length, 3)
+  assert.notEqual(drafts[0].id, drafts[1].id)
+
+  const recipe = applyRecipeStreamEvent(drafts[0], {
+    event: 'overview',
+    data: {
+      recipeId: drafts[0].id,
+      index: 0,
+      title: '番茄炒蛋',
+      summary: '家常下饭'
+    }
+  })
+  assert.equal(recipe.title, '番茄炒蛋')
+  assert.equal(recipe.recipeId, undefined)
+  assert.equal(recipe.index, 0)
 })
 
 test('keeps the result-priority mode until the user edits conditions', () => {

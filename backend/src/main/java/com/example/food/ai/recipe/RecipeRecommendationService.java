@@ -112,6 +112,42 @@ public class RecipeRecommendationService {
         return preparePrompt(request, principal).prompt();
     }
 
+    public String recommendationBatchMode(RecipeGenerateRequest request) {
+        return splitIngredientNames(request == null ? null : request.ingredients()).size() > 1
+                ? "MEAL_COMBO"
+                : "STYLE_VARIANTS";
+    }
+
+    public String batchRecipePrompt(
+            String basePrompt,
+            RecipeGenerateRequest request,
+            int recipeIndex,
+            int total
+    ) {
+        String mode = recommendationBatchMode(request);
+        String variant = mode.equals("MEAL_COMBO")
+                ? switch (recipeIndex) {
+                    case 0 -> "以第一个核心食材为主角，设计一道适合搭配主食的主菜";
+                    case 1 -> "以另一个核心食材为主角，设计一道清爽的配菜或汤菜";
+                    default -> "综合剩余食材设计一道口味和烹饪方式不同的配菜";
+                }
+                : switch (recipeIndex) {
+                    case 0 -> "家常下饭风格，步骤清晰、适合日常家庭烹饪";
+                    case 1 -> "清爽低油风格，突出食材原味和营养搭配";
+                    default -> "快速省时风格，适合工作日快速完成";
+                };
+        return basePrompt + """
+
+
+                【多菜谱组合生成规则】
+                本次请求必须生成第 %d 道，共 %d 道相互独立的菜谱，本道菜的定位是：%s。
+                多种输入食材不要求全部放进同一道菜，应该拆分到三道可以搭配成一餐的独立菜品中。
+                菜名只描述本道菜实际使用的核心食材，不要把所有输入食材拼接成一个超长菜名。
+                本道菜至少使用一种用户指定食材；ingredients 和 steps 必须与本道菜名及实际做法一致。
+                三道菜的风格、烹饪方式或搭配角色必须有明显区别。以上规则优先于前文要求将所有输入食材放入单道菜谱的描述。
+                """.formatted(recipeIndex + 1, total, variant);
+    }
+
     public PreparedPrompt preparePrompt(RecipeGenerateRequest request, AuthPrincipal principal) {
         PantrySelection pantry = pantrySelection(request, principal);
         HealthNutritionService.RecommendationContext unifiedHealthNutrition = unifiedHealthNutrition(request, principal);
@@ -249,7 +285,36 @@ public class RecipeRecommendationService {
         }
     }
 
+    public void validateBatchIngredientAlignment(
+            RecipeGenerateRequest request,
+            List<RecipeGenerateResponse> responses
+    ) {
+        if (request == null || request.includeAiIngredientRecommendation() || !hasText(request.ingredients())) {
+            return;
+        }
+        List<String> requested = splitIngredientNames(request.ingredients());
+        Set<String> generated = responses == null ? Set.of() : responses.stream()
+                .filter(java.util.Objects::nonNull)
+                .flatMap(response -> response.ingredients().stream())
+                .filter(item -> item != null && hasText(item.name()))
+                .map(RecipeGenerateResponse.Ingredient::name)
+                .map(this::normalizeIngredientName)
+                .collect(java.util.stream.Collectors.toSet());
+        List<String> missing = requested.stream()
+                .filter(item -> generated.stream().noneMatch(actual -> ingredientMatches(item, actual)))
+                .toList();
+        if (!missing.isEmpty()) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_GATEWAY,
+                    "AI 返回的菜谱组合未覆盖输入食材（缺少：" + String.join("、", missing) + "），请点击重试"
+            );
+        }
+    }
+
     private List<String> splitIngredientNames(String ingredients) {
+        if (!hasText(ingredients)) {
+            return List.of();
+        }
         return java.util.Arrays.stream(ingredients.split("[,，、；;\\n]+"))
                 .map(String::trim)
                 .filter(this::hasText)

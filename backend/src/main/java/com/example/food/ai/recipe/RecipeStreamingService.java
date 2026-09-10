@@ -4,18 +4,23 @@ import com.example.food.admin.error.AdminErrorLogService;
 import com.example.food.ai.qwen.QwenRecipeClient;
 import com.example.food.ai.recipe.dto.RecipeGenerateRequest;
 import com.example.food.ai.recipe.dto.RecipeGenerateResponse;
+import com.example.food.ai.recipe.dto.RecipeRecommendationBatch;
 import com.example.food.security.AuthPrincipal;
 import com.fasterxml.jackson.databind.JsonNode;
-import org.springframework.http.HttpStatus;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
 import java.net.SocketTimeoutException;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -28,7 +33,8 @@ import java.util.concurrent.atomic.AtomicReference;
 @Service
 public class RecipeStreamingService {
 
-    private static final long STREAM_TIMEOUT_MILLIS = 120_000L;
+    private static final long STREAM_TIMEOUT_MILLIS = 300_000L;
+    private static final int RECOMMENDATION_COUNT = 3;
 
     private final RecipeRecommendationService recipeRecommendationService;
     private final QwenRecipeClient qwenRecipeClient;
@@ -81,7 +87,7 @@ public class RecipeStreamingService {
         emitter.onTimeout(cancel);
         emitter.onError(error -> cancel.run());
 
-        if (!sendStatus(emitter, cancelled, "preparing", "正在准备菜谱生成")) {
+        if (!sendStatus(emitter, cancelled, "preparing", "正在准备三道菜谱推荐")) {
             cancel.run();
             return emitter;
         }
@@ -121,48 +127,88 @@ public class RecipeStreamingService {
             requireActive(cancelled);
             RecipeRecommendationService.PreparedPrompt prepared = recipeRecommendationService.preparePrompt(request, principal);
             requireActive(cancelled);
-            sendStatusOrCancel(emitter, cancelled, "generating", "正在连接 AI 生成服务");
+            sendStatusOrCancel(emitter, cancelled, "generating", "正在连接 AI 生成三道菜谱");
 
-            RecipeStreamFieldParser parser = new RecipeStreamFieldParser(new com.fasterxml.jackson.databind.ObjectMapper());
-            QwenRecipeClient.RecipeStreamResult streamResult = qwenRecipeClient.streamRecipe(
-                    prepared.prompt(),
-                    delta -> {
-                        requireActive(cancelled);
-                        Map<String, JsonNode> fields = parser.accept(delta);
-                        sendFieldGroups(emitter, cancelled, fields);
-                    },
-                    () -> sendStatusOrCancel(emitter, cancelled, "receiving", "AI 正在生成菜谱内容")
-            );
-            requireActive(cancelled);
-            sendStatusOrCancel(emitter, cancelled, "parsing", "正在整理菜谱内容");
+            String batchId = UUID.randomUUID().toString();
+            String mode = recipeRecommendationService.recommendationBatchMode(request);
+            sendOrCancel(emitter, cancelled, "batch-start", Map.of(
+                    "batchId", batchId,
+                    "mode", mode,
+                    "total", RECOMMENDATION_COUNT
+            ));
 
-            RecipeGenerateResponse response = streamResult.fallbackResponse();
-            if (response == null) {
-                response = qwenRecipeClient.parseRecipeContent(
-                        streamResult.content(),
-                        qwenRecipeClient.currentRuntimeConfig()
+            List<GeneratedRecipe> generatedRecipes = new ArrayList<>(RECOMMENDATION_COUNT);
+            for (int index = 0; index < RECOMMENDATION_COUNT; index++) {
+                requireActive(cancelled);
+                final int recipeIndex = index;
+                String recipeId = batchId + "-recipe-" + (recipeIndex + 1);
+                sendOrCancel(emitter, cancelled, "recipe-start", Map.of(
+                        "batchId", batchId,
+                        "recipeId", recipeId,
+                        "index", recipeIndex,
+                        "label", recipeLabel(mode, recipeIndex)
+                ));
+
+                RecipeStreamFieldParser parser = new RecipeStreamFieldParser(new com.fasterxml.jackson.databind.ObjectMapper());
+                String recipePrompt = recipeRecommendationService.batchRecipePrompt(
+                        prepared.prompt(), request, recipeIndex, RECOMMENDATION_COUNT
                 );
-            }
-            validateRecipe(response);
-            recipeRecommendationService.validateIngredientAlignment(request, response);
-            requireActive(cancelled);
-            sendStatusOrCancel(emitter, cancelled, "saving", "正在保存本次搜索记录");
-            requireActive(cancelled);
-            RecipeGenerateResponse persisted = response.withContextFlags(
-                            prepared.pantryReferenced(),
-                            prepared.pantryFallback(),
-                            prepared.healthNutritionReferenced()
+                QwenRecipeClient.RecipeStreamResult streamResult = qwenRecipeClient.streamRecipe(
+                        recipePrompt,
+                        delta -> {
+                            requireActive(cancelled);
+                            Map<String, JsonNode> fields = parser.accept(delta);
+                            sendFieldGroups(emitter, cancelled, recipeId, recipeIndex, fields);
+                        },
+                        () -> sendStatusOrCancel(cancelled, emitter, "receiving", recipeIndex)
+                );
+                requireActive(cancelled);
+                sendStatusOrCancel(emitter, cancelled, "parsing", "正在整理第 " + (recipeIndex + 1) + " 道菜谱");
+
+                RecipeGenerateResponse response = streamResult.fallbackResponse();
+                if (response == null) {
+                    response = qwenRecipeClient.parseRecipeContent(
+                            streamResult.content(),
+                            qwenRecipeClient.currentRuntimeConfig()
                     );
-            persisted = recipeRecommendationService.persist(
+                }
+                validateRecipe(response);
+                generatedRecipes.add(new GeneratedRecipe(recipeId, recipeIndex, response));
+            }
+
+            recipeRecommendationService.validateBatchIngredientAlignment(
                     request,
-                    persisted,
-                    principal,
-                    anonymousId
+                    generatedRecipes.stream().map(GeneratedRecipe::response).toList()
             );
             requireActive(cancelled);
-            sendOrCancel(emitter, cancelled, "complete", persisted);
+            sendStatusOrCancel(emitter, cancelled, "saving", "正在保存本次推荐记录");
+
+            List<RecipeGenerateResponse> persistedRecipes = new ArrayList<>(RECOMMENDATION_COUNT);
+            for (GeneratedRecipe generated : generatedRecipes) {
+                requireActive(cancelled);
+                RecipeGenerateResponse persisted = generated.response().withContextFlags(
+                        prepared.pantryReferenced(),
+                        prepared.pantryFallback(),
+                        prepared.healthNutritionReferenced()
+                );
+                persisted = recipeRecommendationService.persist(request, persisted, principal, anonymousId);
+                persistedRecipes.add(persisted);
+                sendOrCancel(emitter, cancelled, "recipe-complete", Map.of(
+                        "batchId", batchId,
+                        "recipeId", generated.recipeId(),
+                        "index", generated.index(),
+                        "recipe", persisted
+                ));
+            }
+            requireActive(cancelled);
+            sendOrCancel(emitter, cancelled, "complete", new RecipeRecommendationBatch(
+                    batchId,
+                    mode,
+                    persistedRecipes.size(),
+                    persistedRecipes
+            ));
             emitter.complete();
-        } catch (StreamCancelledException | java.util.concurrent.CancellationException exception) {
+        } catch (StreamCancelledException | CancellationException exception) {
             // The client has left or a newer request has superseded this stream.
         } catch (Throwable exception) {
             if (cancelled.get() || Thread.currentThread().isInterrupted()) {
@@ -185,35 +231,50 @@ public class RecipeStreamingService {
         }
     }
 
+    private void sendStatusOrCancel(
+            AtomicBoolean cancelled,
+            SseEmitter emitter,
+            String stage,
+            int recipeIndex
+    ) {
+        sendStatusOrCancel(emitter, cancelled, stage, "AI 正在生成第 " + (recipeIndex + 1) + " 道菜谱");
+    }
+
     private void sendFieldGroups(
             SseEmitter emitter,
             AtomicBoolean cancelled,
+            String recipeId,
+            int index,
             Map<String, JsonNode> fields
     ) {
         if (fields.isEmpty()) {
             return;
         }
-        sendGroup(emitter, cancelled, "overview", fields, "title", "summary", "effects");
-        sendGroup(emitter, cancelled, "ingredients", fields, "ingredients", "missingIngredients");
-        sendGroup(emitter, cancelled, "steps", fields, "steps", "tips", "videoKeywords");
-        sendGroup(emitter, cancelled, "details", fields, "explanation", "nutritionEstimate");
+        sendGroup(emitter, cancelled, recipeId, index, "overview", fields, "title", "summary", "effects");
+        sendGroup(emitter, cancelled, recipeId, index, "ingredients", fields, "ingredients", "missingIngredients");
+        sendGroup(emitter, cancelled, recipeId, index, "steps", fields, "steps", "tips", "videoKeywords");
+        sendGroup(emitter, cancelled, recipeId, index, "details", fields, "explanation", "nutritionEstimate");
     }
 
     private void sendGroup(
             SseEmitter emitter,
             AtomicBoolean cancelled,
+            String recipeId,
+            int index,
             String event,
             Map<String, JsonNode> fields,
             String... fieldNames
     ) {
-        Map<String, JsonNode> group = new LinkedHashMap<>();
+        Map<String, Object> group = new LinkedHashMap<>();
+        group.put("recipeId", recipeId);
+        group.put("index", index);
         for (String fieldName : fieldNames) {
             JsonNode value = fields.get(fieldName);
             if (value != null) {
                 group.put(fieldName, value);
             }
         }
-        if (!group.isEmpty()) {
+        if (group.size() > 2) {
             sendOrCancel(emitter, cancelled, event, group);
         }
     }
@@ -313,6 +374,21 @@ public class RecipeStreamingService {
         return "AI 菜谱生成暂时失败，请检查网络后重试";
     }
 
+    private String recipeLabel(String mode, int index) {
+        if ("MEAL_COMBO".equals(mode)) {
+            return switch (index) {
+                case 0 -> "主菜搭配";
+                case 1 -> "清爽配菜";
+                default -> "风味配菜";
+            };
+        }
+        return switch (index) {
+            case 0 -> "家常风味";
+            case 1 -> "清爽低油";
+            default -> "快速省时";
+        };
+    }
+
     private boolean hasText(String value) {
         return value != null && !value.isBlank();
     }
@@ -327,5 +403,8 @@ public class RecipeStreamingService {
     }
 
     private static final class StreamCancelledException extends RuntimeException {
+    }
+
+    private record GeneratedRecipe(String recipeId, int index, RecipeGenerateResponse response) {
     }
 }

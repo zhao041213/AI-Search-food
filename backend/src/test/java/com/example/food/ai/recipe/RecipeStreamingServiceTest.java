@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.function.Consumer;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -29,6 +30,9 @@ class RecipeStreamingServiceTest {
         when(recommendationService.preparePrompt(any(), any())).thenReturn(
                 new RecipeRecommendationService.PreparedPrompt("prompt", false, false, false)
         );
+        when(recommendationService.recommendationBatchMode(any())).thenReturn("MEAL_COMBO");
+        when(recommendationService.batchRecipePrompt(anyString(), any(), anyInt(), anyInt()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
         when(recommendationService.persist(any(), any(), any(), anyString())).thenReturn(response);
         when(qwenClient.streamRecipe(anyString(), any(), any())).thenAnswer(invocation -> {
             Consumer<String> onDelta = invocation.getArgument(1);
@@ -42,9 +46,9 @@ class RecipeStreamingServiceTest {
                 "anon-001"
         );
 
-        verify(recommendationService, timeout(2000).times(1)).persist(any(), any(), any(), anyString());
-        verify(recommendationService, timeout(2000).times(1)).validateIngredientAlignment(any(), any());
-        verify(qwenClient, timeout(2000)).streamRecipe(anyString(), any(), any());
+        verify(recommendationService, timeout(2000).times(3)).persist(any(), any(), any(), anyString());
+        verify(recommendationService, timeout(2000).times(1)).validateBatchIngredientAlignment(any(), any());
+        verify(qwenClient, timeout(2000).times(3)).streamRecipe(anyString(), any(), any());
         emitter.complete();
     }
 
@@ -64,6 +68,9 @@ class RecipeStreamingServiceTest {
         when(recommendationService.preparePrompt(any(), any())).thenReturn(
                 new RecipeRecommendationService.PreparedPrompt("prompt", false, false, false)
         );
+        when(recommendationService.recommendationBatchMode(any())).thenReturn("STYLE_VARIANTS");
+        when(recommendationService.batchRecipePrompt(anyString(), any(), anyInt(), anyInt()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
         when(qwenClient.streamRecipe(anyString(), any(), any())).thenReturn(
                 new QwenRecipeClient.RecipeStreamResult("", response, "qwen", "qwen-plus", false)
         );

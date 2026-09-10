@@ -358,6 +358,44 @@
             </div>
           </div>
 
+          <section
+            v-if="recommendationRecipes.length > 1"
+            class="recommendation-selector"
+            aria-label="菜谱推荐选择"
+          >
+            <div class="recommendation-selector-heading">
+              <div>
+                <span class="eyebrow">本次推荐</span>
+                <strong>{{ recommendationModeLabel }}</strong>
+              </div>
+              <span>{{ recommendationReadyCount }} / {{ recommendationRecipes.length }} 道已完成</span>
+            </div>
+            <div class="recommendation-selector-track" role="tablist" aria-label="三道推荐菜谱">
+              <button
+                v-for="(item, index) in recommendationRecipes"
+                :id="`recommendation-card-${item.id}`"
+                :key="item.id"
+                class="recommendation-card"
+                :class="{ active: item.id === activeRecipeId, ready: isRecipeReady(item) }"
+                type="button"
+                role="tab"
+                :aria-selected="item.id === activeRecipeId"
+                @click="selectRecommendationRecipe(item.id)"
+                @keydown.left.prevent="moveRecommendationSelection(-1)"
+                @keydown.right.prevent="moveRecommendationSelection(1)"
+              >
+                <span class="recommendation-card-index">{{ String(index + 1).padStart(2, '0') }}</span>
+                <span class="recommendation-card-copy">
+                  <strong>{{ item.title || item.label || `菜谱 ${index + 1}` }}</strong>
+                  <small>{{ item.label || '推荐处理中' }} · {{ recipeCardStatus(item) }}</small>
+                </span>
+                <span class="recommendation-card-state" aria-hidden="true">
+                  {{ isRecipeReady(item) ? '✓' : '…' }}
+                </span>
+              </button>
+            </div>
+          </section>
+
           <div v-if="recipe && (generating || streamFailed)" class="stream-status" role="status" aria-live="polite">
             <span class="stream-status-dot" aria-hidden="true"></span>
             <div>
@@ -1092,6 +1130,7 @@ import {
 } from '../utils/recipeEnhancements'
 import {
   applyRecipeStreamEvent,
+  createRecipeBatchDraft,
   createRecipeDraft,
   isRecipeReady,
   isRecipeResultPriority,
@@ -1123,6 +1162,9 @@ const recognizedIngredients = ref([])
 const recognitionDescription = ref('')
 const lastSearch = ref(null)
 const recipe = ref(null)
+const recommendationRecipes = ref([])
+const recommendationBatch = ref(null)
+const activeRecipeId = ref(null)
 const generating = ref(false)
 const regenerating = ref(false)
 const generationStage = ref('idle')
@@ -1138,6 +1180,7 @@ const useHealthNutrition = ref(false)
 const recognizing = ref(false)
 const savingRecipe = ref(false)
 const savedRecipeId = ref(null)
+const savedRecipeIds = ref({})
 const feedbackReaction = ref(null)
 const feedbackCooked = ref(false)
 const feedbackLoading = ref(false)
@@ -1226,9 +1269,17 @@ const modeLabels = {
 }
 
 const hasSearch = computed(() => Boolean(lastSearch.value))
+const recommendationReadyCount = computed(() => recommendationRecipes.value
+  .filter((item) => isRecipeReady(item)).length)
+const recommendationModeLabel = computed(() => (
+  recommendationBatch.value?.mode === 'MEAL_COMBO'
+    ? '组合搭配'
+    : '单食材多风格'
+))
 const recipeComplete = computed(() => Boolean(
   generationCompleted.value
   && !generating.value
+  && (recommendationRecipes.value.length <= 1 || recommendationReadyCount.value >= 3)
   && isRecipeReady(recipe.value)
 ))
 const resultPriorityMode = computed(() => isRecipeResultPriority(lastSearch.value, editingConditions.value))
@@ -1568,6 +1619,120 @@ async function runSearch() {
   await runRecipeGeneration(request, '菜谱推荐已生成')
 }
 
+function resetRecommendationBatch() {
+  recommendationBatch.value = null
+  recommendationRecipes.value = createRecipeBatchDraft(3)
+  activeRecipeId.value = recommendationRecipes.value[0]?.id || null
+  recipe.value = recommendationRecipes.value[0] || createRecipeDraft()
+  savedRecipeIds.value = {}
+  savedRecipeId.value = null
+}
+
+function replaceRecommendationRecipe(recipeId, nextRecipe) {
+  const index = recommendationRecipes.value.findIndex((item) => item.id === recipeId)
+  if (index < 0) return
+  const nextItems = [...recommendationRecipes.value]
+  nextItems[index] = nextRecipe
+  recommendationRecipes.value = nextItems
+  if (activeRecipeId.value === recipeId) {
+    recipe.value = nextRecipe
+  }
+}
+
+function handleBatchStart(data) {
+  const total = Math.max(3, Number(data?.total) || 3)
+  const batchId = data?.batchId || `batch-${Date.now()}`
+  recommendationBatch.value = {
+    batchId,
+    mode: data?.mode || 'STYLE_VARIANTS',
+    total
+  }
+  recommendationRecipes.value = createRecipeBatchDraft(total).map((item) => ({
+    ...item,
+    id: `${batchId}-recipe-${item.index + 1}`
+  }))
+  activeRecipeId.value = recommendationRecipes.value[0]?.id || null
+  recipe.value = recommendationRecipes.value[0] || createRecipeDraft()
+}
+
+function handleRecipeStart(data) {
+  const current = recommendationRecipes.value.find((item) => item.id === data?.recipeId)
+  if (!current) return
+  replaceRecommendationRecipe(data.recipeId, {
+    ...current,
+    label: data.label || current.label,
+    index: Number.isFinite(Number(data.index)) ? Number(data.index) : current.index
+  })
+}
+
+function handleRecipeStreamEvent(event) {
+  const recipeId = event?.data?.recipeId
+  if (!recipeId) return
+  const current = recommendationRecipes.value.find((item) => item.id === recipeId)
+  if (!current) return
+  replaceRecommendationRecipe(recipeId, applyRecipeStreamEvent(current, event))
+}
+
+function handleRecipeComplete(data) {
+  if (!data?.recipeId || !data.recipe) return
+  const current = recommendationRecipes.value.find((item) => item.id === data.recipeId)
+  if (!current) return
+  replaceRecommendationRecipe(data.recipeId, {
+    ...current,
+    ...data.recipe,
+    id: data.recipeId,
+    index: Number.isFinite(Number(data.index)) ? Number(data.index) : current.index
+  })
+}
+
+function handleBatchComplete(data) {
+  if (!data || !Array.isArray(data.recipes)) return
+  recommendationBatch.value = {
+    ...(recommendationBatch.value || {}),
+    batchId: data.batchId || recommendationBatch.value?.batchId,
+    mode: data.mode || recommendationBatch.value?.mode || 'STYLE_VARIANTS',
+    total: data.total || data.recipes.length
+  }
+  data.recipes.forEach((item, index) => {
+    const recipeId = recommendationRecipes.value[index]?.id || `${data.batchId}-recipe-${index + 1}`
+    replaceRecommendationRecipe(recipeId, {
+      ...item,
+      id: recipeId,
+      index
+    })
+  })
+  const active = recommendationRecipes.value.find((item) => item.id === activeRecipeId.value)
+  if (active) recipe.value = active
+}
+
+function selectRecommendationRecipe(recipeId) {
+  const selected = recommendationRecipes.value.find((item) => item.id === recipeId)
+  if (!selected || selected.id === activeRecipeId.value) return
+  activeRecipeId.value = selected.id
+  recipe.value = selected
+  savedRecipeId.value = savedRecipeIds.value[selected.id] || null
+  resetRecommendationFeedback()
+  detailSection.value = 'overview'
+  void loadRecommendationFeedback(selected.searchLogId)
+  void loadShoppingChecks()
+  void loadPantryReadiness()
+}
+
+function moveRecommendationSelection(delta) {
+  const currentIndex = recommendationRecipes.value.findIndex((item) => item.id === activeRecipeId.value)
+  if (currentIndex < 0 || recommendationRecipes.value.length < 2) return
+  const nextIndex = (currentIndex + delta + recommendationRecipes.value.length) % recommendationRecipes.value.length
+  const next = recommendationRecipes.value[nextIndex]
+  selectRecommendationRecipe(next.id)
+  window.setTimeout(() => document.getElementById(`recommendation-card-${next.id}`)?.focus(), 0)
+}
+
+function recipeCardStatus(item) {
+  if (isRecipeReady(item)) return '已生成'
+  if (item.title || item.ingredients?.length || item.steps?.length) return '正在生成'
+  return '等待生成'
+}
+
 async function runRecipeGeneration(request, successMessage) {
   cancelRecipeStream()
   const requestId = generationRequestId.value + 1
@@ -1581,8 +1746,7 @@ async function runRecipeGeneration(request, successMessage) {
   lastSearch.value = request
   editingConditions.value = false
   detailSection.value = 'overview'
-  recipe.value = createRecipeDraft()
-  savedRecipeId.value = null
+  resetRecommendationBatch()
   resetRecommendationFeedback()
   currentRecipePage.value = 0
   isFollowingLatest.value = true
@@ -1607,11 +1771,24 @@ async function runRecipeGeneration(request, successMessage) {
         if (event.event === 'error') {
           throw new RecipeStreamError(event.data?.message || '菜谱生成失败，请稍后重试')
         }
-        if (['overview', 'ingredients', 'steps', 'details', 'complete'].includes(event.event)) {
-          recipe.value = applyRecipeStreamEvent(recipe.value, event)
+        if (event.event === 'batch-start') {
+          handleBatchStart(event.data)
+          return
+        }
+        if (event.event === 'recipe-start') {
+          handleRecipeStart(event.data)
+          return
+        }
+        if (['overview', 'ingredients', 'steps', 'details'].includes(event.event)) {
+          handleRecipeStreamEvent(event)
+          queueRecipeScrollToLatest()
+        }
+        if (event.event === 'recipe-complete') {
+          handleRecipeComplete(event.data)
           queueRecipeScrollToLatest()
         }
         if (event.event === 'complete') {
+          handleBatchComplete(event.data)
           generationCompleted.value = true
           generationStage.value = 'complete'
         }
@@ -1621,7 +1798,7 @@ async function runRecipeGeneration(request, successMessage) {
     if (requestId !== generationRequestId.value) {
       return false
     }
-    if (!generationCompleted.value || !isRecipeReady(recipe.value)) {
+    if (!generationCompleted.value || recommendationReadyCount.value < 3) {
       throw new RecipeStreamError('AI 返回的菜谱内容不完整，请点击重试')
     }
     await loadRecommendationFeedback(recipe.value?.searchLogId)
@@ -1643,7 +1820,7 @@ async function runRecipeGeneration(request, successMessage) {
     generationStage.value = 'error'
     streamErrorMessage.value = getErrorMessage(error)
     if (!generationCompleted.value) {
-      recipe.value = createRecipeDraft()
+      resetRecommendationBatch()
     }
     ElMessage.error(streamErrorMessage.value)
     return false
@@ -1699,11 +1876,15 @@ function resetSearch() {
   lastSearch.value = null
   editingConditions.value = false
   recipe.value = null
+  recommendationRecipes.value = []
+  recommendationBatch.value = null
+  activeRecipeId.value = null
   generationCompleted.value = false
   generationStage.value = 'idle'
   streamFailed.value = false
   streamErrorMessage.value = ''
   savedRecipeId.value = null
+  savedRecipeIds.value = {}
   resetRecommendationFeedback()
   currentRecipePage.value = 0
   isFollowingLatest.value = true
@@ -1726,6 +1907,8 @@ async function saveCurrentRecipe() {
   if (!auth.isUser) {
     window.sessionStorage.setItem(PENDING_RECIPE_KEY, JSON.stringify({
       recipe: recipe.value,
+      recommendationRecipes: recommendationRecipes.value,
+      activeRecipeId: activeRecipeId.value,
       lastSearch: lastSearch.value
     }))
     ElMessage.warning('请先登录，再保存到我的菜谱')
@@ -1756,6 +1939,12 @@ async function saveCurrentRecipe() {
       model: recipe.value.model
     })
     savedRecipeId.value = response.data.data?.id || null
+    if (activeRecipeId.value && savedRecipeId.value) {
+      savedRecipeIds.value = {
+        ...savedRecipeIds.value,
+        [activeRecipeId.value]: savedRecipeId.value
+      }
+    }
     window.sessionStorage.removeItem(PENDING_RECIPE_KEY)
     ElMessage.success('菜谱已保存到我的菜谱')
   } catch (error) {
@@ -1779,6 +1968,10 @@ async function regenerateCurrentRecipe(preference) {
   }
 
   const currentRecipe = recipe.value
+  const currentRecommendationRecipes = recommendationRecipes.value
+  const currentRecommendationBatch = recommendationBatch.value
+  const currentActiveRecipeId = activeRecipeId.value
+  const currentSavedRecipeIds = savedRecipeIds.value
   const currentSavedRecipeId = savedRecipeId.value
   const currentSearch = lastSearch.value
   const currentGenerationCompleted = generationCompleted.value
@@ -1813,6 +2006,10 @@ async function regenerateCurrentRecipe(preference) {
       return
     }
     recipe.value = currentRecipe
+    recommendationRecipes.value = currentRecommendationRecipes
+    recommendationBatch.value = currentRecommendationBatch
+    activeRecipeId.value = currentActiveRecipeId
+    savedRecipeIds.value = currentSavedRecipeIds
     lastSearch.value = currentSearch
     savedRecipeId.value = currentSavedRecipeId
     generationCompleted.value = currentGenerationCompleted
@@ -1833,7 +2030,18 @@ function restorePendingRecipe() {
   try {
     const draft = JSON.parse(pending)
     if (draft?.recipe && draft?.lastSearch) {
-      recipe.value = draft.recipe
+      recommendationRecipes.value = Array.isArray(draft.recommendationRecipes) && draft.recommendationRecipes.length
+        ? draft.recommendationRecipes
+        : [{ id: 'restored-recipe-1', index: 0, label: '已恢复', ...draft.recipe }]
+      activeRecipeId.value = draft.activeRecipeId || recommendationRecipes.value[0]?.id || null
+      recipe.value = recommendationRecipes.value.find((item) => item.id === activeRecipeId.value)
+        || recommendationRecipes.value[0]
+        || draft.recipe
+      recommendationBatch.value = recommendationRecipes.value.length > 1
+        ? { mode: 'STYLE_VARIANTS', total: recommendationRecipes.value.length }
+        : null
+      savedRecipeIds.value = {}
+      savedRecipeId.value = null
       lastSearch.value = draft.lastSearch
       editingConditions.value = false
       detailSection.value = 'overview'
@@ -4322,6 +4530,150 @@ h3 {
 .latest-content-bar button:hover {
   background: var(--app-accent-hover);
   outline: none;
+}
+
+.recommendation-selector {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--app-line);
+  border-radius: 8px;
+  background: var(--app-surface-strong);
+}
+
+.recommendation-selector-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.recommendation-selector-heading > div {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.recommendation-selector-heading strong {
+  color: var(--app-text);
+  font-size: 13px;
+}
+
+.recommendation-selector-heading > span {
+  flex: 0 0 auto;
+  color: var(--app-text-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.recommendation-selector-track {
+  display: grid;
+  grid-auto-columns: minmax(190px, 1fr);
+  grid-auto-flow: column;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: thin;
+}
+
+.recommendation-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 60px;
+  padding: 9px 10px;
+  border: 1px solid var(--app-line);
+  border-radius: 8px;
+  color: var(--app-text-muted);
+  background: var(--app-surface);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  scroll-snap-align: start;
+  transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease;
+}
+
+.recommendation-card:hover,
+.recommendation-card:focus-visible,
+.recommendation-card.active {
+  border-color: var(--app-accent);
+  color: var(--app-text);
+  background: var(--app-accent-soft);
+  outline: none;
+}
+
+.recommendation-card-index {
+  color: var(--app-accent);
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.recommendation-card-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.recommendation-card-copy strong,
+.recommendation-card-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recommendation-card-copy strong {
+  color: inherit;
+  font-size: 13px;
+}
+
+.recommendation-card-copy small {
+  color: var(--app-text-muted);
+  font-size: 11px;
+}
+
+.recommendation-card-state {
+  color: var(--app-text-faint);
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.recommendation-card.ready .recommendation-card-state {
+  color: var(--app-success, #1b9a72);
+}
+
+@container scene-window-content (max-width: 920px) {
+  .recommendation-selector-track {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container scene-window-content (max-width: 620px) {
+  .recommendation-selector-track {
+    grid-template-columns: repeat(1, minmax(0, 1fr));
+    grid-auto-columns: minmax(0, 100%);
+  }
+}
+
+@media (max-width: 960px) {
+  .recommendation-selector-track {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .recommendation-selector-track {
+    grid-template-columns: repeat(1, minmax(0, 1fr));
+    grid-auto-columns: minmax(0, 100%);
+  }
 }
 
 .stream-progress-panel {
