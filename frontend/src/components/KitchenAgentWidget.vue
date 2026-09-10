@@ -20,8 +20,8 @@
           </div>
         </div>
         <div class="agent-panel__actions">
-          <button type="button" class="agent-icon-button" aria-label="创建新对话" title="新对话" @click="startNewConversation">
-            <Plus :size="17" aria-hidden="true" />
+          <button type="button" class="agent-icon-button" aria-label="最小化小厨灵" title="最小化小厨灵" @click="minimizePanel">
+            <span class="agent-pixel-minus" aria-hidden="true" />
           </button>
           <button type="button" class="agent-icon-button" aria-label="关闭小厨灵" title="关闭" @click="closePanel">
             <X :size="17" aria-hidden="true" />
@@ -179,6 +179,7 @@
     <button
       type="button"
       class="agent-launcher"
+      ref="launcher"
       :class="{ 'is-open': isOpen, 'is-thinking': loading }"
       aria-label="打开小厨灵厨房助手"
       :aria-expanded="isOpen"
@@ -193,7 +194,7 @@
 
 <script setup>
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Bell, BookOpen, CalendarDays, Check, ClipboardCheck, Clock3, Database, HeartPulse, LockKeyhole, Paperclip, Plus, Save, Send, ShieldCheck, Square, X } from 'lucide-vue-next'
+import { Bell, BookOpen, CalendarDays, Check, ClipboardCheck, Clock3, Database, HeartPulse, LockKeyhole, Paperclip, Save, Send, ShieldCheck, Square, X } from 'lucide-vue-next'
 import { deleteAgentConversation, streamAgentChat } from '../api/agent.js'
 import { useAuthStore } from '../stores/auth.js'
 
@@ -205,6 +206,7 @@ const messages = ref([])
 const conversationId = ref(null)
 const messageList = ref(null)
 const input = ref(null)
+const launcher = ref(null)
 const attachmentInput = ref(null)
 const attachment = ref(null)
 const attachmentPreview = ref('')
@@ -238,6 +240,11 @@ function togglePanel() {
 
 function closePanel() {
   isOpen.value = false
+}
+
+function minimizePanel() {
+  isOpen.value = false
+  void nextTick(() => launcher.value?.focus())
 }
 
 function handleInputKeydown(event) {
@@ -334,16 +341,6 @@ function stopGeneration() {
   abortController.value?.abort()
   abortController.value = null
   loading.value = false
-}
-
-function startNewConversation() {
-  stopGeneration()
-  clearAttachment()
-  revokeAllPreviews()
-  conversationId.value = null
-  messages.value = []
-  draft.value = ''
-  void nextTick(() => input.value?.focus())
 }
 
 async function clearConversation() {
@@ -503,6 +500,7 @@ async function scrollToBottom() {
 .agent-panel__actions { display: flex; gap: 4px; }
 .agent-icon-button { display: inline-grid; width: 44px; height: 44px; place-items: center; border: 1px solid transparent; color: #654b37; background: transparent; cursor: pointer; }
 .agent-icon-button:hover, .agent-icon-button:focus-visible { border-color: #9b754b; background: #fff4d6; outline: 2px solid #4f8ca5; outline-offset: 2px; }
+.agent-pixel-minus { display: block; width: 14px; height: 3px; background: currentColor; }
 .agent-messages { flex: 1; min-height: 0; overflow-y: auto; padding: 14px; scroll-behavior: smooth; }
 .agent-empty-state { display: grid; gap: 8px; margin: 12px 0 14px; padding: 17px; border: 1px dashed #c8aa7b; background: #fffdf4; }
 .agent-empty-state__stamp, .agent-card__stamp { width: max-content; padding: 3px 6px; border: 1px solid #a36e2d; color: #a36e2d; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 10px; font-weight: 900; letter-spacing: .08em; }
@@ -540,7 +538,7 @@ async function scrollToBottom() {
 .agent-result-detail { max-height: 220px; margin: 0; overflow: auto; padding: 9px; border: 1px solid #ead9b9; color: #5d4936; background: #fffaf0; font: 11px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 .agent-trace { color: #8b765c; font-size: 10px; }.agent-trace summary { width: max-content; color: #876c4d; cursor: pointer; }.agent-trace span { display: block; margin-top: 4px; padding-left: 10px; overflow-wrap: anywhere; }.agent-trace span::before { content: '·'; margin-right: 5px; color: #a36e2d; }
 .agent-error-actions { display: flex; justify-content: flex-start; }.agent-login-hint { display: flex; align-items: center; gap: 6px; padding: 8px 14px; border-top: 1px solid #ead9b9; color: #986424; background: #fff4d6; font-size: 11px; font-weight: 800; }
-.agent-quick-prompts { display: flex; gap: 6px; overflow-x: auto; padding: 8px 14px 10px; border-top: 1px solid #ead9b9; scrollbar-width: thin; }.agent-quick-prompt { min-height: 44px; padding: 0 9px; border: 1px solid #c8aa7b; color: #6d543d; background: #fffdf5; font: inherit; font-size: 11px; font-weight: 800; white-space: nowrap; cursor: pointer; }.agent-quick-prompt:hover, .agent-quick-prompt:focus-visible { border-color: #4f8ca5; background: #fff4d6; outline: 2px solid #4f8ca5; outline-offset: 2px; }
+.agent-quick-prompts { display: flex; flex-wrap: wrap; gap: 6px; overflow-x: hidden; padding: 8px 14px 10px; border-top: 1px solid #ead9b9; }.agent-quick-prompt { min-height: 44px; padding: 0 9px; border: 1px solid #c8aa7b; color: #6d543d; background: #fffdf5; font: inherit; font-size: 11px; font-weight: 800; white-space: nowrap; cursor: pointer; }.agent-quick-prompt:hover, .agent-quick-prompt:focus-visible { border-color: #4f8ca5; background: #fff4d6; outline: 2px solid #4f8ca5; outline-offset: 2px; }
 .agent-composer { display: grid; gap: 6px; padding: 10px 14px; border-top: 1px solid #d6b989; background: #f5e6c3; }.agent-composer textarea { width: 100%; min-height: 58px; resize: vertical; padding: 9px 10px; border: 1px solid #b99562; border-radius: 0; color: #3b2b21; background: #fffdf5; font: inherit; font-size: 14px; line-height: 1.5; outline: none; }.agent-composer textarea:focus { border-color: #4f8ca5; box-shadow: 0 0 0 2px rgba(79,140,165,.22); }.agent-composer textarea:disabled { opacity: .65; }.agent-composer__footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: #8b765c; font-size: 10px; }.agent-send-button { display: inline-grid; width: 44px; height: 44px; place-items: center; border: 1px solid #3d7866; color: #fff; background: #3d7866; cursor: pointer; }.agent-send-button:hover, .agent-send-button:focus-visible { background: #2f6655; outline: 2px solid #4f8ca5; outline-offset: 2px; }.agent-send-button:disabled { opacity: .5; cursor: not-allowed; }
 .agent-composer__actions { display: flex; align-items: center; gap: 7px; }.agent-attach-button { display: inline-grid; width: 44px; height: 44px; place-items: center; border: 1px solid #b99562; color: #654b37; background: #fffaf0; cursor: pointer; }.agent-attach-button:hover, .agent-attach-button:focus-visible { border-color: #4f8ca5; background: #fff4d6; outline: 2px solid #4f8ca5; outline-offset: 2px; }.agent-attach-button:disabled { opacity: .5; cursor: not-allowed; }
 .agent-attachment-preview { display: grid; grid-template-columns: 48px minmax(0, 1fr) 44px; align-items: center; gap: 8px; padding: 7px; border: 1px solid #b99562; background: #fffaf0; }.agent-attachment-preview img { width: 48px; height: 48px; object-fit: cover; border: 1px solid #d6b989; }.agent-attachment-preview div { display: grid; gap: 3px; min-width: 0; }.agent-attachment-preview strong, .agent-attachment-preview small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.agent-attachment-preview strong { font-size: 12px; }.agent-attachment-preview small { color: #8b765c; font-size: 10px; }

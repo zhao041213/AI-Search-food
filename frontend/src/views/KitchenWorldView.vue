@@ -21,23 +21,6 @@
       </div>
     </section>
 
-    <section class="station-guide" aria-label="功能入口速查">
-      <button
-        v-for="item in guideItems"
-        :key="item.id"
-        type="button"
-        class="station-guide-item"
-        :style="{ '--guide-accent': item.accent }"
-        @click="openStation(item.id)"
-      >
-        <span class="guide-icon" aria-hidden="true"><component :is="item.icon" :size="16" /></span>
-        <span>
-          <strong>{{ item.role }}</strong>
-          <small>{{ item.title }}</small>
-        </span>
-      </button>
-    </section>
-
     <KitchenStationPanel
       :model-value="stationPanelVisible"
       :feature-id="activeFeatureId"
@@ -53,14 +36,12 @@ import { useRoute, useRouter } from 'vue-router'
 import KitchenStationPanel from '../components/kitchen/KitchenStationPanel.vue'
 import { useKitchenStore } from '../stores/kitchen'
 import {
-  getKitchenGuideItems,
   kitchenStationLocation,
   kitchenWorldLocation,
   parseKitchenFeature,
   parseKitchenStation
 } from '../utils/kitchenFeatures'
 
-const guideItems = getKitchenGuideItems()
 const KitchenScene = defineAsyncComponent(() => import('../components/kitchen/KitchenScene.vue'))
 const route = useRoute()
 const router = useRouter()
@@ -160,82 +141,4 @@ function handlePanelVisibility(visible) {
   outline-offset: 2px;
 }
 
-.station-guide {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-  max-width: 1520px;
-  margin: 14px auto 0;
-}
-
-.station-guide-item {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  min-width: 0;
-  padding: 9px 10px;
-  border: 1px solid #c8aa7b;
-  border-left: 4px solid var(--guide-accent);
-  color: #4b3728;
-  background: #f8efdc;
-  text-align: left;
-  cursor: pointer;
-  transition: transform 160ms ease, background-color 160ms ease, border-color 160ms ease;
-}
-
-.station-guide-item:hover,
-.station-guide-item:focus-visible {
-  border-color: var(--guide-accent);
-  background: #fff8e9;
-  outline: 2px solid #4f8ca5;
-  outline-offset: 2px;
-  transform: translateY(-2px);
-}
-
-.guide-icon {
-  display: grid;
-  width: 28px;
-  height: 28px;
-  flex: 0 0 28px;
-  place-items: center;
-  border: 1px solid var(--guide-accent);
-  color: var(--guide-accent);
-  background: #2b211d;
-  font-size: 14px;
-  font-weight: 900;
-}
-
-.station-guide-item span:last-child {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-
-.station-guide-item strong,
-.station-guide-item small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.station-guide-item strong {
-  font-size: 12px;
-}
-
-.station-guide-item small {
-  color: #917653;
-  font-size: 10px;
-}
-
-@media (max-width: 1100px) {
-  .station-guide {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 720px) {
-  .station-guide {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
 </style>

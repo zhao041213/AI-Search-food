@@ -1,0 +1,33 @@
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import test from 'node:test'
+
+const agentSource = fs.readFileSync(new URL('../components/KitchenAgentWidget.vue', import.meta.url), 'utf8')
+const appSource = fs.readFileSync(new URL('../App.vue', import.meta.url), 'utf8')
+const sceneSource = fs.readFileSync(new URL('../components/kitchen/KitchenScene.vue', import.meta.url), 'utf8')
+const worldSource = fs.readFileSync(new URL('../views/KitchenWorldView.vue', import.meta.url), 'utf8')
+
+test('小厨灵使用最小化入口而不是新对话入口', () => {
+  assert.match(agentSource, /aria-label="最小化小厨灵" title="最小化小厨灵" @click="minimizePanel"/)
+  assert.match(agentSource, /class="agent-pixel-minus" aria-hidden="true"/)
+  assert.doesNotMatch(agentSource, /创建新对话|startNewConversation|\bPlus\b/)
+  assert.match(agentSource, /\.agent-quick-prompts \{ display: flex; flex-wrap: wrap; gap: 6px; overflow-x: hidden;/)
+})
+
+test('最小化只收起面板并把焦点交还启动入口', () => {
+  assert.match(agentSource, /ref="launcher"/)
+  assert.match(agentSource, /function minimizePanel\(\) \{\s+isOpen\.value = false\s+void nextTick\(\(\) => launcher\.value\?\.focus\(\)\)/)
+  const minimizeBody = agentSource.match(/function minimizePanel\(\) \{([\s\S]*?)\r?\n\}/)?.[1] || ''
+  assert.doesNotMatch(minimizeBody, /(conversationId|messages|draft)\.value\s*=/)
+  assert.match(agentSource, /async function clearConversation\(\)[\s\S]*?conversationId\.value = null[\s\S]*?messages\.value = \[\]/)
+})
+
+test('小厨灵和主场景不保留已删除的主题浮动入口或角色快捷入口', () => {
+  assert.doesNotMatch(agentSource, /agent-character|character-shortcut|角色快捷|人物快捷/)
+  assert.doesNotMatch(worldSource, /station-guide|getKitchenGuideItems|功能入口速查/)
+  assert.doesNotMatch(appSource, /主题设置|theme-trigger|theme-panel|theme-option|Palette|floating-theme-control/)
+  assert.match(appSource, /const themeConfigs = \[/)
+  assert.match(appSource, /applyTheme\(theme\)/)
+  assert.match(sceneSource, /canvas\.setAttribute\('aria-label', '点击厨房中的人物打开对应功能'\)/)
+  assert.match(sceneSource, /drawCharacter\(characterLayer/)
+})
