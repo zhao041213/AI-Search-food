@@ -134,7 +134,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
-import { Bell, CircleAlert, ClipboardList, Flame, Gauge, Home, LogIn, LogOut, Settings, ShieldCheck, Users, UserCircle, Utensils } from 'lucide-vue-next'
+import { Bell, CircleAlert, ClipboardList, Flame, Gauge, Home, LogIn, LogOut, MessageSquare, Settings, ShieldCheck, Users, UserCircle, Utensils } from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
 import { getUnreadNotificationCount } from './api/notifications'
 import { getMyAccount, loadMyAvatar } from './api/userAccount'
@@ -311,7 +311,8 @@ const adminPanelIcons = {
   'hot-ingredients': Flame,
   'operation-logs': ClipboardList,
   'error-logs': CircleAlert,
-  'user-management': Users
+  'user-management': Users,
+  'feature-suggestions': MessageSquare
 }
 const adminPanelNavigation = ADMIN_PANEL_NAVIGATION.map((item) => ({
   ...item,
@@ -616,6 +617,7 @@ function applyTheme(theme) {
 
 .app-shell {
   min-height: 100vh;
+  min-height: 100dvh;
   background:
     linear-gradient(var(--app-grid-line) 1px, transparent 1px),
     linear-gradient(90deg, var(--app-grid-line) 1px, transparent 1px),
@@ -815,6 +817,7 @@ function applyTheme(theme) {
 
 .app-body {
   min-height: calc(100vh - 58px);
+  min-height: calc(100dvh - 58px);
 }
 
 .app-sidebar {
@@ -907,6 +910,7 @@ function applyTheme(theme) {
   .app-body {
     flex-direction: column;
     min-height: calc(100vh - 126px);
+    min-height: calc(100dvh - 126px);
   }
 
   .app-sidebar {

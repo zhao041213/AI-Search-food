@@ -41,11 +41,12 @@ const router = createRouter({
     compatibilityRoute('/recipes/saved', 'saved-recipes', 'recipes'),
     compatibilityRoute('/pantry', 'pantry', 'pantry'),
     compatibilityRoute('/health-profile', 'health-profile', 'health-profile'),
-    compatibilityRoute('/nutrition-targets', 'nutrition-targets', 'nutrition-targets'),
+    compatibilityRoute('/nutrition-targets', 'nutrition-targets', 'health-profile'),
     compatibilityRoute('/weekly-menu', 'weekly-menu', 'weekly'),
     compatibilityRoute('/kitchen-overview', 'kitchen-overview', 'kitchen-overview'),
     compatibilityRoute('/account', 'user-account', 'account'),
     compatibilityRoute('/notifications', 'notifications', 'notifications'),
+    compatibilityRoute('/feature-suggestions', 'feature-suggestions', 'suggestions'),
     {
       path: '/shared/recipes/:token',
       name: 'shared-recipe',

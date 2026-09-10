@@ -93,6 +93,7 @@
       <AdminHotIngredientsPanel v-else-if="activePanel === 'hot-ingredients'" />
       <AdminErrorLogs v-else-if="activePanel === 'error-logs'" />
       <AdminUserManagement v-else-if="activePanel === 'user-management'" />
+      <AdminFeatureSuggestions v-else-if="activePanel === 'feature-suggestions'" />
       <AdminOperationLogs v-else />
     </section>
   </main>
@@ -109,6 +110,7 @@ import AdminErrorLogs from '../components/AdminErrorLogs.vue'
 import AdminOperationLogs from '../components/AdminOperationLogs.vue'
 import AdminOperationsOverview from '../components/AdminOperationsOverview.vue'
 import AdminUserManagement from '../components/AdminUserManagement.vue'
+import AdminFeatureSuggestions from '../components/AdminFeatureSuggestions.vue'
 import { useAuthStore } from '../stores/auth'
 import { resolveAdminPanel } from '../utils/hotIngredientNavigation'
 

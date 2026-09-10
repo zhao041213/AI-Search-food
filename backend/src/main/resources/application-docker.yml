@@ -37,6 +37,8 @@ app:
     storage-dir: ${FINISHED_DISH_REVIEW_STORAGE_DIR:/app/data/finished-dish-reviews}
   user-avatars:
     storage-dir: ${USER_AVATAR_STORAGE_DIR:/app/data/user-avatars}
+  feature-suggestions:
+    storage-dir: ${FEATURE_SUGGESTION_STORAGE_DIR:/app/data/feature-suggestions}
   videos:
     bilibili:
       enabled: ${BILIBILI_VIDEO_SEARCH_ENABLED:true}

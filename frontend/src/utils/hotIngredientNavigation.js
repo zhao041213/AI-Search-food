@@ -4,6 +4,7 @@ const SETTINGS_PANEL = 'settings'
 const OPERATION_LOGS_PANEL = 'operation-logs'
 const ERROR_LOGS_PANEL = 'error-logs'
 const USER_MANAGEMENT_PANEL = 'user-management'
+const FEATURE_SUGGESTIONS_PANEL = 'feature-suggestions'
 
 export const ADMIN_PANEL_NAVIGATION = Object.freeze([
   { panel: OVERVIEW_PANEL, label: '运营概览' },
@@ -11,7 +12,8 @@ export const ADMIN_PANEL_NAVIGATION = Object.freeze([
   { panel: HOT_INGREDIENT_PANEL, label: '热门分析' },
   { panel: OPERATION_LOGS_PANEL, label: '操作日志' },
   { panel: ERROR_LOGS_PANEL, label: '异常日志' },
-  { panel: USER_MANAGEMENT_PANEL, label: '用户管理' }
+  { panel: USER_MANAGEMENT_PANEL, label: '用户管理' },
+  { panel: FEATURE_SUGGESTIONS_PANEL, label: '功能建议' }
 ])
 
 const ADMIN_PANEL_VALUES = ADMIN_PANEL_NAVIGATION.map(({ panel }) => panel)

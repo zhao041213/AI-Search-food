@@ -60,6 +60,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/auth/admin/login").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                        .requestMatchers("/api/feature-suggestions/**").hasRole("USER")
                         .requestMatchers("/api/user/**").hasRole("USER")
                         .requestMatchers("/api/users/me/**").hasRole("USER")
                         .requestMatchers("/api/recipes/saved/**").hasRole("USER")

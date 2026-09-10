@@ -34,7 +34,7 @@ test('交接功能暴露面板实际监听的事件名', () => {
 test('用户导航由注册表排序，公共热门食材保留给未登录用户', () => {
   assert.deepEqual(
     getKitchenNavigation('sidebar', 'USER').map((item) => item.featureId),
-    ['kitchen-overview', 'recipes', 'pantry', 'health-profile', 'account', 'hot', 'weekly', 'nutrition-targets', 'characters']
+    ['kitchen-overview', 'recipes', 'pantry', 'health-profile', 'account', 'hot', 'weekly', 'characters', 'suggestions']
   )
   assert.deepEqual(
     getKitchenNavigation('sidebar', '').map((item) => item.featureId),
@@ -51,12 +51,11 @@ test('有对应人物的导航目标与人物点击解析为同一个 station �
   }
 
   assert.deepEqual(getKitchenNavigationTarget('health-profile'), {
-    type: 'station',
-    stationId: 'nutrition',
+    type: 'feature',
     featureId: 'health-profile'
   })
-  assert.deepEqual(kitchenNavigationLocation('health-profile'), kitchenStationLocation('nutrition'))
-  assert.deepEqual(kitchenNavigationLocation('nutrition-targets'), kitchenStationLocation('nutrition'))
+  assert.deepEqual(kitchenNavigationLocation('health-profile'), kitchenFeatureLocation('health-profile'))
+  assert.deepEqual(kitchenNavigationLocation('nutrition-targets'), kitchenFeatureLocation('nutrition-targets'))
   assert.equal(getFeatureIdForStation('nutrition'), '')
   assert.equal(getKitchenNavigationTarget('kitchen-overview').type, 'feature')
 })

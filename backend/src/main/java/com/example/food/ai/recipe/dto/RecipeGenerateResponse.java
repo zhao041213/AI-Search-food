@@ -22,7 +22,10 @@ public record RecipeGenerateResponse(
         NutritionEstimate nutritionEstimate,
         String provider,
         String model,
-        Long searchLogId
+        Long searchLogId,
+        boolean pantryReferenced,
+        boolean pantryFallback,
+        boolean healthNutritionReferenced
 ) {
     public RecipeGenerateResponse(
             String title,
@@ -108,6 +111,25 @@ public record RecipeGenerateResponse(
                 explanation, nutritionEstimate, provider, model, null);
     }
 
+    public RecipeGenerateResponse(
+            String title,
+            String summary,
+            List<String> effects,
+            List<Ingredient> ingredients,
+            List<MissingIngredient> missingIngredients,
+            List<Step> steps,
+            List<String> tips,
+            List<String> videoKeywords,
+            Explanation explanation,
+            NutritionEstimate nutritionEstimate,
+            String provider,
+            String model,
+            Long searchLogId
+    ) {
+        this(title, summary, effects, ingredients, missingIngredients, steps, tips, videoKeywords,
+                explanation, nutritionEstimate, provider, model, searchLogId, false, false, false);
+    }
+
     public RecipeGenerateResponse {
         effects = effects == null ? List.of() : List.copyOf(effects);
         ingredients = ingredients == null ? List.of() : List.copyOf(ingredients);
@@ -132,7 +154,10 @@ public record RecipeGenerateResponse(
                 nutritionEstimate,
                 provider,
                 model,
-                id
+                id,
+                pantryReferenced,
+                pantryFallback,
+                healthNutritionReferenced
         );
     }
 
@@ -150,7 +175,35 @@ public record RecipeGenerateResponse(
                 estimate,
                 provider,
                 model,
-                searchLogId
+                searchLogId,
+                pantryReferenced,
+                pantryFallback,
+                healthNutritionReferenced
+        );
+    }
+
+    public RecipeGenerateResponse withContextFlags(
+            boolean pantryReferenced,
+            boolean pantryFallback,
+            boolean healthNutritionReferenced
+    ) {
+        return new RecipeGenerateResponse(
+                title,
+                summary,
+                effects,
+                ingredients,
+                missingIngredients,
+                steps,
+                tips,
+                videoKeywords,
+                explanation,
+                nutritionEstimate,
+                provider,
+                model,
+                searchLogId,
+                pantryReferenced,
+                pantryFallback,
+                healthNutritionReferenced
         );
     }
 

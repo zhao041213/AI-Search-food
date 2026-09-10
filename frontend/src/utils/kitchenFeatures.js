@@ -1,4 +1,4 @@
-import { Bell, Bookmark, CalendarDays, CircleAlert, ClipboardList, Flame, HeartPulse, LayoutDashboard, Package, Target, UserCircle, Users, Utensils } from 'lucide-vue-next'
+import { Bell, Bookmark, CalendarDays, CircleAlert, ClipboardList, Flame, HeartPulse, LayoutDashboard, MessageSquare, Package, Target, UserCircle, Users, Utensils } from 'lucide-vue-next'
 import { defineAsyncComponent } from 'vue'
 
 const lazy = (loader) => defineAsyncComponent(loader)
@@ -10,12 +10,13 @@ const featureComponents = {
   pantry: lazy(() => import('../views/PantryView.vue')),
   recipes: lazy(() => import('../views/SavedRecipesView.vue')),
   review: lazy(() => import('../components/kitchen/FinishedDishReviewStation.vue')),
-  'health-profile': lazy(() => import('../views/HealthProfileView.vue')),
-  'nutrition-targets': lazy(() => import('../views/NutritionTargetView.vue')),
+  'health-profile': lazy(() => import('../views/HealthNutritionView.vue')),
+  'nutrition-targets': lazy(() => import('../views/HealthNutritionView.vue')),
   weekly: lazy(() => import('../views/WeeklyMenuView.vue')),
   hot: lazy(() => import('../views/HotIngredientsView.vue')),
   account: lazy(() => import('../views/UserAccountView.vue')),
   notifications: lazy(() => import('../views/NotificationsView.vue')),
+  suggestions: lazy(() => import('../views/FeatureSuggestionView.vue')),
   characters: lazy(() => import('../components/kitchen/CharacterRosterStation.vue')),
   'kitchen-overview': lazy(() => import('../views/KitchenOverviewView.vue'))
 }
@@ -114,17 +115,17 @@ export const KITCHEN_FEATURES = Object.freeze({
     directStation: true
   }),
   'health-profile': defineFeature('health-profile', {
-    title: '健康档案',
+    title: '健康与营养',
     role: '营养咨询室',
     actorId: 'nutrition',
     icon: HeartPulse,
     sceneIcon: '♥',
     accent: '#e2816c',
-    description: '维护用于个性化建议的基础身体指标。',
+    description: '统一维护身体指标、饮食边界和每日营养参考。',
     requiresUser: true,
     stationId: 'nutrition',
-    compatibleRoutes: Object.freeze(['/health-profile']),
-    navigation: Object.freeze({ area: 'sidebar', order: 30, label: '健康档案', visibleFor: 'user', stationId: 'nutrition' })
+    compatibleRoutes: Object.freeze(['/health-profile', '/nutrition-targets']),
+    navigation: Object.freeze({ area: 'sidebar', order: 30, label: '健康与营养', visibleFor: 'user' })
   }),
   'nutrition-targets': defineFeature('nutrition-targets', {
     title: '营养目标',
@@ -137,7 +138,7 @@ export const KITCHEN_FEATURES = Object.freeze({
     requiresUser: true,
     stationId: 'nutrition',
     compatibleRoutes: Object.freeze(['/nutrition-targets']),
-    navigation: Object.freeze({ area: 'sidebar', order: 80, label: '营养目标', visibleFor: 'user', stationId: 'nutrition' })
+    navigation: null
   }),
   'diet-preference': defineFeature('diet-preference', {
     title: '饮食偏好',
@@ -215,6 +216,19 @@ export const KITCHEN_FEATURES = Object.freeze({
     embeddedProps: Object.freeze({ embedded: true }),
     headerAction: true
   }),
+  suggestions: defineFeature('suggestions', {
+    title: '功能建议',
+    windowTitle: '功能建议室',
+    role: '产品联络员',
+    actorId: 'account',
+    icon: MessageSquare,
+    sceneIcon: '◇',
+    accent: '#6f8fb1',
+    description: '提交新功能、体验改进或问题反馈，并跟进处理进度。',
+    requiresUser: true,
+    compatibleRoutes: Object.freeze(['/feature-suggestions']),
+    navigation: Object.freeze({ area: 'sidebar', order: 95, label: '功能建议', visibleFor: 'user' })
+  }),
   characters: defineFeature('characters', {
     title: '人物名册',
     role: '厨房角色管理',
@@ -283,7 +297,7 @@ const stationDefinitions = {
     preview: []
   }),
   pantry: stationFromFeature('pantry', {
-    description: '集中管理冰箱库存、保质期和烹饪消耗，生成菜谱时会自动参与推荐。',
+    description: '集中管理冰箱库存、保质期和烹饪消耗，生成菜谱时可按需参考。',
     directFeatureId: 'pantry',
     entries: [
       stationEntry('pantry', '管理食材库存', '查看库存、临期提醒、入库、消耗和撤销记录。')
@@ -323,8 +337,7 @@ const stationDefinitions = {
     description: '维护基础健康档案和每日营养目标，为菜谱搭配提供一般饮食参考。',
     directFeatureId: '',
     entries: [
-      stationEntry('health-profile', '健康档案', '维护身高、体重、年龄和基础身体指标。'),
-      stationEntry('nutrition-targets', '营养目标', '设置每日热量、蛋白质、碳水和脂肪目标。'),
+      stationEntry('health-profile', '健康与营养', '统一维护身体指标、饮食禁忌、过敏信息和每日营养参考。'),
       stationEntry('diet-preference', '饮食偏好', '设置默认目标、口味、忌口和过敏食材。', { feature: undefined, action: 'diet-preference' })
     ],
     preview: [

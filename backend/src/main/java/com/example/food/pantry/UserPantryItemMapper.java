@@ -28,6 +28,24 @@ public interface UserPantryItemMapper extends BaseMapper<UserPantryItem> {
             SELECT *
             FROM user_pantry_items
             WHERE user_id = #{userId}
+              AND ingredient_name = #{ingredientName}
+              AND ((category = #{category}) OR (category IS NULL AND #{category} IS NULL))
+              AND ((expire_date = #{expireDate}) OR (expire_date IS NULL AND #{expireDate} IS NULL))
+            ORDER BY id ASC
+            LIMIT 1
+            FOR UPDATE
+            """)
+    UserPantryItem findByIdentityForUpdate(
+            @Param("userId") Long userId,
+            @Param("ingredientName") String ingredientName,
+            @Param("category") String category,
+            @Param("expireDate") LocalDate expireDate
+    );
+
+    @Select("""
+            SELECT *
+            FROM user_pantry_items
+            WHERE user_id = #{userId}
               AND quantity IS NOT NULL
               AND quantity > 0
               AND expire_date IS NOT NULL

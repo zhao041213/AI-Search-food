@@ -188,17 +188,27 @@ public class PantryOperationService {
         } catch (DuplicateKeyException duplicate) {
             return toResponse(userId, operationMapper.findByIdempotency(userId, PantryOperationType.STOCK_IN.name(), idempotencyKey));
         }
-        UserPantryItem item = new UserPantryItem();
-        item.setUserId(userId);
-        item.setIngredientName(name);
-        item.setCategory(trimToNull(request.category()));
-        item.setQuantity(stockInQuantity);
-        item.setUnit(unit);
-        item.setExpireDate(request.expireDate());
-        item.setCreatedAt(LocalDateTime.now(clock));
-        item.setUpdatedAt(item.getCreatedAt());
-        pantryMapper.insert(item);
-        insertOperationItem(operation.getId(), item, stockInQuantity, unit, null, item.getQuantity(), request.ingredientName());
+        String category = trimToNull(request.category());
+        UserPantryItem item = pantryMapper.findByIdentityForUpdate(userId, name, category, request.expireDate());
+        BigDecimal beforeQuantity = null;
+        if (item == null) {
+            item = new UserPantryItem();
+            item.setUserId(userId);
+            item.setIngredientName(name);
+            item.setCategory(category);
+            item.setQuantity(stockInQuantity);
+            item.setUnit(unit);
+            item.setExpireDate(request.expireDate());
+            item.setCreatedAt(LocalDateTime.now(clock));
+            item.setUpdatedAt(item.getCreatedAt());
+            pantryMapper.insert(item);
+        } else {
+            beforeQuantity = item.getQuantity();
+            mergeStockInQuantity(item, stockInQuantity, unit);
+            item.setUpdatedAt(LocalDateTime.now(clock));
+            pantryMapper.updateById(item);
+        }
+        insertOperationItem(operation.getId(), item, stockInQuantity, unit, beforeQuantity, item.getQuantity(), request.ingredientName());
         markSourceReady(userId, request.sourceType(), request.sourceId(), name);
         return toResponse(userId, operationMapper.selectById(operation.getId()));
     }
@@ -313,6 +323,27 @@ public class PantryOperationService {
             if (remaining.signum() <= 0) return;
         }
         throw new ResponseStatusException(HttpStatus.CONFLICT, "库存已发生变化或不足，请刷新后重新确认");
+    }
+
+    private void mergeStockInQuantity(UserPantryItem item, BigDecimal incomingQuantity, String incomingUnit) {
+        if (item.getQuantity() == null) {
+            item.setQuantity(incomingQuantity);
+            if (!StringUtils.hasText(item.getUnit())) {
+                item.setUnit(incomingUnit);
+            }
+            return;
+        }
+        BigDecimal addition;
+        if (!StringUtils.hasText(item.getUnit())) {
+            item.setUnit(incomingUnit);
+            addition = incomingQuantity;
+        } else {
+            addition = amountParser.convert(incomingQuantity, incomingUnit, item.getUnit());
+            if (addition == null) {
+                throw badRequest("相同食材的库存单位不兼容，无法合并");
+            }
+        }
+        item.setQuantity(item.getQuantity().add(addition).setScale(2, RoundingMode.HALF_UP));
     }
 
     private void validateSource(Long userId, String sourceType, Long sourceId, String ingredientName) {

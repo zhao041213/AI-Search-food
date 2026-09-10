@@ -16,7 +16,10 @@ export function createRecipeDraft() {
     nutritionEstimate: null,
     provider: '',
     model: '',
-    searchLogId: null
+    searchLogId: null,
+    pantryReferenced: false,
+    pantryFallback: false,
+    healthNutritionReferenced: false
   }
 }
 

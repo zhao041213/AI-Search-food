@@ -105,6 +105,26 @@ class UserPantryServiceTest {
     }
 
     @Test
+    void mergesPantryItemsWithSameNameCategoryAndExpiryDate() {
+        LocalDate expireDate = LocalDate.of(2026, 8, 31);
+        UserPantryItem existing = item(5L, 7L, "番茄");
+        existing.setCategory("蔬菜");
+        existing.setQuantity(new BigDecimal("2.50"));
+        existing.setUnit("个");
+        existing.setExpireDate(expireDate);
+        when(mapper.findByIdentityForUpdate(7L, "番茄", "蔬菜", expireDate)).thenReturn(existing);
+
+        PantryItemResponse response = service.create(7L, new PantryItemRequest(
+                "西红柿", "蔬菜", new BigDecimal("1.25"), "个", expireDate
+        ));
+
+        verify(mapper).updateById(existing);
+        verify(mapper, org.mockito.Mockito.never()).insert(org.mockito.ArgumentMatchers.any(UserPantryItem.class));
+        assertThat(existing.getQuantity()).isEqualByComparingTo("3.75");
+        assertThat(response.id()).isEqualTo(5L);
+    }
+
+    @Test
     void updatesOnlyOwnedPantryItem() {
         UserPantryItem existing = item(5L, 7L, "鸡蛋");
         when(mapper.selectById(5L)).thenReturn(existing);

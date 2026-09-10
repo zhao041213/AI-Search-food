@@ -58,6 +58,7 @@ const emit = defineEmits(['update:modelValue'])
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   height: min(760px, calc(100vh - 88px));
+  height: min(760px, calc(100dvh - 88px));
   margin-bottom: 0;
   overflow: hidden;
   border: 2px solid #8b6e4e;
@@ -205,6 +206,7 @@ const emit = defineEmits(['update:modelValue'])
   :global(.scene-window.el-dialog) {
     width: calc(100vw - 24px) !important;
     height: calc(100vh - 48px);
+    height: calc(100dvh - 48px);
   }
 
   .scene-window__status {

@@ -127,4 +127,34 @@ class UserPantryPersistenceIntegrationTest {
         assertThat(summary.expiringSoonItems()).extracting(PantryItemResponse::ingredientName)
                 .containsExactly("牛奶");
     }
+
+    @Test
+    void createMergesRowsWithSameNameCategoryAndExpiryDate() {
+        LocalDate expireDate = LocalDate.now().plusDays(10);
+
+        service.create(userId, new com.example.food.pantry.dto.PantryItemRequest(
+                "西红柿", "蔬菜", new BigDecimal("2.00"), "个", expireDate
+        ));
+        service.create(userId, new com.example.food.pantry.dto.PantryItemRequest(
+                "番茄", "蔬菜", new BigDecimal("1.50"), "个", expireDate
+        ));
+
+        Integer rowCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM user_pantry_items WHERE user_id = ? AND category = ? AND expire_date = ?",
+                Integer.class,
+                userId,
+                "蔬菜",
+                expireDate
+        );
+        BigDecimal quantity = jdbcTemplate.queryForObject(
+                "SELECT quantity FROM user_pantry_items WHERE user_id = ? AND category = ? AND expire_date = ?",
+                BigDecimal.class,
+                userId,
+                "蔬菜",
+                expireDate
+        );
+
+        assertThat(rowCount).isEqualTo(1);
+        assertThat(quantity).isEqualByComparingTo("3.50");
+    }
 }

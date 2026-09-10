@@ -117,6 +117,31 @@
               </div>
             </div>
 
+            <div v-if="auth.isUser" class="reference-controls" aria-label="本次生成参考范围">
+              <div class="reference-control">
+                <div>
+                  <strong>参考我的库存</strong>
+                  <span>开启后才会读取数量和临期状态，并优先匹配可用食材。</span>
+                </div>
+                <el-switch
+                  v-model="usePantry"
+                  aria-label="参考我的库存"
+                  @change="handlePantryReferenceChanged"
+                />
+              </div>
+              <div class="reference-control">
+                <div>
+                  <strong>参考健康与营养</strong>
+                  <span>仅用于一般饮食搭配，不会替代专业建议。</span>
+                </div>
+                <el-switch
+                  v-model="useHealthNutrition"
+                  aria-label="参考健康与营养"
+                  @change="handleHealthNutritionReferenceChanged"
+                />
+              </div>
+            </div>
+
             <div v-if="showImageUpload" class="image-upload-panel" aria-label="上传图片识别食材">
               <input
                 ref="imageInput"
@@ -187,15 +212,15 @@
             </div>
 
             <div class="search-actions">
-              <el-button
-                type="primary"
-                size="large"
-                :loading="generating || (auth.isUser && preferenceLoading)"
-                @click="runSearch"
-              >
-                <Sparkles :size="18" aria-hidden="true" />
-                <span>生成推荐</span>
-              </el-button>
+                <el-button
+                  type="primary"
+                  size="large"
+                  :loading="generating || (auth.isUser && preferenceLoading)"
+                  @click="runSearch"
+                >
+                  <Sparkles :size="18" aria-hidden="true" />
+                  <span>{{ editingConditions && hasSearch ? '重新生成菜谱' : '生成推荐' }}</span>
+                </el-button>
               <el-button size="large" plain @click="resetSearch">
                 <RotateCcw :size="18" aria-hidden="true" />
                 <span>重置</span>
@@ -241,6 +266,11 @@
                 <div v-else-if="generating" class="recipe-skeleton-line recipe-skeleton-line-wide" aria-hidden="true"></div>
                 <div v-if="recipe?.effects?.length" class="result-header-tags" aria-label="菜谱关键标签">
                   <span v-for="effect in recipe.effects" :key="effect" class="system-tag">{{ effect }}</span>
+                </div>
+                <div v-if="recipe" class="result-context-tags" aria-label="本次生成参考范围">
+                  <span v-if="recipe.pantryReferenced" class="context-tag context-tag-stock">已参考库存</span>
+                  <span v-else class="context-tag">未参考库存</span>
+                  <span v-if="recipe.healthNutritionReferenced" class="context-tag">已参考健康与营养</span>
                 </div>
               </div>
             <div class="result-header-actions">
@@ -339,6 +369,15 @@
             </el-button>
           </div>
 
+          <div v-if="recipe?.pantryFallback" class="context-fallback-alert" role="alert">
+            本次库存读取失败，已降级为仅按输入食材生成；你可以稍后开启“参考我的库存”重试。
+          </div>
+
+          <div v-if="showLatestContent" class="latest-content-bar" role="status">
+            <span>新内容已生成</span>
+            <button type="button" @click="scrollRecipeToLatest">查看最新内容</button>
+          </div>
+
           <div v-if="detailViewOpen" class="recipe-detail-view-header">
             <button class="detail-back-button" type="button" @click="closeDetailView">
               <ArrowLeft :size="18" aria-hidden="true" />
@@ -367,7 +406,14 @@
             <span>输入食材后，系统会在右侧生成菜谱、功效、步骤和相关烹饪视频。</span>
           </div>
 
-          <div v-else class="result-content">
+          <div
+            v-else
+            ref="recipeScrollContainer"
+            class="result-content"
+            tabindex="0"
+            aria-label="菜谱生成结果，可使用鼠标滚轮、键盘或触摸滚动"
+            @scroll="handleRecipeScroll"
+          >
             <dl v-if="false" class="brief-grid">
               <div>
                 <dt>食材</dt>
@@ -821,7 +867,7 @@
             </div>
           </div>
 
-          <section v-if="hasSearch && !detailViewOpen && recipe" class="pantry-readiness-card" aria-labelledby="pantry-readiness-title">
+          <section v-if="hasSearch && !detailViewOpen && recipe && usePantry" class="pantry-readiness-card" aria-labelledby="pantry-readiness-title">
             <div class="pantry-readiness-head">
               <div>
                 <p class="eyebrow">开做前准备</p>
@@ -1085,6 +1131,10 @@ const streamFailed = ref(false)
 const streamErrorMessage = ref('')
 const streamAbortController = ref(null)
 const generationRequestId = ref(0)
+const recipeScrollContainer = ref(null)
+const isFollowingLatest = ref(true)
+const usePantry = ref(false)
+const useHealthNutrition = ref(false)
 const recognizing = ref(false)
 const savingRecipe = ref(false)
 const savedRecipeId = ref(null)
@@ -1126,6 +1176,16 @@ const stockInItem = ref(null)
 const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
+
+const pantryReferenceStorageKey = computed(() => (
+  `ai_smart_recipe:use-pantry:${auth.isUser ? auth.displayName || 'account' : 'guest'}`
+))
+const healthNutritionReferenceStorageKey = computed(() => (
+  `ai_smart_recipe:use-health-nutrition:${auth.isUser ? auth.displayName || 'account' : 'guest'}`
+))
+const showLatestContent = computed(() => Boolean(
+  generating.value && recipeScrollContainer.value && !isFollowingLatest.value && !detailViewOpen.value
+))
 
 const PENDING_RECIPE_KEY = 'ai_smart_recipe_pending_save'
 
@@ -1179,10 +1239,17 @@ const cookingStorageKey = computed(() => {
   const recipeKey = recipe.value?.searchLogId || recipe.value?.title || 'draft'
   return `ai_smart_recipe:cooking:${encodeURIComponent(userKey)}:${encodeURIComponent(String(recipeKey))}`
 })
-const cleanIngredients = computed(() => lastSearch.value?.ingredients || '暂无')
+const cleanIngredients = computed(() => {
+  if (lastSearch.value?.useAiIngredientRecommendation) {
+    return 'AI 自主推荐食材'
+  }
+  return lastSearch.value?.ingredients || '暂无'
+})
 const ownedIngredients = computed(() => [
-  lastSearch.value?.ingredients || ingredients.value,
-  ...pantryItems.value.map((item) => item.ingredientName)
+  lastSearch.value?.useAiIngredientRecommendation
+    ? ''
+    : (lastSearch.value?.ingredients || ingredients.value),
+  ...(usePantry.value ? pantryItems.value.map((item) => item.ingredientName) : [])
 ])
 const pantryExpiryNotice = computed(() => {
   const summary = pantryExpirySummary.value
@@ -1413,13 +1480,14 @@ onBeforeUnmount(() => {
 
 onMounted(() => {
   window.addEventListener('popstate', handlePopState)
+  restoreReferenceChoices()
   if (!applyInitialSearch() && !applyRouteIngredient()) {
     restorePendingRecipe()
   }
   if (auth.isUser) {
     loadDietPreference()
     loadNutritionTarget()
-    loadPantryItems()
+    if (usePantry.value) loadPantryItems()
   }
 })
 
@@ -1427,10 +1495,11 @@ watch(() => [auth.token, auth.role], () => {
   cancelRecipeStream()
   clearPersonalizationState()
   clearPantryState()
+  restoreReferenceChoices()
   if (auth.isUser) {
     loadDietPreference()
     loadNutritionTarget()
-    loadPantryItems()
+    if (usePantry.value) loadPantryItems()
   }
 })
 
@@ -1450,7 +1519,9 @@ function applyInitialSearch() {
   mealType.value = form.mealType
   goal.value = form.goal
   goalManuallySelected.value = true
-  searchMode.value = 'text'
+  searchMode.value = ['image', 'camera'].includes(props.initialSearch?.searchMode)
+    ? props.initialSearch.searchMode
+    : 'text'
   return true
 }
 
@@ -1490,7 +1561,9 @@ async function runSearch() {
     mealType: mealType.value,
     goal: goal.value,
     searchMode: searchMode.value,
-    dietPreference: buildRecipeDietPreference(dietPreference.value)
+    dietPreference: buildRecipeDietPreference(dietPreference.value),
+    usePantry: usePantry.value,
+    useHealthNutrition: useHealthNutrition.value
   }
   await runRecipeGeneration(request, '菜谱推荐已生成')
 }
@@ -1512,6 +1585,7 @@ async function runRecipeGeneration(request, successMessage) {
   savedRecipeId.value = null
   resetRecommendationFeedback()
   currentRecipePage.value = 0
+  isFollowingLatest.value = true
   shoppingCheckOverrides.value = {}
   generating.value = true
   generationCompleted.value = false
@@ -1535,6 +1609,7 @@ async function runRecipeGeneration(request, successMessage) {
         }
         if (['overview', 'ingredients', 'steps', 'details', 'complete'].includes(event.event)) {
           recipe.value = applyRecipeStreamEvent(recipe.value, event)
+          queueRecipeScrollToLatest()
         }
         if (event.event === 'complete') {
           generationCompleted.value = true
@@ -1553,6 +1628,11 @@ async function runRecipeGeneration(request, successMessage) {
     recentSearchLoaded.value = false
     await loadShoppingChecks()
     await loadPantryReadiness()
+    if (recipe.value?.pantryFallback) {
+      ElMessage.warning(lastSearch.value?.useAiIngredientRecommendation
+        ? '库存读取失败，本次仍由 AI 自主推荐食材'
+        : '库存读取失败，本次已按输入食材生成')
+    }
     ElMessage.success(successMessage)
     return true
   } catch (error) {
@@ -1562,6 +1642,9 @@ async function runRecipeGeneration(request, successMessage) {
     streamFailed.value = true
     generationStage.value = 'error'
     streamErrorMessage.value = getErrorMessage(error)
+    if (!generationCompleted.value) {
+      recipe.value = createRecipeDraft()
+    }
     ElMessage.error(streamErrorMessage.value)
     return false
   } finally {
@@ -1623,6 +1706,7 @@ function resetSearch() {
   savedRecipeId.value = null
   resetRecommendationFeedback()
   currentRecipePage.value = 0
+  isFollowingLatest.value = true
   shoppingCheckOverrides.value = {}
   window.sessionStorage.removeItem(PENDING_RECIPE_KEY)
 }
@@ -1698,14 +1782,22 @@ async function regenerateCurrentRecipe(preference) {
   const currentSavedRecipeId = savedRecipeId.value
   const currentSearch = lastSearch.value
   const currentGenerationCompleted = generationCompleted.value
+  const sourceIngredients = parseIngredientNames(currentSearch.ingredients || ingredients.value).join(', ')
+  if (!sourceIngredients) {
+    ElMessage.warning('当前没有可用的原始食材，请先修改条件并输入食材')
+    return
+  }
   const request = {
-    ingredients: lastSearch.value.ingredients,
-    mealType: lastSearch.value.mealType,
-    goal: lastSearch.value.goal,
-    searchMode: lastSearch.value.searchMode,
+    ingredients: sourceIngredients,
+    mealType: currentSearch.mealType,
+    goal: currentSearch.goal,
+    searchMode: currentSearch.searchMode,
     regenerationPreference: preference,
     previousTitle: currentRecipe.title,
-    dietPreference: buildRecipeDietPreference(dietPreference.value)
+    dietPreference: buildRecipeDietPreference(dietPreference.value),
+    usePantry: currentSearch.usePantry,
+    useHealthNutrition: currentSearch.useHealthNutrition,
+    useAiIngredientRecommendation: false
   }
 
   editingConditions.value = false
@@ -1822,6 +1914,64 @@ async function loadNutritionTarget() {
     if (auth.token === token) {
       nutritionTargetLoading.value = false
     }
+  }
+}
+
+function restoreReferenceChoices() {
+  usePantry.value = auth.isUser && readStoredBoolean(pantryReferenceStorageKey.value)
+  useHealthNutrition.value = auth.isUser && readStoredBoolean(healthNutritionReferenceStorageKey.value)
+}
+
+function readStoredBoolean(key) {
+  try {
+    return window.localStorage.getItem(key) === 'true'
+  } catch {
+    return false
+  }
+}
+
+function storeBoolean(key, value) {
+  try {
+    window.localStorage.setItem(key, String(Boolean(value)))
+  } catch {
+    // Storage may be unavailable in private browsing; the current choice still applies.
+  }
+}
+
+function handlePantryReferenceChanged(enabled) {
+  storeBoolean(pantryReferenceStorageKey.value, enabled)
+  if (enabled) {
+    void loadPantryItems()
+    return
+  }
+  clearPantryState()
+}
+
+function handleHealthNutritionReferenceChanged(enabled) {
+  storeBoolean(healthNutritionReferenceStorageKey.value, enabled)
+}
+
+function handleRecipeScroll(event) {
+  const target = event.currentTarget
+  const nearLatest = target.scrollHeight - target.scrollTop - target.clientHeight < 48
+  isFollowingLatest.value = nearLatest
+}
+
+function queueRecipeScrollToLatest() {
+  if (!isFollowingLatest.value || detailViewOpen.value) return
+  window.requestAnimationFrame(() => {
+    const target = recipeScrollContainer.value
+    if (target && isFollowingLatest.value) {
+      target.scrollTop = target.scrollHeight
+    }
+  })
+}
+
+function scrollRecipeToLatest() {
+  isFollowingLatest.value = true
+  const target = recipeScrollContainer.value
+  if (target) {
+    target.scrollTo({ top: target.scrollHeight, behavior: 'smooth' })
   }
 }
 
@@ -2035,7 +2185,7 @@ function emptyPantryReadiness() {
 }
 
 async function loadPantryItems() {
-  if (!auth.isUser || pantryLoading.value) {
+  if (!auth.isUser || !usePantry.value || pantryLoading.value) {
     return
   }
 
@@ -2049,7 +2199,7 @@ async function loadPantryItems() {
     if (pantryResult.status === 'rejected') {
       throw pantryResult.reason
     }
-    if (!auth.isUser || auth.token !== token) {
+    if (!auth.isUser || auth.token !== token || !usePantry.value) {
       return
     }
     pantryItems.value = pantryResult.value.data.data || []
@@ -2062,7 +2212,7 @@ async function loadPantryItems() {
     if (auth.isUser && auth.token === token) {
       pantryItems.value = []
       pantryExpirySummary.value = emptyPantryExpirySummary()
-      ElMessage.warning('食材库存加载失败，本次将仅使用输入食材')
+      ElMessage.warning('食材库存加载失败，本次将不读取库存')
     }
   } finally {
     if (auth.token === token) {
@@ -2088,7 +2238,7 @@ function recipeReadinessIngredients() {
 async function loadPantryReadiness() {
   const currentRecipe = recipe.value
   const requestIngredients = recipeReadinessIngredients()
-  if (!currentRecipe || !requestIngredients.length || !auth.isUser) {
+  if (!usePantry.value || !currentRecipe || !requestIngredients.length || !auth.isUser) {
     pantryReadinessRequestId.value += 1
     pantryReadiness.value = emptyPantryReadiness()
     pantryReadinessLoading.value = false
@@ -3617,6 +3767,41 @@ h3 {
   background: var(--app-surface-strong);
 }
 
+.reference-controls {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.reference-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 58px;
+  padding: 9px 11px;
+  border: 1px solid var(--app-line);
+  border-radius: 8px;
+  background: var(--app-surface-strong);
+}
+
+.reference-control > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.reference-control strong {
+  color: var(--app-text);
+  font-size: 13px;
+}
+
+.reference-control span {
+  color: var(--app-text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 .recipe-section-link {
   display: inline-flex;
   align-items: center;
@@ -4012,6 +4197,31 @@ h3 {
   margin-top: 8px;
 }
 
+.result-context-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.context-tag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--app-line-strong);
+  border-radius: 999px;
+  color: var(--app-text-muted);
+  background: var(--app-surface-strong);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.context-tag-stock {
+  border-color: color-mix(in srgb, var(--el-color-success) 40%, var(--app-line));
+  color: var(--el-color-success);
+}
+
 .ingredient-input-hint {
   margin: 5px 0 0;
   color: var(--app-text-faint);
@@ -4069,6 +4279,49 @@ h3 {
   border-radius: 50%;
   background: var(--app-accent);
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--app-accent) 16%, transparent);
+}
+
+.context-fallback-alert {
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--el-color-warning) 42%, var(--app-line));
+  border-radius: 8px;
+  color: #8d631b;
+  background: color-mix(in srgb, var(--el-color-warning) 10%, var(--app-surface));
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.latest-content-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 36px;
+  padding: 4px 8px 4px 10px;
+  border: 1px solid var(--app-line-strong);
+  border-radius: 7px;
+  color: var(--app-text-muted);
+  background: var(--app-surface-strong);
+  font-size: 11px;
+}
+
+.latest-content-bar button {
+  min-height: 30px;
+  padding: 0 9px;
+  border: 1px solid var(--app-accent);
+  border-radius: 5px;
+  color: var(--app-accent-text);
+  background: var(--app-accent);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.latest-content-bar button:focus-visible,
+.latest-content-bar button:hover {
+  background: var(--app-accent-hover);
+  outline: none;
 }
 
 .stream-progress-panel {
@@ -4253,6 +4506,18 @@ h3 {
   grid-template-rows: auto minmax(0, 1fr);
   gap: 9px;
   min-height: 0;
+  overscroll-behavior: contain;
+}
+
+.home-page.is-result-expanded:not(.is-detail-view) .result-content {
+  max-height: min(760px, calc(100vh - 318px));
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.home-page.is-result-expanded:not(.is-detail-view) .result-content:focus-visible {
+  outline: 2px solid var(--app-accent);
+  outline-offset: -2px;
 }
 
 .brief-grid {

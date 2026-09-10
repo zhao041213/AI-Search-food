@@ -217,6 +217,18 @@ public class UserPantryService {
         UserPantryItem item = new UserPantryItem();
         item.setUserId(userId);
         applyRequest(item, request);
+        UserPantryItem existing = mapper.findByIdentityForUpdate(
+                userId,
+                item.getIngredientName(),
+                item.getCategory(),
+                item.getExpireDate()
+        );
+        if (existing != null) {
+            mergeQuantity(existing, item.getQuantity(), item.getUnit());
+            existing.setUpdatedAt(now);
+            mapper.updateById(existing);
+            return toResponse(existing);
+        }
         item.setCreatedAt(now);
         item.setUpdatedAt(now);
         mapper.insert(item);
@@ -276,6 +288,37 @@ public class UserPantryService {
         item.setQuantity(request.quantity());
         item.setUnit(trimToNull(request.unit()));
         item.setExpireDate(request.expireDate());
+    }
+
+    private void mergeQuantity(UserPantryItem existing, BigDecimal incomingQuantity, String incomingUnit) {
+        if (incomingQuantity == null) {
+            return;
+        }
+        if (existing.getQuantity() == null) {
+            existing.setQuantity(incomingQuantity);
+            if (!hasText(existing.getUnit()) && hasText(incomingUnit)) {
+                existing.setUnit(incomingUnit);
+            }
+            return;
+        }
+
+        BigDecimal addition = incomingQuantity;
+        if (hasText(existing.getUnit()) && hasText(incomingUnit)) {
+            addition = amountParser.convert(incomingQuantity, incomingUnit, existing.getUnit());
+            if (addition == null) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "相同食材的库存单位不兼容，无法合并"
+                );
+            }
+        } else if (!hasText(existing.getUnit()) && hasText(incomingUnit)) {
+            existing.setUnit(incomingUnit);
+        }
+        existing.setQuantity(existing.getQuantity().add(addition));
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
     private String normalizeIngredientName(String value) {

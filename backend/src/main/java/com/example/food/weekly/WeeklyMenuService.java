@@ -152,7 +152,7 @@ public class WeeklyMenuService {
         }
 
         List<QwenRecipeClient.WeeklyMenuSelection> selections = qwenRecipeClient.generateWeeklyMenu(
-                buildAutoGeneratePrompt(userId, weekStart, candidates)
+                buildAutoGeneratePrompt(userId, weekStart, request.mode(), candidates)
         );
         List<WeeklyMenuItemRequest> completedItems = completeAutoSelections(weekStart, selections, candidates);
         return save(userId, new WeeklyMenuSaveRequest(weekStart, completedItems));
@@ -297,6 +297,7 @@ public class WeeklyMenuService {
     private String buildAutoGeneratePrompt(
             Long userId,
             LocalDate weekStart,
+            String mode,
             List<AutoRecipeCandidate> candidates
     ) {
         String candidateJson;
@@ -306,9 +307,18 @@ public class WeeklyMenuService {
             throw new IllegalStateException("候选菜谱序列化失败", exception);
         }
 
+        boolean pantryMode = WeeklyMenuAutoGenerateRequest.PANTRY.equals(mode);
+        String arrangementMode = pantryMode
+                ? "根据当前食材库存安排，优先使用库存中已有食材"
+                : "随机安排；不参考菜谱生成历史记录和历史偏好，也不参考当前食材库存";
+        String pantryContext = pantryMode
+                ? safeIngredients(userPantryService.listIngredientNames(userId))
+                : "不参考库存";
+
         return """
                 请为用户安排一周家庭菜谱计划，返回内容必须是可解析的 JSON，不要返回 Markdown 或额外解释。
                 计划周起始日：%s（周一）
+                自动安排模式：%s
                 健康档案：%s
                 饮食偏好：%s
                 每日营养目标：%s
@@ -320,16 +330,19 @@ public class WeeklyMenuService {
                 1. 为周一至周日每天安排早餐、午餐、晚餐，共 21 条 items。
                 2. recipeId 必须来自候选菜谱，禁止虚构 ID 或菜名。
                 3. 同一天尽量不要重复同一道菜；候选不足时允许跨天重复。
-                4. 结合健康档案、饮食偏好和已有食材安排，避免使用明确忌口或过敏食材。
-                5. 每日营养目标只是软偏好，用于平衡一周菜谱搭配；明确忌口和过敏食材优先级更高。
-                6. 只输出以下结构：{"items":[{"menuDate":"YYYY-MM-DD","mealType":"BREAKFAST|LUNCH|DINNER","recipeId":1}]}。
-                7. 健康档案和营养目标只用于一般饮食推荐，不得输出疾病诊断、治疗方案或疗效保证。
+                4. %s。
+                5. 结合健康档案和饮食偏好安排，避免使用明确忌口或过敏食材。
+                6. 每日营养目标只是软偏好，用于平衡一周菜谱搭配；明确忌口和过敏食材优先级更高。
+                7. 只输出以下结构：{"items":[{"menuDate":"YYYY-MM-DD","mealType":"BREAKFAST|LUNCH|DINNER","recipeId":1}]}。
+                8. 健康档案和营养目标只用于一般饮食推荐，不得输出疾病诊断、治疗方案或疗效保证。
                 """.formatted(
                 weekStart,
+                arrangementMode,
                 healthProfilePrompt(userId),
                 dietPreferencePrompt(userId),
                 nutritionTargetPrompt(userId),
-                safeIngredients(userPantryService.listIngredientNames(userId)),
+                pantryContext,
+                pantryMode ? "结合用户已有食材安排" : "按随机组合安排",
                 candidateJson
         ).strip();
     }

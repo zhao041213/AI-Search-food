@@ -119,13 +119,13 @@ public class RecipeStreamingService {
     ) {
         try {
             requireActive(cancelled);
-            String prompt = recipeRecommendationService.promptFor(request, principal);
+            RecipeRecommendationService.PreparedPrompt prepared = recipeRecommendationService.preparePrompt(request, principal);
             requireActive(cancelled);
             sendStatusOrCancel(emitter, cancelled, "generating", "正在连接 AI 生成服务");
 
             RecipeStreamFieldParser parser = new RecipeStreamFieldParser(new com.fasterxml.jackson.databind.ObjectMapper());
             QwenRecipeClient.RecipeStreamResult streamResult = qwenRecipeClient.streamRecipe(
-                    prompt,
+                    prepared.prompt(),
                     delta -> {
                         requireActive(cancelled);
                         Map<String, JsonNode> fields = parser.accept(delta);
@@ -144,12 +144,18 @@ public class RecipeStreamingService {
                 );
             }
             validateRecipe(response);
+            recipeRecommendationService.validateIngredientAlignment(request, response);
             requireActive(cancelled);
             sendStatusOrCancel(emitter, cancelled, "saving", "正在保存本次搜索记录");
             requireActive(cancelled);
-            RecipeGenerateResponse persisted = recipeRecommendationService.persist(
+            RecipeGenerateResponse persisted = response.withContextFlags(
+                            prepared.pantryReferenced(),
+                            prepared.pantryFallback(),
+                            prepared.healthNutritionReferenced()
+                    );
+            persisted = recipeRecommendationService.persist(
                     request,
-                    response,
+                    persisted,
                     principal,
                     anonymousId
             );
