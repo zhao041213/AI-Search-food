@@ -191,6 +191,57 @@ class QwenRecipeClientTest {
     }
 
     @Test
+    void enablesThinkingForShortRecipePlanningOnQwen3() throws Exception {
+        RestTemplate restTemplate = new RestTemplateBuilder().build();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restTemplate).build();
+        AiModelConfigService configService = mock(AiModelConfigService.class);
+        when(configService.textRecipeRuntimeConfig()).thenReturn(new AiModelRuntimeConfig(
+                "qwen",
+                "openai",
+                "qwen3.8-max",
+                "https://dashscope.test/compatible-mode/v1",
+                "admin-api-key"
+        ));
+        QwenRecipeClient client = new QwenRecipeClient(
+                restTemplate,
+                new ObjectMapper(),
+                new QwenProperties("env-api-key", "qwen-plus", "https://dashscope.env/v1"),
+                configService
+        );
+        String planJson = new ObjectMapper().writeValueAsString(Map.of(
+                "recipes", List.of(Map.of(
+                        "title", "回锅肉",
+                        "coreIngredients", List.of("猪肉"),
+                        "videoSearchKeywords", List.of("回锅肉 家常做法")
+                ))
+        ));
+        String qwenResponse = new ObjectMapper().writeValueAsString(Map.of(
+                "choices", List.of(Map.of(
+                        "message", Map.of(
+                                "reasoning_content", "先选择具体常见的单道菜名",
+                                "content", planJson
+                        )
+                ))
+        ));
+
+        server.expect(once(), requestTo("https://dashscope.test/compatible-mode/v1/chat/completions"))
+                .andExpect(jsonPath("$.model").value("qwen3.8-max"))
+                .andExpect(jsonPath("$.enable_thinking").value(true))
+                .andExpect(jsonPath("$.thinking_budget").value(768))
+                .andExpect(jsonPath("$.max_tokens").value(1800))
+                .andRespond(withSuccess(qwenResponse, MediaType.APPLICATION_JSON));
+
+        List<QwenRecipeClient.RecipePlan> plans = client.planRecipeSelection("请规划猪肉家常菜");
+
+        assertThat(plans).singleElement().satisfies(plan -> {
+            assertThat(plan.title()).isEqualTo("回锅肉");
+            assertThat(plan.coreIngredients()).containsExactly("猪肉");
+            assertThat(plan.videoSearchKeywords()).containsExactly("回锅肉 家常做法");
+        });
+        server.verify();
+    }
+
+    @Test
     void generateWeeklyMenuParsesStructuredSelections() {
         RestTemplate restTemplate = new RestTemplateBuilder().build();
         MockRestServiceServer server = MockRestServiceServer.bindTo(restTemplate).build();

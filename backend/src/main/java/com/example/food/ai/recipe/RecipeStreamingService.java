@@ -130,6 +130,21 @@ public class RecipeStreamingService {
             requireActive(cancelled);
             RecipeRecommendationService.PreparedPrompt prepared = recipeRecommendationService.preparePrompt(request, principal);
             requireActive(cancelled);
+            sendStatusOrCancel(emitter, cancelled, "planning", "正在分析真实菜名和食材搭配");
+            List<QwenRecipeClient.RecipePlan> recipePlans = recipeRecommendationService.planRecipeSelections(
+                    request,
+                    recommendationCount,
+                    prepared
+            );
+            recipePlans = recipePlans == null ? List.of() : recipePlans;
+            sendStatusOrCancel(
+                    emitter,
+                    cancelled,
+                    "planning",
+                    recipePlans.isEmpty()
+                            ? "未取得可靠的视频菜名参考，按常见家常菜规则生成"
+                            : "标准菜名和食材搭配规划完成"
+            );
             sendStatusOrCancel(emitter, cancelled, "generating", "正在连接 AI 生成" + recommendationCount + "道菜谱");
 
             String batchId = UUID.randomUUID().toString();
@@ -171,9 +186,16 @@ public class RecipeStreamingService {
                         );
                     }
                     RecipeStreamFieldParser parser = new RecipeStreamFieldParser(new com.fasterxml.jackson.databind.ObjectMapper());
-                    String recipePrompt = recipeRecommendationService.batchRecipePrompt(
-                            prepared.prompt(), request, recipeIndex, recommendationCount, previousResponses
-                    );
+                    QwenRecipeClient.RecipePlan recipePlan = recipeIndex < recipePlans.size()
+                            ? recipePlans.get(recipeIndex)
+                            : null;
+                    String recipePrompt = recipePlan == null
+                            ? recipeRecommendationService.batchRecipePrompt(
+                                    prepared.prompt(), request, recipeIndex, recommendationCount, previousResponses
+                            )
+                            : recipeRecommendationService.batchRecipePrompt(
+                                    prepared.prompt(), request, recipeIndex, recommendationCount, previousResponses, recipePlan
+                            );
                     if (attempt > 0) {
                         recipePrompt += retryInstruction == null
                                 ? duplicateRetryInstruction(recipeIndex)

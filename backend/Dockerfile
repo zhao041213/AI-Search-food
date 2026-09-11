@@ -6,7 +6,7 @@ WORKDIR /workspace
 COPY pom.xml ./pom.xml
 COPY src ./src
 RUN --mount=type=cache,id=ai-search-food-maven,target=/root/.m2 \
-    mvn -B -DskipTests package
+    mvn -B -Dmaven.test.skip=true compile jar:jar spring-boot:repackage
 
 FROM eclipse-temurin:17.0.13_11-jre-jammy
 

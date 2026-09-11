@@ -1690,7 +1690,8 @@ function replaceRecommendationRecipe(recipeId, nextRecipe) {
 }
 
 function handleBatchStart(data) {
-  const total = Math.max(3, Number(data?.total) || 3)
+  const parsedTotal = Number(data?.total)
+  const total = Number.isInteger(parsedTotal) && parsedTotal >= 3 ? parsedTotal : 3
   const batchId = data?.batchId || `batch-${Date.now()}`
   recommendationBatch.value = {
     batchId,

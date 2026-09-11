@@ -130,5 +130,6 @@ test('shows a distinct retry stage when the model repeats a recipe', () => {
 test('uses the backend batch total for dynamically sized recipe batches', () => {
   assert.match(homeViewSource, /:aria-label="`\$\{recommendationRecipes\.length\}道推荐菜谱`"/)
   assert.match(homeViewSource, /recommendationReadyCount\.value >= \(recommendationBatch\.value\?\.total \|\| recommendationRecipes\.value\.length\)/)
-  assert.match(homeViewSource, /Math\.max\(3, Number\(data\?\.total\) \|\| 3\)/)
+  assert.match(homeViewSource, /Number\.isInteger\(parsedTotal\) && parsedTotal >= 3 \? parsedTotal : 3/)
+  assert.match(homeViewSource, /recommendationRecipes\.value = createRecipeBatchDraft\(3\)/)
 })

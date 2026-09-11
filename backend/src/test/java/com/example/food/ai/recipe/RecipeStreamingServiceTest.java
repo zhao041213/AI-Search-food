@@ -98,9 +98,9 @@ class RecipeStreamingServiceTest {
     }
 
     @Test
-    void usesFiveRecipeBatchWhenDynamicCountRequiresIt() {
+    void usesInputIngredientCountWhenItExceedsThree() {
         RecipeGenerateResponse response = recipe();
-        when(recommendationService.recommendationCount(any())).thenReturn(5);
+        when(recommendationService.recommendationCount(any())).thenReturn(9);
         when(recommendationService.preparePrompt(any(), any())).thenReturn(
                 new RecipeRecommendationService.PreparedPrompt("prompt", false, false, false)
         );
@@ -123,8 +123,81 @@ class RecipeStreamingServiceTest {
                 "anon-001"
         );
 
-        verify(qwenClient, timeout(2000).times(5)).streamRecipe(anyString(), any(), any());
-        verify(recommendationService, timeout(2000).times(5)).persist(any(), any(), any(), anyString());
+        verify(qwenClient, timeout(2000).times(9)).streamRecipe(anyString(), any(), any());
+        verify(recommendationService, timeout(2000).times(9)).persist(any(), any(), any(), anyString());
+        emitter.complete();
+    }
+
+    @Test
+    void passesThinkingPlanIntoTheFinalStreamingPrompts() {
+        RecipeGenerateResponse response = recipe();
+        QwenRecipeClient.RecipePlan plan = new QwenRecipeClient.RecipePlan(
+                "蒜泥白肉",
+                List.of("猪肉"),
+                List.of("蒜泥白肉 家常做法")
+        );
+        when(recommendationService.preparePrompt(any(), any())).thenReturn(
+                new RecipeRecommendationService.PreparedPrompt("prompt", false, false, false)
+        );
+        when(recommendationService.recommendationBatchMode(any())).thenReturn("STYLE_VARIANTS");
+        when(recommendationService.planRecipeSelections(any(), anyInt(), any()))
+                .thenReturn(List.of(plan, plan, plan));
+        when(recommendationService.batchRecipePrompt(anyString(), any(), anyInt(), anyInt(), anyList(), any()))
+                .thenReturn("planned-prompt");
+        when(recommendationService.persist(any(), any(), any(), anyString()))
+                .thenAnswer(invocation -> invocation.getArgument(1));
+        when(qwenClient.streamRecipe(anyString(), any(), any())).thenReturn(
+                streamResult(response), streamResult(response), streamResult(response)
+        );
+
+        SseEmitter emitter = service.generate(
+                new RecipeGenerateRequest("猪肉", "dinner", "balanced", "text"),
+                null,
+                "anon-001"
+        );
+
+        verify(recommendationService, timeout(2000).times(3))
+                .batchRecipePrompt(anyString(), any(), anyInt(), anyInt(), anyList(), any());
+        emitter.complete();
+    }
+
+    @Test
+    void keepsMinimumCountWhenPlannerReturnsFewerPlans() {
+        RecipeGenerateResponse response = recipe();
+        QwenRecipeClient.RecipePlan shrimpPlan = new QwenRecipeClient.RecipePlan(
+                "清蒸大虾",
+                List.of("虾"),
+                List.of("清蒸大虾 家常做法")
+        );
+        QwenRecipeClient.RecipePlan tilapiaPlan = new QwenRecipeClient.RecipePlan(
+                "清蒸罗非鱼",
+                List.of("罗非鱼"),
+                List.of("清蒸罗非鱼 家常做法")
+        );
+        when(recommendationService.recommendationCount(any())).thenReturn(3);
+        when(recommendationService.preparePrompt(any(), any())).thenReturn(
+                new RecipeRecommendationService.PreparedPrompt("prompt", false, false, false)
+        );
+        when(recommendationService.recommendationBatchMode(any())).thenReturn("MEAL_COMBO");
+        when(recommendationService.planRecipeSelections(any(), anyInt(), any()))
+                .thenReturn(List.of(shrimpPlan, tilapiaPlan));
+        when(recommendationService.batchRecipePrompt(anyString(), any(), anyInt(), anyInt(), anyList(), any()))
+                .thenReturn("planned-prompt");
+        when(recommendationService.batchRecipePrompt(anyString(), any(), anyInt(), anyInt(), anyList()))
+                .thenReturn("fallback-prompt");
+        when(recommendationService.persist(any(), any(), any(), anyString()))
+                .thenAnswer(invocation -> invocation.getArgument(1));
+        when(qwenClient.streamRecipe(anyString(), any(), any()))
+                .thenReturn(streamResult(response));
+
+        SseEmitter emitter = service.generate(
+                new RecipeGenerateRequest("虾、罗非鱼", "dinner", "balanced", "text"),
+                null,
+                "anon-001"
+        );
+
+        verify(qwenClient, timeout(2000).times(3)).streamRecipe(anyString(), any(), any());
+        verify(recommendationService, timeout(2000).times(3)).persist(any(), any(), any(), anyString());
         emitter.complete();
     }
 

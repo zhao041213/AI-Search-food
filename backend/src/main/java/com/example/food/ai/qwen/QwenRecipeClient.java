@@ -91,6 +91,27 @@ public class QwenRecipeClient {
         }
     }
 
+    /**
+     * Uses a short planning call before recipe generation. Qwen3 models can
+     * spend their reasoning budget on choosing a standard dish and ingredient
+     * pairing, while the final recipe call remains a fast non-thinking call.
+     */
+    public List<RecipePlan> planRecipeSelection(String prompt) {
+        AiModelRuntimeConfig runtimeConfig = runtimeConfig();
+        requireApiKey(runtimeConfig);
+        try {
+            ResponseEntity<String> response = restTemplate.exchange(
+                    requestUrl(runtimeConfig),
+                    HttpMethod.POST,
+                    new HttpEntity<>(planningRequestBody(prompt, runtimeConfig), headers(runtimeConfig)),
+                    String.class
+            );
+            return parseRecipePlans(response.getBody(), runtimeConfig);
+        } catch (RestClientException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "AI 菜谱规划失败，请稍后重试", exception);
+        }
+    }
+
     public RecipeStreamResult streamRecipe(
             String prompt,
             Consumer<String> onDelta,
@@ -244,8 +265,43 @@ public class QwenRecipeClient {
         return parseRecipePayload(content, runtimeConfig);
     }
 
+    private List<RecipePlan> parseRecipePlans(String responseBody, AiModelRuntimeConfig runtimeConfig) {
+        String content = firstContent(responseBody, runtimeConfig);
+        try {
+            com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(stripJsonFence(content));
+            if (node == null || node.isNull()) {
+                return List.of();
+            }
+            if (node.isArray()) {
+                return List.copyOf(objectMapper.convertValue(node, objectMapper.getTypeFactory()
+                        .constructCollectionType(List.class, RecipePlan.class)));
+            }
+            com.fasterxml.jackson.databind.JsonNode recipes = node.path("recipes");
+            if (recipes.isArray()) {
+                return List.copyOf(objectMapper.convertValue(recipes, objectMapper.getTypeFactory()
+                        .constructCollectionType(List.class, RecipePlan.class)));
+            }
+            if (node.isObject() && node.has("title")) {
+                return List.of(objectMapper.treeToValue(node, RecipePlan.class));
+            }
+            return List.of();
+        } catch (IOException | IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "AI 菜谱规划结果不是有效 JSON", exception);
+        }
+    }
+
     private Map<String, Object> connectionTestBody(AiModelRuntimeConfig runtimeConfig) {
         return requestBody("请只回复 OK", runtimeConfig, false);
+    }
+
+    private Map<String, Object> planningRequestBody(String prompt, AiModelRuntimeConfig runtimeConfig) {
+        Map<String, Object> body = requestBody(prompt, runtimeConfig, false);
+        body.put("max_tokens", 1800);
+        if (!isAnthropic(runtimeConfig) && isFastQwen3Model(runtimeConfig.modelName())) {
+            body.put("enable_thinking", true);
+            body.put("thinking_budget", 768);
+        }
+        return body;
     }
 
     private void requireApiKey(AiModelRuntimeConfig runtimeConfig) {
@@ -547,6 +603,18 @@ public class QwenRecipeClient {
             RecipeGenerateResponse.Explanation explanation,
             com.fasterxml.jackson.databind.JsonNode nutritionEstimate
     ) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record RecipePlan(
+            String title,
+            List<String> coreIngredients,
+            List<String> videoSearchKeywords
+    ) {
+        public RecipePlan {
+            coreIngredients = coreIngredients == null ? List.of() : List.copyOf(coreIngredients);
+            videoSearchKeywords = videoSearchKeywords == null ? List.of() : List.copyOf(videoSearchKeywords);
+        }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

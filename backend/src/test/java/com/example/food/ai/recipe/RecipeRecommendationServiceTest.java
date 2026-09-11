@@ -453,7 +453,7 @@ class RecipeRecommendationServiceTest {
     }
 
     @Test
-    void batchPromptPrefersTwoIngredientPairingsAndSearchableBilibiliKeywords() {
+    void batchPromptKeepsFallbackIngredientsSeparateAndSearchable() {
         RecipeGenerateRequest request = new RecipeGenerateRequest(
                 "番茄、鸡蛋、牛肉",
                 "dinner",
@@ -464,37 +464,66 @@ class RecipeRecommendationServiceTest {
 
         assertThat(recipeRecommendationService.recommendationBatchMode(request)).isEqualTo("MEAL_COMBO");
         assertThat(recipeRecommendationService.batchRecipePrompt(basePrompt, request, 0, 3))
-                .contains("本道菜的优先搭配候选食材为：番茄、鸡蛋")
+                .contains("本道菜的优先搭配候选食材为：番茄")
                 .contains("严格只能使用一至两种本次输入食材")
                 .contains("禁止为了凑数量强行合并")
                 .contains("优先选择在 B 站容易找到教程")
                 .contains("videoKeywords 必须提供");
         assertThat(recipeRecommendationService.batchRecipePrompt(basePrompt, request, 1, 3))
-                .contains("本道菜的优先搭配候选食材为：番茄、牛肉");
+                .contains("本道菜的优先搭配候选食材为：鸡蛋");
         assertThat(recipeRecommendationService.batchRecipePrompt(basePrompt, request, 2, 3))
-                .contains("本道菜的优先搭配候选食材为：鸡蛋、牛肉");
+                .contains("本道菜的优先搭配候选食材为：牛肉");
     }
 
     @Test
-    void scalesBatchCountWithInputSizeAndKeepsMinimum() {
+    void keepsThreeRecipeMinimumAndScalesWithDistinctInputCount() {
         assertThat(recipeRecommendationService.recommendationCount(
                 new RecipeGenerateRequest("番茄", "dinner", "balanced", "text")
         )).isEqualTo(3);
         assertThat(recipeRecommendationService.recommendationCount(
-                new RecipeGenerateRequest("食材1、食材2、食材3、食材4、食材5", "dinner", "balanced", "text")
+                new RecipeGenerateRequest("虾、罗非鱼", "dinner", "balanced", "text")
         )).isEqualTo(3);
         assertThat(recipeRecommendationService.recommendationCount(
-                new RecipeGenerateRequest("食材1、食材2、食材3、食材4、食材5、食材6", "dinner", "balanced", "text")
+                new RecipeGenerateRequest("食材1、食材2、食材3", "dinner", "balanced", "text")
         )).isEqualTo(3);
         assertThat(recipeRecommendationService.recommendationCount(
-                new RecipeGenerateRequest("食材1、食材2、食材3、食材4、食材5、食材6、食材7", "dinner", "balanced", "text")
+                new RecipeGenerateRequest("食材1、食材2、食材3、食材4", "dinner", "balanced", "text")
         )).isEqualTo(4);
         assertThat(recipeRecommendationService.recommendationCount(
-                new RecipeGenerateRequest("食材1、食材2、食材3、食材4、食材5、食材6、食材7、食材8、食材9", "dinner", "balanced", "text")
+                new RecipeGenerateRequest("食材1、食材2、食材3、食材4、食材5", "dinner", "balanced", "text")
         )).isEqualTo(5);
         assertThat(recipeRecommendationService.recommendationCount(
-                new RecipeGenerateRequest("食材1、食材2、食材3、食材4、食材5、食材6、食材7、食材8、食材9、食材10、食材11、食材12", "dinner", "balanced", "text")
+                new RecipeGenerateRequest("食材1、食材2、食材3、食材4、食材5、食材6", "dinner", "balanced", "text")
         )).isEqualTo(6);
+        assertThat(recipeRecommendationService.recommendationCount(
+                new RecipeGenerateRequest("食材1、食材2、食材3、食材4、食材5、食材6、食材7", "dinner", "balanced", "text")
+        )).isEqualTo(7);
+        assertThat(recipeRecommendationService.recommendationCount(
+                new RecipeGenerateRequest("食材1、食材2、食材3、食材4、食材5、食材6、食材7、食材8、食材9", "dinner", "balanced", "text")
+        )).isEqualTo(9);
+        assertThat(recipeRecommendationService.recommendationCount(
+                new RecipeGenerateRequest("食材1、食材2、食材3、食材4、食材5、食材6、食材7、食材8、食材9、食材10、食材11、食材12", "dinner", "balanced", "text")
+        )).isEqualTo(12);
+    }
+
+    @Test
+    void keepsTwoUnrelatedInputsInSeparateRecipeCandidates() {
+        RecipeGenerateRequest request = new RecipeGenerateRequest(
+                "虾、罗非鱼",
+                "dinner",
+                "balanced",
+                "text"
+        );
+
+        assertThat(recipeRecommendationService.batchRecipePrompt("基础菜谱要求", request, 0, 3))
+                .contains("本道菜的优先搭配候选食材为：虾")
+                .contains("本次其他指定食材（禁止使用）：罗非鱼");
+        assertThat(recipeRecommendationService.batchRecipePrompt("基础菜谱要求", request, 1, 3))
+                .contains("本道菜的优先搭配候选食材为：罗非鱼")
+                .contains("本次其他指定食材（禁止使用）：虾");
+        assertThat(recipeRecommendationService.batchRecipePrompt("基础菜谱要求", request, 2, 3))
+                .contains("本道菜的优先搭配候选食材为：虾")
+                .contains("本次其他指定食材（禁止使用）：罗非鱼");
     }
 
     @Test
@@ -688,7 +717,7 @@ class RecipeRecommendationServiceTest {
     }
 
     @Test
-    void dynamicallyAssignsAtMostTwoCoreIngredientsToEachRecipe() {
+    void assignsEveryInputIngredientItsOwnFallbackRecipeSlot() {
         RecipeGenerateRequest request = new RecipeGenerateRequest(
                 "食材1、食材2、食材3、食材4、食材5、食材6、食材7、食材8、食材9",
                 "dinner",
@@ -697,16 +726,12 @@ class RecipeRecommendationServiceTest {
         );
         String basePrompt = recipeRecommendationService.promptFor(request, null);
 
-        assertThat(recipeRecommendationService.batchRecipePrompt(basePrompt, request, 0, 5))
-                .contains("本道菜的优先搭配候选食材为：食材1、食材2");
-        assertThat(recipeRecommendationService.batchRecipePrompt(basePrompt, request, 1, 5))
-                .contains("本道菜的优先搭配候选食材为：食材3、食材4");
-        assertThat(recipeRecommendationService.batchRecipePrompt(basePrompt, request, 2, 5))
-                .contains("本道菜的优先搭配候选食材为：食材5、食材6");
-        assertThat(recipeRecommendationService.batchRecipePrompt(basePrompt, request, 3, 5))
-                .contains("本道菜的优先搭配候选食材为：食材7、食材8");
-        assertThat(recipeRecommendationService.batchRecipePrompt(basePrompt, request, 4, 5))
-                .contains("本道菜的优先搭配候选食材为：食材9、食材1");
+        assertThat(recipeRecommendationService.batchRecipePrompt(basePrompt, request, 0, 9))
+                .contains("本道菜的优先搭配候选食材为：食材1");
+        assertThat(recipeRecommendationService.batchRecipePrompt(basePrompt, request, 1, 9))
+                .contains("本道菜的优先搭配候选食材为：食材2");
+        assertThat(recipeRecommendationService.batchRecipePrompt(basePrompt, request, 8, 9))
+                .contains("本道菜的优先搭配候选食材为：食材9");
     }
 
     @Test
@@ -754,8 +779,10 @@ class RecipeRecommendationServiceTest {
         assertThat(prompt)
                 .contains("B 站可核验来源（硬约束）")
                 .contains("番茄炒蛋家常做法")
-                .contains("菜名必须从上述已核验视频标题中选择")
-                .contains("不得用模型记忆补写菜谱");
+                .contains("B 站来源仅用于核对真实性和排序")
+                .contains("不得直接照搬")
+                .contains("没有可用视频时可以按常见家常菜知识补全完整做法")
+                .contains("不得虚构菜式、视频或来源");
         verify(groundingService).searchForRecipeGrounding("番茄 家常做法", 6);
     }
 
@@ -796,6 +823,76 @@ class RecipeRecommendationServiceTest {
                 .contains("禁止创造不存在的菜名、虚构菜式")
                 .doesNotContain("暂不生成，请调整食材后重试");
         verify(groundingService).searchForRecipeGrounding("番茄 家常做法", 6);
+    }
+
+    @Test
+    void appliesPlannedStandardDishToTheFinalRecipePrompt() {
+        String prompt = recipeRecommendationService.batchRecipePrompt(
+                "基础菜谱要求",
+                new RecipeGenerateRequest("猪肉", "dinner", "balanced", "text"),
+                0,
+                3,
+                List.of(),
+                new QwenRecipeClient.RecipePlan(
+                        "蒜泥白肉",
+                        List.of("猪肉"),
+                        List.of("蒜泥白肉 家常做法")
+                )
+        );
+
+        assertThat(prompt)
+                .contains("规划确定的标准菜名：蒜泥白肉")
+                .contains("规划确定的核心食材：猪肉")
+                .contains("不得把合集、营销词或视频标题前缀复制进菜名");
+    }
+
+    @Test
+    void planningPromptRequiresTheFullCountWithoutForcedPantryPairings() {
+        RecipeGenerateRequest request = new RecipeGenerateRequest(
+                "番茄、鸡蛋、牛肉、土豆",
+                "dinner",
+                "balanced",
+                "text",
+                null,
+                null,
+                null,
+                true,
+                false
+        );
+        RecipeRecommendationService.PreparedPrompt prepared = new RecipeRecommendationService.PreparedPrompt(
+                "prompt",
+                true,
+                false,
+                false,
+                RecipeRecommendationService.RecipeVideoGrounding.disabled(),
+                List.of("芹菜")
+        );
+
+        assertThat(recipeRecommendationService.recipePlanningPrompt(request, 4, prepared))
+                .contains("本次必须规划 4 道互不重复的菜谱，不得减少数量")
+                .contains("若食材不适合互相搭配，就分别规划成常见家常菜")
+                .contains("无法合理搭配就忽略库存")
+                .contains("没有对应视频时仍选择常见真实菜名");
+    }
+
+    @Test
+    void compatibleIngredientsCanStillBeCombinedByThePlanningStage() {
+        String prompt = recipeRecommendationService.batchRecipePrompt(
+                "基础菜谱要求",
+                new RecipeGenerateRequest("番茄、鸡蛋、牛肉", "dinner", "balanced", "text"),
+                0,
+                3,
+                List.of(),
+                new QwenRecipeClient.RecipePlan(
+                        "番茄炒鸡蛋",
+                        List.of("番茄", "鸡蛋"),
+                        List.of("番茄炒鸡蛋 家常做法")
+                )
+        );
+
+        assertThat(prompt)
+                .contains("本道菜的优先搭配候选食材为：番茄、鸡蛋")
+                .contains("本次其他指定食材（禁止使用）：牛肉");
     }
 
     @Test
