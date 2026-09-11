@@ -1,5 +1,7 @@
 package com.example.food.admin;
 
+import com.example.food.ai.config.dto.AiModelConnectionTestResponse;
+import com.example.food.ai.qwen.QwenRecipeClient;
 import com.example.food.security.AppRole;
 import com.example.food.security.AuthPrincipal;
 import com.example.food.security.JwtService;
@@ -14,6 +16,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -32,6 +35,9 @@ class AiModelConfigControllerTest {
 
     @Autowired
     private JwtService jwtService;
+
+    @org.springframework.boot.test.mock.mockito.MockBean
+    private QwenRecipeClient qwenRecipeClient;
 
     @Test
     void adminCanReadAndSaveTextRecipeAiConfigWithoutApiKeyLeak() throws Exception {
@@ -84,5 +90,30 @@ class AiModelConfigControllerTest {
                         .header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value(403));
+    }
+
+    @Test
+    void adminCanTestAnthropicCompatibleConfigWithoutSavingIt() throws Exception {
+        String adminToken = jwtService.generateToken(new AuthPrincipal(1L, "admin", AppRole.ADMIN));
+        org.mockito.Mockito.when(qwenRecipeClient.testConnection(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new AiModelConnectionTestResponse(true, "qwen", "anthropic", "qwen-plus"));
+
+        mockMvc.perform(post(CONFIG_URL + "/test")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "provider": "qwen",
+                                  "protocol": "anthropic",
+                                  "modelName": "qwen-plus",
+                                  "endpoint": "https://dashscope.aliyuncs.com/apps/anthropic",
+                                  "apiKey": "temporary-configured-value",
+                                  "enabled": true
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.connected").value(true))
+                .andExpect(jsonPath("$.data.protocol").value("anthropic"));
     }
 }

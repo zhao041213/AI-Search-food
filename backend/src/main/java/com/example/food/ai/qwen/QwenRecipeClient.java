@@ -2,6 +2,7 @@ package com.example.food.ai.qwen;
 
 import com.example.food.ai.config.AiModelConfigService;
 import com.example.food.ai.config.AiModelRuntimeConfig;
+import com.example.food.ai.config.dto.AiModelConnectionTestResponse;
 import com.example.food.ai.recipe.dto.RecipeGenerateResponse;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -74,19 +75,19 @@ public class QwenRecipeClient {
     public RecipeGenerateResponse generateRecipe(String prompt) {
         AiModelRuntimeConfig runtimeConfig = runtimeConfig();
         if (runtimeConfig.apiKey() == null || runtimeConfig.apiKey().isBlank()) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "千问 API Key 未配置，请设置 DASHSCOPE_API_KEY");
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "AI API Key 未配置，请先在管理后台设置");
         }
 
         try {
-            ResponseEntity<QwenChatResponse> response = restTemplate.exchange(
-                    runtimeConfig.endpoint(),
+            ResponseEntity<String> response = restTemplate.exchange(
+                    requestUrl(runtimeConfig),
                     HttpMethod.POST,
                     new HttpEntity<>(requestBody(prompt, runtimeConfig), headers(runtimeConfig)),
-                    QwenChatResponse.class
+                    String.class
             );
             return parseRecipe(response.getBody(), runtimeConfig);
         } catch (RestClientException exception) {
-            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "千问服务调用失败，请稍后重试", exception);
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "AI 服务调用失败，请稍后重试", exception);
         }
     }
 
@@ -97,12 +98,12 @@ public class QwenRecipeClient {
     ) {
         AiModelRuntimeConfig runtimeConfig = runtimeConfig();
         if (runtimeConfig.apiKey() == null || runtimeConfig.apiKey().isBlank()) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "千问 API Key 未配置，请设置 DASHSCOPE_API_KEY");
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "AI API Key 未配置，请先在管理后台设置");
         }
 
         try {
             return restTemplate.execute(
-                    runtimeConfig.endpoint(),
+                    requestUrl(runtimeConfig),
                     HttpMethod.POST,
                     request -> {
                         request.getHeaders().putAll(headers(runtimeConfig, true));
@@ -120,9 +121,9 @@ public class QwenRecipeClient {
                         false
                 );
             }
-            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "千问流式服务调用失败，请稍后重试", exception);
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "AI 流式服务调用失败，请稍后重试", exception);
         } catch (RestClientException exception) {
-            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "千问流式服务调用失败，请稍后重试", exception);
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "AI 流式服务调用失败，请稍后重试", exception);
         }
     }
 
@@ -133,19 +134,19 @@ public class QwenRecipeClient {
     public List<WeeklyMenuSelection> generateWeeklyMenu(String prompt) {
         AiModelRuntimeConfig runtimeConfig = runtimeConfig();
         if (runtimeConfig.apiKey() == null || runtimeConfig.apiKey().isBlank()) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "千问 API Key 未配置，请设置 DASHSCOPE_API_KEY");
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "AI API Key 未配置，请先在管理后台设置");
         }
 
         try {
-            ResponseEntity<QwenChatResponse> response = restTemplate.exchange(
-                    runtimeConfig.endpoint(),
+            ResponseEntity<String> response = restTemplate.exchange(
+                    requestUrl(runtimeConfig),
                     HttpMethod.POST,
                     new HttpEntity<>(requestBody(prompt, runtimeConfig), headers(runtimeConfig)),
-                    QwenChatResponse.class
+                    String.class
             );
-            return parseWeeklyMenu(response.getBody());
+            return parseWeeklyMenu(response.getBody(), runtimeConfig);
         } catch (RestClientException exception) {
-            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "千问服务调用失败，请稍后重试", exception);
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "AI 服务调用失败，请稍后重试", exception);
         }
     }
 
@@ -153,11 +154,32 @@ public class QwenRecipeClient {
         if (aiModelConfigService != null) {
             return aiModelConfigService.textRecipeRuntimeConfig();
         }
-        return new AiModelRuntimeConfig("qwen", properties.model(), properties.endpoint(), properties.apiKey());
+        return new AiModelRuntimeConfig("qwen", "openai", properties.model(), properties.endpoint(), properties.apiKey());
     }
 
     public AiModelRuntimeConfig currentRuntimeConfig() {
         return runtimeConfig();
+    }
+
+    public AiModelConnectionTestResponse testConnection(AiModelRuntimeConfig runtimeConfig) {
+        requireApiKey(runtimeConfig);
+        try {
+            restTemplate.exchange(
+                    requestUrl(runtimeConfig),
+                    HttpMethod.POST,
+                    new HttpEntity<>(connectionTestBody(runtimeConfig), headers(runtimeConfig)),
+                    String.class
+            );
+            return new AiModelConnectionTestResponse(
+                    true,
+                    runtimeConfig.provider(),
+                    runtimeConfig.protocol(),
+                    runtimeConfig.modelName()
+            );
+        } catch (RestClientException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+                    "连接测试失败，请检查接口协议、地址和 API Key", exception);
+        }
     }
 
     private Map<String, Object> requestBody(String prompt, AiModelRuntimeConfig runtimeConfig) {
@@ -171,16 +193,26 @@ public class QwenRecipeClient {
     ) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", runtimeConfig.modelName());
-        body.put("messages", List.of(
-                Map.of(
-                        "role", "system",
-                        "content", "你是专业的中文营养与家庭烹饪助手。只输出可解析的 JSON，不要输出 Markdown、代码块或额外说明。"
-                ),
-                Map.of(
-                        "role", "user",
-                        "content", prompt
-                )
-        ));
+        if (isAnthropic(runtimeConfig)) {
+            body.put("max_tokens", 4096);
+            body.put("system", "你是专业的中文营养与家庭烹饪助手。只输出可解析的 JSON，不要输出 Markdown、代码块或额外说明。");
+            body.put("messages", List.of(Map.of("role", "user", "content", prompt)));
+        } else {
+            body.put("messages", List.of(
+                    Map.of(
+                            "role", "system",
+                            "content", "你是专业的中文营养与家庭烹饪助手。只输出可解析的 JSON，不要输出 Markdown、代码块或额外说明。"
+                    ),
+                    Map.of(
+                            "role", "user",
+                            "content", prompt
+                    )
+            ));
+            body.put("max_tokens", 2400);
+            if (isFastQwen3Model(runtimeConfig.modelName())) {
+                body.put("enable_thinking", false);
+            }
+        }
         body.put("temperature", 0.7);
         if (stream) {
             body.put("stream", true);
@@ -194,7 +226,12 @@ public class QwenRecipeClient {
 
     private HttpHeaders headers(AiModelRuntimeConfig runtimeConfig, boolean stream) {
         HttpHeaders headers = new HttpHeaders();
-        headers.setBearerAuth(runtimeConfig.apiKey());
+        if (isAnthropic(runtimeConfig)) {
+            headers.set("x-api-key", runtimeConfig.apiKey());
+            headers.set("anthropic-version", "2023-06-01");
+        } else {
+            headers.setBearerAuth(runtimeConfig.apiKey());
+        }
         headers.setContentType(MediaType.APPLICATION_JSON);
         if (stream) {
             headers.setAccept(List.of(MediaType.TEXT_EVENT_STREAM, MediaType.APPLICATION_JSON));
@@ -202,9 +239,36 @@ public class QwenRecipeClient {
         return headers;
     }
 
-    private RecipeGenerateResponse parseRecipe(QwenChatResponse response, AiModelRuntimeConfig runtimeConfig) {
-        String content = firstContent(response);
+    private RecipeGenerateResponse parseRecipe(String responseBody, AiModelRuntimeConfig runtimeConfig) {
+        String content = firstContent(responseBody, runtimeConfig);
         return parseRecipePayload(content, runtimeConfig);
+    }
+
+    private Map<String, Object> connectionTestBody(AiModelRuntimeConfig runtimeConfig) {
+        return requestBody("请只回复 OK", runtimeConfig, false);
+    }
+
+    private void requireApiKey(AiModelRuntimeConfig runtimeConfig) {
+        if (runtimeConfig == null || runtimeConfig.apiKey() == null || runtimeConfig.apiKey().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "AI API Key 未配置，请先填写或保存 API Key");
+        }
+    }
+
+    private String requestUrl(AiModelRuntimeConfig runtimeConfig) {
+        String endpoint = runtimeConfig.endpoint() == null ? "" : runtimeConfig.endpoint().trim();
+        if (isAnthropic(runtimeConfig) || endpoint.endsWith("/chat/completions")) {
+            return endpoint;
+        }
+        return endpoint.endsWith("/") ? endpoint + "chat/completions" : endpoint + "/chat/completions";
+    }
+
+    private boolean isAnthropic(AiModelRuntimeConfig runtimeConfig) {
+        return "anthropic".equalsIgnoreCase(runtimeConfig.protocol());
+    }
+
+    private boolean isFastQwen3Model(String modelName) {
+        return modelName != null && modelName.trim().toLowerCase().contains("qwen3");
     }
 
     private RecipeGenerateResponse parseRecipePayload(String content, AiModelRuntimeConfig runtimeConfig) {
@@ -238,10 +302,9 @@ public class QwenRecipeClient {
             String text = new String(body, StandardCharsets.UTF_8).trim();
             sse = text.startsWith("data:") || text.startsWith(":");
             if (!sse) {
-                QwenChatResponse chatResponse = objectMapper.readValue(body, QwenChatResponse.class);
                 return new RecipeStreamResult(
                         "",
-                        parseRecipe(chatResponse, runtimeConfig),
+                        parseRecipe(new String(body, StandardCharsets.UTF_8), runtimeConfig),
                         runtimeConfig.provider(),
                         runtimeConfig.modelName(),
                         false
@@ -297,7 +360,7 @@ public class QwenRecipeClient {
         }
         done = processSseEvent(dataLines, content, onDelta, onFirstChunk) || done;
         if (!done) {
-            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "千问流式响应中断，请点击重试");
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "AI 流式响应中断，请点击重试");
         }
         return new RecipeStreamResult(
                 content.toString(),
@@ -323,6 +386,9 @@ public class QwenRecipeClient {
         }
         try {
             com.fasterxml.jackson.databind.JsonNode root = objectMapper.readTree(data);
+            if ("message_stop".equals(root.path("type").asText())) {
+                return true;
+            }
             String delta = streamContent(root);
             if (delta != null && !delta.isEmpty()) {
                 if (content.isEmpty()) {
@@ -333,7 +399,7 @@ public class QwenRecipeClient {
             }
             return false;
         } catch (IOException | IllegalArgumentException exception) {
-            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "千问流式响应格式无效，请点击重试", exception);
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "AI 流式响应格式无效，请点击重试", exception);
         }
     }
 
@@ -346,6 +412,11 @@ public class QwenRecipeClient {
             choices = root.path("output").path("choices");
         }
         if (!choices.isArray() || choices.isEmpty()) {
+            com.fasterxml.jackson.databind.JsonNode delta = root.path("delta");
+            String anthropicDelta = textContent(delta.path("text"));
+            if (anthropicDelta != null) {
+                return anthropicDelta;
+            }
             return null;
         }
         com.fasterxml.jackson.databind.JsonNode choice = choices.get(0);
@@ -374,31 +445,35 @@ public class QwenRecipeClient {
     ) {
     }
 
-    private String firstContent(QwenChatResponse response) {
-        if (response == null || response.choices() == null || response.choices().isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "千问服务未返回菜谱内容");
+    private String firstContent(String responseBody, AiModelRuntimeConfig runtimeConfig) {
+        try {
+            com.fasterxml.jackson.databind.JsonNode root = objectMapper.readTree(responseBody);
+            String content = responseContent(root, runtimeConfig);
+            if (content == null || content.isBlank()) {
+                throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "AI 服务未返回菜谱内容");
+            }
+            return content;
+        } catch (ResponseStatusException exception) {
+            throw exception;
+        } catch (IOException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "AI 返回内容不是有效 JSON", exception);
         }
-        QwenChoice choice = response.choices().get(0);
-        if (choice.message() == null || choice.message().content() == null || choice.message().content().isBlank()) {
-            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "千问服务未返回菜谱内容");
-        }
-        return choice.message().content();
     }
 
     private RecipePayload readPayload(String content) {
         try {
             return objectMapper.treeToValue(objectMapper.readTree(stripJsonFence(content)), RecipePayload.class);
         } catch (IOException exception) {
-            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "千问返回内容不是有效菜谱 JSON", exception);
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "AI 返回内容不是有效菜谱 JSON", exception);
         }
     }
 
-    private List<WeeklyMenuSelection> parseWeeklyMenu(QwenChatResponse response) {
-        String content = firstContent(response);
+    private List<WeeklyMenuSelection> parseWeeklyMenu(String responseBody, AiModelRuntimeConfig runtimeConfig) {
+        String content = firstContent(responseBody, runtimeConfig);
         try {
             com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(stripJsonFence(content));
             if (node == null || node.isNull() || (!node.isArray() && !node.isObject())) {
-                throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "千问返回的周菜单不是有效 JSON");
+                throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "AI 返回的周菜单不是有效 JSON");
             }
             if (node.isArray()) {
                 return objectMapper.convertValue(node, objectMapper.getTypeFactory()
@@ -407,8 +482,47 @@ public class QwenRecipeClient {
             WeeklyMenuPayload payload = objectMapper.treeToValue(node, WeeklyMenuPayload.class);
             return payload.items() == null ? List.of() : List.copyOf(payload.items());
         } catch (IOException | IllegalArgumentException exception) {
-            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "千问返回的周菜单不是有效 JSON", exception);
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "AI 返回的周菜单不是有效 JSON", exception);
         }
+    }
+
+    private String responseContent(com.fasterxml.jackson.databind.JsonNode root,
+                                   AiModelRuntimeConfig runtimeConfig) {
+        if (root == null || root.isNull()) {
+            return null;
+        }
+        if (isAnthropic(runtimeConfig)) {
+            return contentText(root.path("content"));
+        }
+        com.fasterxml.jackson.databind.JsonNode choices = root.path("choices");
+        if (choices.isArray() && !choices.isEmpty()) {
+            String content = contentText(choices.get(0).path("message").path("content"));
+            if (content != null) {
+                return content;
+            }
+            return contentText(choices.get(0).path("text"));
+        }
+        return contentText(root.path("output").path("choices").path(0).path("message").path("content"));
+    }
+
+    private String contentText(com.fasterxml.jackson.databind.JsonNode node) {
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return null;
+        }
+        if (node.isTextual()) {
+            return node.textValue();
+        }
+        if (node.isArray()) {
+            StringBuilder text = new StringBuilder();
+            for (com.fasterxml.jackson.databind.JsonNode item : node) {
+                String value = textContent(item.path("text"));
+                if (value != null) {
+                    text.append(value);
+                }
+            }
+            return text.isEmpty() ? null : text.toString();
+        }
+        return null;
     }
 
     private String stripJsonFence(String content) {
@@ -418,18 +532,6 @@ public class QwenRecipeClient {
             trimmed = trimmed.replaceFirst("\\s*```$", "");
         }
         return trimmed.trim();
-    }
-
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    private record QwenChatResponse(List<QwenChoice> choices) {
-    }
-
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    private record QwenChoice(QwenMessage message) {
-    }
-
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    private record QwenMessage(String content) {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

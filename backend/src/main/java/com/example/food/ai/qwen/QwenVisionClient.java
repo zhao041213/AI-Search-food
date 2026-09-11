@@ -4,6 +4,7 @@ import com.example.food.ai.config.AiModelConfigService;
 import com.example.food.ai.config.AiModelRuntimeConfig;
 import com.example.food.ai.ingredient.dto.IngredientRecognitionResponse;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.web.client.RestTemplateBuilder;
@@ -74,11 +75,11 @@ public class QwenVisionClient {
         }
 
         try {
-            ResponseEntity<QwenChatResponse> response = restTemplate.exchange(
-                    runtimeConfig.endpoint(),
+            ResponseEntity<JsonNode> response = restTemplate.exchange(
+                    requestUrl(runtimeConfig),
                     HttpMethod.POST,
                     new HttpEntity<>(requestBody(contentType, imageBytes, runtimeConfig, recognitionPrompt()), headers(runtimeConfig)),
-                    QwenChatResponse.class
+                    JsonNode.class
             );
             return parseRecognition(response.getBody(), runtimeConfig);
         } catch (RestClientException exception) {
@@ -97,8 +98,8 @@ public class QwenVisionClient {
         }
 
         try {
-            ResponseEntity<QwenChatResponse> response = restTemplate.exchange(
-                    runtimeConfig.endpoint(),
+            ResponseEntity<JsonNode> response = restTemplate.exchange(
+                    requestUrl(runtimeConfig),
                     HttpMethod.POST,
                     new HttpEntity<>(requestBody(
                             contentType,
@@ -106,9 +107,9 @@ public class QwenVisionClient {
                             runtimeConfig,
                             verificationPrompt(canonicalName)
                     ), headers(runtimeConfig)),
-                    QwenChatResponse.class
+                    JsonNode.class
             );
-            return parseVerification(firstContent(response.getBody()));
+            return parseVerification(firstContent(response.getBody(), runtimeConfig));
         } catch (RestClientException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "千问视觉校验调用失败", exception);
         }
@@ -125,8 +126,8 @@ public class QwenVisionClient {
         }
 
         try {
-            ResponseEntity<QwenChatResponse> response = restTemplate.exchange(
-                    runtimeConfig.endpoint(),
+            ResponseEntity<JsonNode> response = restTemplate.exchange(
+                    requestUrl(runtimeConfig),
                     HttpMethod.POST,
                     new HttpEntity<>(requestBody(
                             contentType,
@@ -135,9 +136,9 @@ public class QwenVisionClient {
                             finishedDishPrompt(context),
                             "你是一名专业的中文烹饪视觉评估助手。你只根据照片可见信息给出中性、可执行的烹饪建议，不作食品安全、医疗或健康诊断。"
                     ), headers(runtimeConfig)),
-                    QwenChatResponse.class
+                    JsonNode.class
             );
-            return parseFinishedDishReview(firstContent(response.getBody()), runtimeConfig);
+            return parseFinishedDishReview(firstContent(response.getBody(), runtimeConfig), runtimeConfig);
         } catch (RestClientException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "千问成品图评价服务调用失败，请稍后重试", exception);
         }
@@ -172,6 +173,9 @@ public class QwenVisionClient {
             String prompt,
             String systemPrompt
     ) {
+        if (isAnthropic(runtimeConfig)) {
+            return anthropicRequestBody(contentType, imageBytes, runtimeConfig, prompt, systemPrompt);
+        }
         return Map.of(
                 "model", runtimeConfig.modelName(),
                 "messages", List.of(
@@ -189,6 +193,37 @@ public class QwenVisionClient {
                                         Map.of(
                                                 "type", "image_url",
                                                 "image_url", Map.of("url", dataUrl(contentType, imageBytes))
+                                        )
+                                )
+                        )
+                ),
+                "temperature", 0.1
+        );
+    }
+
+    private Map<String, Object> anthropicRequestBody(
+            String contentType,
+            byte[] imageBytes,
+            AiModelRuntimeConfig runtimeConfig,
+            String prompt,
+            String systemPrompt
+    ) {
+        return Map.of(
+                "model", runtimeConfig.modelName(),
+                "max_tokens", 2048,
+                "system", systemPrompt,
+                "messages", List.of(
+                        Map.of(
+                                "role", "user",
+                                "content", List.of(
+                                        Map.of("type", "text", "text", prompt),
+                                        Map.of(
+                                                "type", "image",
+                                                "source", Map.of(
+                                                        "type", "base64",
+                                                        "media_type", contentType,
+                                                        "data", Base64.getEncoder().encodeToString(imageBytes)
+                                                )
                                         )
                                 )
                         )
@@ -244,13 +279,18 @@ public class QwenVisionClient {
 
     private HttpHeaders headers(AiModelRuntimeConfig runtimeConfig) {
         HttpHeaders headers = new HttpHeaders();
-        headers.setBearerAuth(runtimeConfig.apiKey());
+        if (isAnthropic(runtimeConfig)) {
+            headers.set("x-api-key", runtimeConfig.apiKey());
+            headers.set("anthropic-version", "2023-06-01");
+        } else {
+            headers.setBearerAuth(runtimeConfig.apiKey());
+        }
         headers.setContentType(MediaType.APPLICATION_JSON);
         return headers;
     }
 
-    private IngredientRecognitionResponse parseRecognition(QwenChatResponse response, AiModelRuntimeConfig runtimeConfig) {
-        IngredientPayload payload = readPayload(firstContent(response));
+    private IngredientRecognitionResponse parseRecognition(JsonNode response, AiModelRuntimeConfig runtimeConfig) {
+        IngredientPayload payload = readPayload(firstContent(response, runtimeConfig));
         return new IngredientRecognitionResponse(
                 payload.ingredients(),
                 payload.description(),
@@ -268,6 +308,47 @@ public class QwenVisionClient {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "千问视觉服务未返回识别内容");
         }
         return choice.message().content();
+    }
+
+    private String firstContent(JsonNode response, AiModelRuntimeConfig runtimeConfig) {
+        JsonNode content;
+        if (isAnthropic(runtimeConfig)) {
+            content = response == null ? null : response.path("content");
+        } else {
+            content = response == null ? null : response.path("choices").path(0).path("message").path("content");
+            if (content == null || content.isMissingNode() || content.isNull()) {
+                content = response == null
+                        ? null
+                        : response.path("output").path("choices").path(0).path("message").path("content");
+            }
+        }
+        if (content == null || content.isMissingNode() || content.isNull()) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "视觉服务未返回识别内容");
+        }
+        if (content.isTextual() && !content.textValue().isBlank()) {
+            return content.textValue();
+        }
+        if (content.isArray()) {
+            for (JsonNode item : content) {
+                JsonNode text = item.path("text");
+                if (text.isTextual() && !text.textValue().isBlank()) {
+                    return text.textValue();
+                }
+            }
+        }
+        throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "视觉服务未返回识别内容");
+    }
+
+    private String requestUrl(AiModelRuntimeConfig runtimeConfig) {
+        String endpoint = runtimeConfig.endpoint() == null ? "" : runtimeConfig.endpoint().trim();
+        if (isAnthropic(runtimeConfig) || endpoint.endsWith("/chat/completions")) {
+            return endpoint;
+        }
+        return endpoint.endsWith("/") ? endpoint + "chat/completions" : endpoint + "/chat/completions";
+    }
+
+    private boolean isAnthropic(AiModelRuntimeConfig runtimeConfig) {
+        return runtimeConfig != null && "anthropic".equalsIgnoreCase(runtimeConfig.protocol());
     }
 
     private IngredientPayload readPayload(String content) {

@@ -60,6 +60,48 @@ class QwenVisionClientTest {
     }
 
     @Test
+    void recognizeIngredientsAppendsChatCompletionsToAdminBaseUrl() {
+        RestTemplate restTemplate = new RestTemplateBuilder().build();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restTemplate).build();
+        com.example.food.ai.config.AiModelConfigService configService =
+                org.mockito.Mockito.mock(com.example.food.ai.config.AiModelConfigService.class);
+        org.mockito.Mockito.when(configService.visionRuntimeConfig()).thenReturn(
+                new com.example.food.ai.config.AiModelRuntimeConfig(
+                        "qwen",
+                        "openai",
+                        "qwen-vl-plus",
+                        "https://dashscope.admin/compatible-mode/v1",
+                        "admin-api-key"
+                )
+        );
+        QwenVisionClient client = new QwenVisionClient(
+                restTemplate,
+                new ObjectMapper(),
+                new QwenProperties("env-api-key", "qwen-plus", "https://dashscope.env/v1"),
+                configService
+        );
+
+        server.expect(once(), requestTo("https://dashscope.admin/compatible-mode/v1/chat/completions"))
+                .andExpect(header("Authorization", "Bearer admin-api-key"))
+                .andExpect(jsonPath("$.model").value("qwen-vl-plus"))
+                .andRespond(withSuccess("""
+                        {
+                          "choices": [
+                            {
+                              "message": {
+                                "content": "{\\\"ingredients\\\":[\\\"鸡蛋\\\"],\\\"description\\\":\\\"识别成功\\\"}"
+                              }
+                            }
+                          ]
+                        }
+                        """, MediaType.APPLICATION_JSON));
+
+        assertThat(client.recognizeIngredients("image/png", new byte[]{1, 2, 3}).ingredients())
+                .containsExactly("鸡蛋");
+        server.verify();
+    }
+
+    @Test
     void verifyIngredientImageSendsTargetIngredientAndParsesVerification() {
         RestTemplate restTemplate = new RestTemplateBuilder().build();
         MockRestServiceServer server = MockRestServiceServer.bindTo(restTemplate).build();

@@ -34,7 +34,9 @@ class BilibiliVideoSearchClientTest {
 
         server.expect(once(), requestTo(properties.baseUrl() + "?search_type=video&keyword=tomato&page=1&page_size=6"))
                 .andExpect(method(GET))
-                .andExpect(header("Accept", MediaType.APPLICATION_JSON_VALUE))
+                .andExpect(header("Accept", "application/json, text/plain, */*"))
+                .andExpect(header("Origin", "https://www.bilibili.com"))
+                .andExpect(header("Referer", "https://www.bilibili.com/"))
                 .andRespond(withSuccess("""
                         {
                           "code": 0,

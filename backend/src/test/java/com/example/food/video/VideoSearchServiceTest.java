@@ -94,6 +94,48 @@ class VideoSearchServiceTest {
     }
 
     @Test
+    void recipeGroundingSearchReturnsVerifiedVideoCandidatesWithoutUserRateLimit() {
+        BilibiliVideoProperties properties = properties();
+        properties.setRateLimitMaxRequests(1);
+        VideoSearchService service = service(properties, Clock.systemUTC());
+        when(client.search("番茄 鸡蛋 家常做法", 1, 6)).thenReturn(new BilibiliVideoSearchClient.SearchResult(
+                List.of(new BilibiliVideoSearchClient.VideoCandidate(
+                        "123", "BV1Q541167Qg", "番茄炒蛋家常做法", null,
+                        "chef", 62, 1700000000L, 12L
+                )),
+                false
+        ));
+
+        var first = service.searchForRecipeGrounding("番茄 鸡蛋 家常做法", 6);
+        var cached = service.searchForRecipeGrounding("番茄 鸡蛋 家常做法", 6);
+
+        assertThat(first.items()).singleElement().satisfies(item -> {
+            assertThat(item.title()).isEqualTo("番茄炒蛋家常做法");
+            assertThat(item.targetUrl()).isEqualTo("https://www.bilibili.com/video/BV1Q541167Qg");
+        });
+        assertThat(first.degraded()).isFalse();
+        assertThat(cached.cached()).isTrue();
+        verify(client).search("番茄 鸡蛋 家常做法", 1, 6);
+    }
+
+    @Test
+    void recipeGroundingSearchFailsClosedWhenBilibiliIsUnavailable() {
+        VideoSearchService service = service(properties(), Clock.systemUTC());
+        when(client.search("番茄 家常做法", 1, 6)).thenThrow(new BilibiliVideoSearchException(
+                BilibiliVideoSearchException.FailureType.TIMEOUT,
+                "upstream timeout",
+                null,
+                null
+        ));
+
+        var response = service.searchForRecipeGrounding("番茄 家常做法", 6);
+
+        assertThat(response.items()).isEmpty();
+        assertThat(response.degraded()).isTrue();
+        assertThat(response.message()).isEqualTo(VideoSearchService.DEGRADE_MESSAGE);
+    }
+
+    @Test
     void rateLimitKeepsBlockingTheSameUserAfterFirstRequest() {
         BilibiliVideoProperties properties = properties();
         properties.setCacheTtl(Duration.ZERO);

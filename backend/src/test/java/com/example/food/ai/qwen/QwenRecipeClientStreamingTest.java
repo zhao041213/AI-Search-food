@@ -1,5 +1,7 @@
 package com.example.food.ai.qwen;
 
+import com.example.food.ai.config.AiModelConfigService;
+import com.example.food.ai.config.AiModelRuntimeConfig;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.web.client.RestTemplateBuilder;
@@ -14,6 +16,8 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.client.ExpectedCount.once;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
@@ -97,6 +101,51 @@ class QwenRecipeClientStreamingTest {
         assertThatThrownBy(() -> client.streamRecipe("请生成菜谱", delta -> { }, () -> { }))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("流式响应中断");
+        server.verify();
+    }
+
+    @Test
+    void readsAnthropicCompatibleSseAndMessageStop() {
+        RestTemplate restTemplate = new RestTemplateBuilder().build();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restTemplate).build();
+        AiModelConfigService configService = mock(AiModelConfigService.class);
+        when(configService.textRecipeRuntimeConfig()).thenReturn(new AiModelRuntimeConfig(
+                "qwen",
+                "anthropic",
+                "qwen-plus",
+                "https://dashscope.test/apps/anthropic",
+                "anthropic-api-key"
+        ));
+        QwenRecipeClient client = new QwenRecipeClient(
+                restTemplate,
+                new ObjectMapper(),
+                new QwenProperties("env-api-key", "qwen-plus", ENDPOINT),
+                configService
+        );
+        AtomicReference<String> content = new AtomicReference<>("");
+
+        server.expect(once(), requestTo("https://dashscope.test/apps/anthropic"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(jsonPath("$.stream").value(true))
+                .andRespond(withSuccess(
+                        "event: message_start\n"
+                                + "data: {\"type\":\"message_start\"}\n\n"
+                                + "event: content_block_delta\n"
+                                + "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"{\\\"title\\\":\\\"清蒸螃蟹\\\"}\"}}\n\n"
+                                + "event: message_stop\n"
+                                + "data: {\"type\":\"message_stop\"}\n\n",
+                        MediaType.TEXT_EVENT_STREAM
+                ));
+
+        QwenRecipeClient.RecipeStreamResult result = client.streamRecipe(
+                "请生成菜谱",
+                delta -> content.updateAndGet(existing -> existing + delta),
+                () -> { }
+        );
+
+        assertThat(result.nativeStreaming()).isTrue();
+        assertThat(result.content()).contains("清蒸螃蟹");
+        assertThat(content.get()).isEqualTo(result.content());
         server.verify();
     }
 

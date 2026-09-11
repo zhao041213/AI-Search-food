@@ -12,6 +12,9 @@ import com.example.food.security.AuthPrincipal;
 import com.example.food.user.health.UserHealthProfileService;
 import com.example.food.user.healthnutrition.HealthNutritionService;
 import com.example.food.user.nutrition.UserNutritionTargetService;
+import com.example.food.video.VideoSearchService;
+import com.example.food.video.dto.VideoSearchItem;
+import com.example.food.video.dto.VideoSearchResponse;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -450,7 +453,7 @@ class RecipeRecommendationServiceTest {
     }
 
     @Test
-    void batchPromptPinsEachRecipeToTwoCoreIngredientsAndSearchableBilibiliKeywords() {
+    void batchPromptPrefersTwoIngredientPairingsAndSearchableBilibiliKeywords() {
         RecipeGenerateRequest request = new RecipeGenerateRequest(
                 "番茄、鸡蛋、牛肉",
                 "dinner",
@@ -461,14 +464,375 @@ class RecipeRecommendationServiceTest {
 
         assertThat(recipeRecommendationService.recommendationBatchMode(request)).isEqualTo("MEAL_COMBO");
         assertThat(recipeRecommendationService.batchRecipePrompt(basePrompt, request, 0, 3))
-                .contains("本道菜的两种核心食材固定为：番茄、鸡蛋")
-                .contains("严格只能使用这一至两种核心食材")
+                .contains("本道菜的优先搭配候选食材为：番茄、鸡蛋")
+                .contains("严格只能使用一至两种本次输入食材")
+                .contains("禁止为了凑数量强行合并")
                 .contains("优先选择在 B 站容易找到教程")
                 .contains("videoKeywords 必须提供");
         assertThat(recipeRecommendationService.batchRecipePrompt(basePrompt, request, 1, 3))
-                .contains("本道菜的两种核心食材固定为：番茄、牛肉");
+                .contains("本道菜的优先搭配候选食材为：番茄、牛肉");
         assertThat(recipeRecommendationService.batchRecipePrompt(basePrompt, request, 2, 3))
-                .contains("本道菜的两种核心食材固定为：鸡蛋、牛肉");
+                .contains("本道菜的优先搭配候选食材为：鸡蛋、牛肉");
+    }
+
+    @Test
+    void scalesBatchCountWithInputSizeAndKeepsMinimum() {
+        assertThat(recipeRecommendationService.recommendationCount(
+                new RecipeGenerateRequest("番茄", "dinner", "balanced", "text")
+        )).isEqualTo(3);
+        assertThat(recipeRecommendationService.recommendationCount(
+                new RecipeGenerateRequest("食材1、食材2、食材3、食材4、食材5", "dinner", "balanced", "text")
+        )).isEqualTo(3);
+        assertThat(recipeRecommendationService.recommendationCount(
+                new RecipeGenerateRequest("食材1、食材2、食材3、食材4、食材5、食材6", "dinner", "balanced", "text")
+        )).isEqualTo(3);
+        assertThat(recipeRecommendationService.recommendationCount(
+                new RecipeGenerateRequest("食材1、食材2、食材3、食材4、食材5、食材6、食材7", "dinner", "balanced", "text")
+        )).isEqualTo(4);
+        assertThat(recipeRecommendationService.recommendationCount(
+                new RecipeGenerateRequest("食材1、食材2、食材3、食材4、食材5、食材6、食材7、食材8、食材9", "dinner", "balanced", "text")
+        )).isEqualTo(5);
+        assertThat(recipeRecommendationService.recommendationCount(
+                new RecipeGenerateRequest("食材1、食材2、食材3、食材4、食材5、食材6、食材7、食材8、食材9、食材10、食材11、食材12", "dinner", "balanced", "text")
+        )).isEqualTo(6);
+    }
+
+    @Test
+    void addsExplicitPantryCompatibilityRulesToThePrompt() {
+        RecipeGenerateRequest request = new RecipeGenerateRequest(
+                "番茄、鸡蛋",
+                "dinner",
+                "balanced",
+                "text",
+                null,
+                null,
+                null,
+                true,
+                false
+        );
+        AuthPrincipal principal = new AuthPrincipal(7L, "13800138000", AppRole.USER);
+        when(userPantryService.list(7L)).thenReturn(List.of(
+                new PantryItemResponse(1L, "芹菜", "蔬菜", new BigDecimal("1"), "把", null, null)
+        ));
+
+        assertThat(recipeRecommendationService.promptFor(request, principal))
+                .contains("库存参考规则")
+                .contains("仅在库存食材能与本次指定食材组成真实、常见、可执行的家常菜时优先参考")
+                .contains("无法合理搭配时忽略库存并严格按原输入食材生成");
+    }
+
+    @Test
+    void marksOriginalInputFallbackWhenPantryCannotBeUsed() {
+        RecipeGenerateRequest request = new RecipeGenerateRequest(
+                "番茄、鸡蛋",
+                "dinner",
+                "balanced",
+                "text",
+                null,
+                null,
+                null,
+                true,
+                false
+        );
+        RecipeRecommendationService.PreparedPrompt prepared = new RecipeRecommendationService.PreparedPrompt(
+                "prompt",
+                true,
+                false,
+                false,
+                RecipeRecommendationService.RecipeVideoGrounding.disabled(),
+                List.of("芹菜")
+        );
+
+        RecipeGenerateResponse result = recipeRecommendationService.applyGenerationContextFlags(
+                request,
+                recipeResponseWithIngredients("番茄", "鸡蛋"),
+                prepared
+        );
+
+        assertThat(result.pantryReferenced()).isFalse();
+        assertThat(result.pantryFallback()).isTrue();
+        assertThat(result.pantryIncompatible()).isTrue();
+    }
+
+    @Test
+    void rejectsPantryOnlyRecipeAndProvidesFallbackInstruction() {
+        RecipeGenerateRequest request = new RecipeGenerateRequest(
+                "番茄、鸡蛋",
+                "dinner",
+                "balanced",
+                "text",
+                null,
+                null,
+                null,
+                true,
+                false
+        );
+        RecipeRecommendationService.PreparedPrompt prepared = new RecipeRecommendationService.PreparedPrompt(
+                "prompt",
+                true,
+                false,
+                false,
+                RecipeRecommendationService.RecipeVideoGrounding.disabled(),
+                List.of("芹菜")
+        );
+
+        assertThatThrownBy(() -> recipeRecommendationService.validatePantryCompatibility(
+                request,
+                recipeResponseWithIngredients("芹菜"),
+                prepared
+        ))
+                .hasMessageContaining("当前库存食材不可与原输入食材合理搭配");
+        assertThat(recipeRecommendationService.pantryFallbackRetryInstruction())
+                .contains("忽略全部库存食材")
+                .contains("只围绕原输入食材生成");
+    }
+
+    @Test
+    void retriesGenerationWhenTheModelReturnsPantryOnlyRecipe() {
+        RecipeGenerateRequest request = new RecipeGenerateRequest(
+                "番茄、鸡蛋",
+                "dinner",
+                "balanced",
+                "text",
+                null,
+                null,
+                null,
+                true,
+                false
+        );
+        AuthPrincipal principal = new AuthPrincipal(7L, "13800138000", AppRole.USER);
+        when(userPantryService.list(7L)).thenReturn(List.of(
+                new PantryItemResponse(1L, "芹菜", "蔬菜", new BigDecimal("1"), "把", null, null)
+        ));
+        when(qwenRecipeClient.generateRecipe(anyString())).thenReturn(
+                recipeResponseWithIngredients("芹菜"),
+                recipeResponseWithIngredients("番茄", "鸡蛋")
+        );
+
+        RecipeGenerateResponse result = recipeRecommendationService.generate(request, principal, null);
+
+        ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(qwenRecipeClient, org.mockito.Mockito.times(2)).generateRecipe(promptCaptor.capture());
+        assertThat(promptCaptor.getAllValues().get(1))
+                .contains("库存参考降级")
+                .contains("忽略全部库存食材");
+        assertThat(result.pantryReferenced()).isFalse();
+        assertThat(result.pantryFallback()).isTrue();
+        assertThat(result.pantryIncompatible()).isTrue();
+    }
+
+    @Test
+    void generatesAndMarksRecipeWhenPantryIngredientPairsWithInput() {
+        RecipeGenerateRequest request = new RecipeGenerateRequest(
+                "番茄",
+                "dinner",
+                "balanced",
+                "text",
+                null,
+                null,
+                null,
+                true,
+                false
+        );
+        AuthPrincipal principal = new AuthPrincipal(7L, "13800138000", AppRole.USER);
+        when(userPantryService.list(7L)).thenReturn(List.of(
+                new PantryItemResponse(1L, "鸡蛋", "蛋奶", new BigDecimal("2"), "个", null, null)
+        ));
+        when(qwenRecipeClient.generateRecipe(anyString()))
+                .thenReturn(recipeResponseWithIngredients("番茄", "鸡蛋"));
+
+        RecipeGenerateResponse result = recipeRecommendationService.generate(request, principal, null);
+
+        ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(qwenRecipeClient).generateRecipe(promptCaptor.capture());
+        assertThat(promptCaptor.getValue())
+                .contains("本次指定食材：番茄")
+                .contains("用户库存食材：鸡蛋");
+        verify(userPantryService).list(7L);
+        assertThat(result.pantryReferenced()).isTrue();
+        assertThat(result.pantryFallback()).isFalse();
+        assertThat(result.pantryIncompatible()).isFalse();
+    }
+
+    @Test
+    void marksPantryAndInputPairAsCompatible() {
+        RecipeGenerateRequest request = new RecipeGenerateRequest(
+                "番茄、鸡蛋",
+                "dinner",
+                "balanced",
+                "text",
+                null,
+                null,
+                null,
+                true,
+                false
+        );
+        RecipeRecommendationService.PreparedPrompt prepared = new RecipeRecommendationService.PreparedPrompt(
+                "prompt",
+                true,
+                false,
+                false,
+                RecipeRecommendationService.RecipeVideoGrounding.disabled(),
+                List.of("芹菜")
+        );
+
+        RecipeGenerateResponse result = recipeRecommendationService.applyGenerationContextFlags(
+                request,
+                recipeResponseWithIngredients("番茄", "芹菜"),
+                prepared
+        );
+
+        assertThat(result.pantryReferenced()).isTrue();
+        assertThat(result.pantryFallback()).isFalse();
+        assertThat(result.pantryIncompatible()).isFalse();
+    }
+
+    @Test
+    void dynamicallyAssignsAtMostTwoCoreIngredientsToEachRecipe() {
+        RecipeGenerateRequest request = new RecipeGenerateRequest(
+                "食材1、食材2、食材3、食材4、食材5、食材6、食材7、食材8、食材9",
+                "dinner",
+                "balanced",
+                "text"
+        );
+        String basePrompt = recipeRecommendationService.promptFor(request, null);
+
+        assertThat(recipeRecommendationService.batchRecipePrompt(basePrompt, request, 0, 5))
+                .contains("本道菜的优先搭配候选食材为：食材1、食材2");
+        assertThat(recipeRecommendationService.batchRecipePrompt(basePrompt, request, 1, 5))
+                .contains("本道菜的优先搭配候选食材为：食材3、食材4");
+        assertThat(recipeRecommendationService.batchRecipePrompt(basePrompt, request, 2, 5))
+                .contains("本道菜的优先搭配候选食材为：食材5、食材6");
+        assertThat(recipeRecommendationService.batchRecipePrompt(basePrompt, request, 3, 5))
+                .contains("本道菜的优先搭配候选食材为：食材7、食材8");
+        assertThat(recipeRecommendationService.batchRecipePrompt(basePrompt, request, 4, 5))
+                .contains("本道菜的优先搭配候选食材为：食材9、食材1");
+    }
+
+    @Test
+    void groundedPromptContainsOnlyRetrievedBilibiliReferenceTitles() {
+        VideoSearchService groundingService = org.mockito.Mockito.mock(VideoSearchService.class);
+        when(groundingService.searchForRecipeGrounding("番茄 家常做法", 6)).thenReturn(
+                new VideoSearchResponse(
+                        List.of(new VideoSearchItem(
+                                "123",
+                                "BV1Q541167Qg",
+                                "番茄炒蛋家常做法",
+                                null,
+                                "BILIBILI",
+                                "chef",
+                                120,
+                                null,
+                                "https://www.bilibili.com/video/BV1Q541167Qg",
+                                100L
+                        )),
+                        1,
+                        false,
+                        false,
+                        false,
+                        "https://search.bilibili.com/all?keyword=x",
+                        null
+                )
+        );
+
+        RecipeRecommendationService groundedService = new RecipeRecommendationService(
+                qwenRecipeClient,
+                searchLogService,
+                userPantryService,
+                userHealthProfileService,
+                recommendationFeedbackService,
+                userNutritionTargetService,
+                healthNutritionService,
+                groundingService
+        );
+
+        String prompt = groundedService.promptFor(
+                new RecipeGenerateRequest("番茄", "dinner", "balanced", "text"),
+                null
+        );
+
+        assertThat(prompt)
+                .contains("B 站可核验来源（硬约束）")
+                .contains("番茄炒蛋家常做法")
+                .contains("菜名必须从上述已核验视频标题中选择")
+                .contains("不得用模型记忆补写菜谱");
+        verify(groundingService).searchForRecipeGrounding("番茄 家常做法", 6);
+    }
+
+    @Test
+    void fallsBackToCommonRecipesWhenBilibiliHasNoMatchingVideo() {
+        VideoSearchService groundingService = org.mockito.Mockito.mock(VideoSearchService.class);
+        when(groundingService.searchForRecipeGrounding("番茄 家常做法", 6)).thenReturn(
+                new VideoSearchResponse(
+                        List.of(),
+                        1,
+                        false,
+                        false,
+                        false,
+                        "https://search.bilibili.com/all?keyword=%E7%95%AA%E8%8C%84",
+                        "未找到对应视频"
+                )
+        );
+
+        RecipeRecommendationService fallbackService = new RecipeRecommendationService(
+                qwenRecipeClient,
+                searchLogService,
+                userPantryService,
+                userHealthProfileService,
+                recommendationFeedbackService,
+                userNutritionTargetService,
+                healthNutritionService,
+                groundingService
+        );
+
+        String prompt = fallbackService.promptFor(
+                new RecipeGenerateRequest("番茄", "dinner", "balanced", "text"),
+                null
+        );
+
+        assertThat(prompt)
+                .contains("B 站参考（未找到对应视频）")
+                .contains("真实、常见、适合家庭操作的家常菜名和传统做法")
+                .contains("禁止创造不存在的菜名、虚构菜式")
+                .doesNotContain("暂不生成，请调整食材后重试");
+        verify(groundingService).searchForRecipeGrounding("番茄 家常做法", 6);
+    }
+
+    @Test
+    void rejectsRecipeTitleThatCannotBeMatchedToRetrievedBilibiliTitle() {
+        VideoSearchService groundingService = org.mockito.Mockito.mock(VideoSearchService.class);
+        RecipeRecommendationService groundedService = new RecipeRecommendationService(
+                qwenRecipeClient,
+                searchLogService,
+                userPantryService,
+                userHealthProfileService,
+                recommendationFeedbackService,
+                userNutritionTargetService,
+                healthNutritionService,
+                groundingService
+        );
+
+        RecipeRecommendationService.PreparedPrompt prepared = new RecipeRecommendationService.PreparedPrompt(
+                "prompt",
+                false,
+                false,
+                false,
+                new RecipeRecommendationService.RecipeVideoGrounding(
+                        List.of(new RecipeRecommendationService.VideoReference(
+                                "番茄 家常做法",
+                                "番茄炒蛋家常做法",
+                                "https://www.bilibili.com/video/BV1Q541167Qg"
+                        )),
+                        true
+                )
+        );
+
+        assertThatThrownBy(() -> groundedService.validateVideoGrounding(
+                recipeResponseWithTitle("香辣虾", "炒制", "虾"),
+                prepared
+        ))
+                .isInstanceOfSatisfying(org.springframework.web.server.ResponseStatusException.class, exception ->
+                        assertThat(exception.getReason()).contains("无法在 B 站核验"));
     }
 
     @Test
@@ -504,7 +868,7 @@ class RecipeRecommendationServiceTest {
     }
 
     @Test
-    void validatesEveryBatchRecipeContainsItsAssignedCorePair() {
+    void allowsARecipeToUseOneIngredientWhenPairingIsNotSuitable() {
         RecipeGenerateRequest request = new RecipeGenerateRequest(
                 "番茄、鸡蛋、牛肉",
                 "dinner",
@@ -518,12 +882,18 @@ class RecipeRecommendationServiceTest {
                 recipeResponseWithIngredients("鸡蛋", "牛肉")
         ))).doesNotThrowAnyException();
 
-        assertThatThrownBy(() -> recipeRecommendationService.validateBatchIngredientAlignment(request, List.of(
+        assertThatCode(() -> recipeRecommendationService.validateBatchIngredientAlignment(request, List.of(
                 recipeResponseWithIngredients("番茄", "鸡蛋"),
                 recipeResponseWithIngredients("番茄"),
                 recipeResponseWithIngredients("鸡蛋", "牛肉")
+        ))).doesNotThrowAnyException();
+
+        assertThatThrownBy(() -> recipeRecommendationService.validateBatchIngredientAlignment(request, List.of(
+                recipeResponseWithIngredients("番茄", "鸡蛋"),
+                recipeResponseWithIngredients("番茄"),
+                recipeResponseWithIngredients("鸡蛋")
         )))
-                .hasMessageContaining("第 2 道菜谱未同时使用指定的两种核心食材")
+                .hasMessageContaining("AI 返回的菜谱组合未覆盖输入食材")
                 .hasMessageContaining("牛肉");
     }
 
@@ -543,6 +913,41 @@ class RecipeRecommendationServiceTest {
         )))
                 .hasMessageContaining("第 1 道菜谱只能使用一至两种本次输入食材")
                 .hasMessageContaining("牛肉");
+    }
+
+    @Test
+    void recognizesSpecificPorkCutsAsTheRequestedPork() {
+        RecipeGenerateRequest request = new RecipeGenerateRequest("猪肉", "dinner", "balanced", "text");
+
+        assertThatCode(() -> recipeRecommendationService.validateIngredientAlignment(
+                request,
+                recipeResponseWithIngredients("五花肉")
+        )).doesNotThrowAnyException();
+        assertThatCode(() -> recipeRecommendationService.validateBatchIngredientAlignment(
+                request,
+                List.of(
+                        recipeResponseWithIngredients("猪里脊肉"),
+                        recipeResponseWithIngredients("猪肉馅"),
+                        recipeResponseWithIngredients("猪排骨")
+                )
+        )).doesNotThrowAnyException();
+        assertThat(recipeRecommendationService.promptFor(request, null))
+                .contains("输入猪肉时可写猪肉、五花肉、里脊肉")
+                .contains("不要只写肉丝或肉片");
+    }
+
+    @Test
+    void doesNotTreatScallionAsTheRequestedOnion() {
+        RecipeGenerateRequest request = new RecipeGenerateRequest(
+                "番茄、鸡蛋、洋葱",
+                "dinner",
+                "balanced",
+                "text"
+        );
+
+        assertThatCode(() -> recipeRecommendationService.validateBatchIngredientAlignment(request, List.of(
+                recipeResponseWithIngredients("番茄", "鸡蛋", "葱")
+        ))).doesNotThrowAnyException();
     }
 
     private RecipeGenerateResponse recipeResponse() {

@@ -164,6 +164,72 @@ public class VideoSearchService {
         }
     }
 
+    /**
+     * Searches Bilibili before AI recipe generation so the model can only use
+     * titles that have a real, independently retrieved video reference.
+     * This path deliberately does not consume a user's interactive video
+     * search rate limit because it is part of recipe generation itself.
+     */
+    public VideoSearchResponse searchForRecipeGrounding(String keyword, Integer limit) {
+        int safePage = DEFAULT_PAGE;
+        int safeLimit = normalizeLimit(limit);
+        String searchTerm = normalizeRequired(keyword, "B站菜谱检索关键词不能为空");
+        String fallbackSearchUrl = fallbackSearchUrl(searchTerm);
+
+        if (!properties.enabled()) {
+            return degradedResponse(safePage, fallbackSearchUrl, "视频搜索功能暂未开启");
+        }
+
+        CacheKey cacheKey = new CacheKey(searchTerm, safePage, safeLimit);
+        VideoSearchResponse cachedResponse = getCached(cacheKey);
+        if (cachedResponse != null) {
+            return withCachedFlag(cachedResponse);
+        }
+
+        long startedAt = System.nanoTime();
+        try {
+            BilibiliVideoSearchClient.SearchResult result = client.search(searchTerm, safePage, safeLimit);
+            if (result == null) {
+                throw new BilibiliVideoSearchException(
+                        BilibiliVideoSearchException.FailureType.INVALID_RESPONSE,
+                        "Bilibili 视频搜索结果为空",
+                        null,
+                        null
+                );
+            }
+            List<VideoSearchItem> items = result.items().stream()
+                    .filter(this::isUsableCandidate)
+                    .map(this::toResponseItem)
+                    .toList();
+            VideoSearchResponse response = new VideoSearchResponse(
+                    items,
+                    safePage,
+                    result.hasMore(),
+                    false,
+                    false,
+                    fallbackSearchUrl,
+                    null
+            );
+            putCached(cacheKey, response);
+            logSearch(searchTerm, safePage, items.size(), elapsedMillis(startedAt), false, false, "grounding_success");
+            return response;
+        } catch (BilibiliVideoSearchException exception) {
+            logSearch(
+                    searchTerm,
+                    safePage,
+                    0,
+                    elapsedMillis(startedAt),
+                    false,
+                    true,
+                    "grounding_" + exception.failureType().name().toLowerCase(Locale.ROOT)
+            );
+            return degradedResponse(safePage, fallbackSearchUrl, DEGRADE_MESSAGE);
+        } catch (RuntimeException exception) {
+            logSearch(searchTerm, safePage, 0, elapsedMillis(startedAt), false, true, "grounding_unexpected_failure");
+            return degradedResponse(safePage, fallbackSearchUrl, DEGRADE_MESSAGE);
+        }
+    }
+
     private VideoSearchResponse getCached(CacheKey key) {
         Instant now = clock.instant();
         synchronized (cache) {

@@ -34,10 +34,11 @@ services:
       MYSQL_USERNAME: ${MYSQL_USER:?set MYSQL_USER}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET_at_least_32_bytes}
-      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:?set DASHSCOPE_API_KEY}
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
       DASHSCOPE_MODEL: ${DASHSCOPE_MODEL:-qwen-plus}
       DASHSCOPE_VISION_MODEL: ${DASHSCOPE_VISION_MODEL:-qwen-vl-plus}
       DASHSCOPE_BASE_URL: ${DASHSCOPE_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions}
+      APP_AI_ENV_FILE: /app/config/.env
       SMS_PROVIDER: aliyun-pnvs
       ALIBABA_CLOUD_ACCESS_KEY_ID: ${ALIBABA_CLOUD_ACCESS_KEY_ID:?set ALIBABA_CLOUD_ACCESS_KEY_ID}
       ALIBABA_CLOUD_ACCESS_KEY_SECRET: ${ALIBABA_CLOUD_ACCESS_KEY_SECRET:?set ALIBABA_CLOUD_ACCESS_KEY_SECRET}
@@ -64,6 +65,7 @@ services:
     volumes:
       - review_uploads:/app/data/finished-dish-reviews
       - user_avatars:/app/data/user-avatars
+      - ./.env:/app/config/.env
     networks:
       - app_network
       - database_network

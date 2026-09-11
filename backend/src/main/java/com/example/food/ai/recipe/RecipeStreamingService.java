@@ -34,7 +34,6 @@ import java.util.concurrent.atomic.AtomicReference;
 public class RecipeStreamingService {
 
     private static final long STREAM_TIMEOUT_MILLIS = 300_000L;
-    private static final int RECOMMENDATION_COUNT = 3;
     private static final int MAX_RECIPE_ATTEMPTS = 2;
 
     private final RecipeRecommendationService recipeRecommendationService;
@@ -69,6 +68,7 @@ public class RecipeStreamingService {
             AuthPrincipal principal,
             String anonymousId
     ) {
+        int recommendationCount = normalizedRecommendationCount(request);
         SseEmitter emitter = new SseEmitter(STREAM_TIMEOUT_MILLIS);
         AtomicBoolean cancelled = new AtomicBoolean(false);
         AtomicReference<Future<?>> worker = new AtomicReference<>();
@@ -88,7 +88,7 @@ public class RecipeStreamingService {
         emitter.onTimeout(cancel);
         emitter.onError(error -> cancel.run());
 
-        if (!sendStatus(emitter, cancelled, "preparing", "正在准备三道菜谱推荐")) {
+        if (!sendStatus(emitter, cancelled, "preparing", "正在准备" + recommendationCount + "道菜谱推荐")) {
             cancel.run();
             return emitter;
         }
@@ -107,7 +107,8 @@ public class RecipeStreamingService {
                 request,
                 principal,
                 anonymousId,
-                heartbeatTask
+                heartbeatTask,
+                recommendationCount
         ));
         worker.set(task);
         if (cancelled.get()) {
@@ -122,24 +123,25 @@ public class RecipeStreamingService {
             RecipeGenerateRequest request,
             AuthPrincipal principal,
             String anonymousId,
-            ScheduledFuture<?> heartbeat
+            ScheduledFuture<?> heartbeat,
+            int recommendationCount
     ) {
         try {
             requireActive(cancelled);
             RecipeRecommendationService.PreparedPrompt prepared = recipeRecommendationService.preparePrompt(request, principal);
             requireActive(cancelled);
-            sendStatusOrCancel(emitter, cancelled, "generating", "正在连接 AI 生成三道菜谱");
+            sendStatusOrCancel(emitter, cancelled, "generating", "正在连接 AI 生成" + recommendationCount + "道菜谱");
 
             String batchId = UUID.randomUUID().toString();
             String mode = recipeRecommendationService.recommendationBatchMode(request);
             sendOrCancel(emitter, cancelled, "batch-start", Map.of(
                     "batchId", batchId,
                     "mode", mode,
-                    "total", RECOMMENDATION_COUNT
+                    "total", recommendationCount
             ));
 
-            List<GeneratedRecipe> generatedRecipes = new ArrayList<>(RECOMMENDATION_COUNT);
-            for (int index = 0; index < RECOMMENDATION_COUNT; index++) {
+            List<GeneratedRecipe> generatedRecipes = new ArrayList<>(recommendationCount);
+            for (int index = 0; index < recommendationCount; index++) {
                 requireActive(cancelled);
                 final int recipeIndex = index;
                 String recipeId = batchId + "-recipe-" + (recipeIndex + 1);
@@ -154,6 +156,8 @@ public class RecipeStreamingService {
                         .map(GeneratedRecipe::response)
                         .toList();
                 RecipeGenerateResponse response = null;
+                String retryMessage = null;
+                String retryInstruction = null;
                 for (int attempt = 0; attempt < MAX_RECIPE_ATTEMPTS; attempt++) {
                     requireActive(cancelled);
                     if (attempt > 0) {
@@ -161,15 +165,19 @@ public class RecipeStreamingService {
                                 emitter,
                                 cancelled,
                                 "retrying",
-                                "检测到重复菜谱，正在换一种做法生成第 " + (recipeIndex + 1) + " 道菜谱"
+                                retryMessage == null
+                                        ? "检测到重复菜谱，正在换一种做法生成第 " + (recipeIndex + 1) + " 道菜谱"
+                                        : retryMessage
                         );
                     }
                     RecipeStreamFieldParser parser = new RecipeStreamFieldParser(new com.fasterxml.jackson.databind.ObjectMapper());
                     String recipePrompt = recipeRecommendationService.batchRecipePrompt(
-                            prepared.prompt(), request, recipeIndex, RECOMMENDATION_COUNT, previousResponses
+                            prepared.prompt(), request, recipeIndex, recommendationCount, previousResponses
                     );
                     if (attempt > 0) {
-                        recipePrompt += duplicateRetryInstruction(recipeIndex);
+                        recipePrompt += retryInstruction == null
+                                ? duplicateRetryInstruction(recipeIndex)
+                                : retryInstruction;
                     }
                     QwenRecipeClient.RecipeStreamResult streamResult = qwenRecipeClient.streamRecipe(
                             recipePrompt,
@@ -191,9 +199,39 @@ public class RecipeStreamingService {
                         );
                     }
                     validateRecipe(response);
+                    try {
+                        recipeRecommendationService.validatePantryCompatibility(request, response, prepared);
+                    } catch (ResponseStatusException exception) {
+                        if (attempt + 1 >= MAX_RECIPE_ATTEMPTS) {
+                            throw exception;
+                        }
+                        retryMessage = "当前库存食材不可参考，正在按原输入食材重新生成第 " + (recipeIndex + 1) + " 道菜谱";
+                        retryInstruction = recipeRecommendationService.pantryFallbackRetryInstruction();
+                        response = null;
+                        continue;
+                    }
+                    recipeRecommendationService.validateVideoGrounding(response, prepared);
+                    try {
+                        recipeRecommendationService.validateRecipeIngredientPair(
+                                request,
+                                response,
+                                recipeIndex,
+                                recommendationCount
+                        );
+                    } catch (ResponseStatusException exception) {
+                        if (attempt + 1 >= MAX_RECIPE_ATTEMPTS) {
+                            throw exception;
+                        }
+                        retryMessage = "食材搭配超出两种限制，正在更换第 " + (recipeIndex + 1) + " 道菜谱的做法";
+                        retryInstruction = ingredientConstraintRetryInstruction(recipeIndex);
+                        response = null;
+                        continue;
+                    }
                     if (!recipeRecommendationService.isDuplicateRecipe(response, previousResponses)) {
                         break;
                     }
+                    retryMessage = "检测到重复菜谱，正在换一种做法生成第 " + (recipeIndex + 1) + " 道菜谱";
+                    retryInstruction = duplicateRetryInstruction(recipeIndex);
                     response = null;
                 }
                 if (response == null) {
@@ -212,13 +250,13 @@ public class RecipeStreamingService {
             requireActive(cancelled);
             sendStatusOrCancel(emitter, cancelled, "saving", "正在保存本次推荐记录");
 
-            List<RecipeGenerateResponse> persistedRecipes = new ArrayList<>(RECOMMENDATION_COUNT);
+            List<RecipeGenerateResponse> persistedRecipes = new ArrayList<>(recommendationCount);
             for (GeneratedRecipe generated : generatedRecipes) {
                 requireActive(cancelled);
-                RecipeGenerateResponse persisted = generated.response().withContextFlags(
-                        prepared.pantryReferenced(),
-                        prepared.pantryFallback(),
-                        prepared.healthNutritionReferenced()
+                RecipeGenerateResponse persisted = recipeRecommendationService.applyGenerationContextFlags(
+                        request,
+                        generated.response(),
+                        prepared
                 );
                 persisted = recipeRecommendationService.persist(request, persisted, principal, anonymousId);
                 persistedRecipes.add(persisted);
@@ -413,19 +451,40 @@ public class RecipeStreamingService {
                 """.formatted(recipeIndex + 1);
     }
 
+    private String ingredientConstraintRetryInstruction(int recipeIndex) {
+        return """
+
+
+                【食材约束校正】
+                上一次生成的第 %d 道菜谱违反了“每道菜最多两种输入食材”的硬性规则。
+                本次必须严格使用上方【多菜谱组合生成规则】中列出的固定核心食材，只能使用这一至两种输入食材。
+                严禁把【本次其他指定食材（禁止使用）】中的任何食材写入菜名、ingredients、steps、简介或营养说明；特别是不能加入第三种输入食材。
+                只允许补充葱、姜、蒜、食用油、盐、糖、清水等常见调味辅料。请改用固定核心食材对应的真实、常见、可执行家常做法，并返回完整 JSON，不要返回空数据。
+                """.formatted(recipeIndex + 1);
+    }
+
     private String recipeLabel(String mode, int index) {
         if ("MEAL_COMBO".equals(mode)) {
             return switch (index) {
                 case 0 -> "主菜搭配";
                 case 1 -> "清爽配菜";
-                default -> "风味配菜";
+                case 2 -> "风味配菜";
+                case 3 -> "蒸煮焖烧";
+                default -> "经典家常";
             };
         }
         return switch (index) {
             case 0 -> "家常风味";
             case 1 -> "清爽低油";
-            default -> "快速省时";
+            case 2 -> "快速省时";
+            case 3 -> "蒸煮焖烧";
+            default -> "经典家常";
         };
+    }
+
+    private int normalizedRecommendationCount(RecipeGenerateRequest request) {
+        int count = recipeRecommendationService.recommendationCount(request);
+        return count >= 3 ? count : 3;
     }
 
     private boolean hasText(String value) {

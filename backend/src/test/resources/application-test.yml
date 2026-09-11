@@ -9,6 +9,8 @@ spring:
     locations: classpath:db/migration
 
 app:
+  ai:
+    env-file: target/test-ai-config.env
   ingredient-images:
     enabled: false
   notifications:

@@ -5,14 +5,12 @@ WORKDIR /workspace
 
 COPY pom.xml ./pom.xml
 COPY src ./src
-RUN mvn -B -DskipTests package
+RUN --mount=type=cache,id=ai-search-food-maven,target=/root/.m2 \
+    mvn -B -DskipTests package
 
 FROM eclipse-temurin:17.0.13_11-jre-jammy
 
-RUN apt-get update \
-    && apt-get install --no-install-recommends --yes curl \
-    && rm -rf /var/lib/apt/lists/* \
-    && groupadd --system --gid 10001 app \
+RUN groupadd --system --gid 10001 app \
     && useradd --system --uid 10001 --gid 10001 --home-dir /app --shell /usr/sbin/nologin app \
     && mkdir -p /app/data/finished-dish-reviews \
     && chown -R app:app /app
@@ -25,6 +23,6 @@ RUN chmod 755 /usr/local/bin/docker-entrypoint.sh
 USER root
 EXPOSE 7068
 HEALTHCHECK --interval=15s --timeout=5s --start-period=45s --retries=5 \
-    CMD curl --fail --silent http://127.0.0.1:7068/actuator/health || exit 1
+    CMD curl --fail --silent http://127.0.0.1:7068/actuator/health > /dev/null || exit 1
 
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]

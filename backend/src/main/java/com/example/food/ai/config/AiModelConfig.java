@@ -12,6 +12,7 @@ public class AiModelConfig {
     @TableId(type = IdType.AUTO)
     private Long id;
     private String provider;
+    private String apiProtocol;
     private String modelName;
     private String purpose;
     private Boolean primaryModel;
@@ -39,6 +40,14 @@ public class AiModelConfig {
 
     public String getModelName() {
         return modelName;
+    }
+
+    public String getApiProtocol() {
+        return apiProtocol;
+    }
+
+    public void setApiProtocol(String apiProtocol) {
+        this.apiProtocol = apiProtocol;
     }
 
     public void setModelName(String modelName) {

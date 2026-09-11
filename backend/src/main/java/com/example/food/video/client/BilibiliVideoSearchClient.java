@@ -8,7 +8,6 @@ import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.ResourceAccessException;
@@ -30,7 +29,11 @@ import java.util.regex.Pattern;
 @Component
 public class BilibiliVideoSearchClient {
 
-    private static final String USER_AGENT = "AI-Smart-Recipe/1.0 (graduation project)";
+    private static final String USER_AGENT =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                    + "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+    private static final String BILIBILI_ORIGIN = "https://www.bilibili.com";
+    private static final String BILIBILI_REFERER = "https://www.bilibili.com/";
     private static final Pattern BVID_PATTERN = Pattern.compile("BV[0-9A-Za-z]{10}");
     private static final Pattern HTML_TAG_PATTERN = Pattern.compile("<[^>]*>");
     private static final Set<String> EXACT_COVER_HOSTS = Set.of(
@@ -218,8 +221,14 @@ public class BilibiliVideoSearchClient {
 
     private HttpHeaders requestHeaders() {
         HttpHeaders headers = new HttpHeaders();
-        headers.setAccept(List.of(MediaType.APPLICATION_JSON));
+        headers.set("Accept", "application/json, text/plain, */*");
+        headers.set("Accept-Language", "zh-CN,zh;q=0.9");
         headers.set(HttpHeaders.USER_AGENT, USER_AGENT);
+        headers.set("Origin", BILIBILI_ORIGIN);
+        headers.set(HttpHeaders.REFERER, BILIBILI_REFERER);
+        headers.set("Sec-Fetch-Dest", "empty");
+        headers.set("Sec-Fetch-Mode", "cors");
+        headers.set("Sec-Fetch-Site", "same-site");
         return headers;
     }
 

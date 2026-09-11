@@ -44,9 +44,6 @@ public class DockerConfigurationValidator {
         if (!StringUtils.hasText(jwtSecret) || jwtSecret.getBytes(StandardCharsets.UTF_8).length < 32) {
             missing.add("JWT_SECRET（至少 32 字节）");
         }
-        if (!StringUtils.hasText(qwenProperties.apiKey())) {
-            missing.add("DASHSCOPE_API_KEY");
-        }
         if (!StringUtils.hasText(qwenProperties.endpoint())
                 || !qwenProperties.endpoint().toLowerCase(Locale.ROOT).startsWith("https://")) {
             missing.add("DASHSCOPE_BASE_URL（必须使用 HTTPS）");

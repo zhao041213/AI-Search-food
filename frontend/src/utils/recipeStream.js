@@ -19,6 +19,7 @@ export function createRecipeDraft() {
     searchLogId: null,
     pantryReferenced: false,
     pantryFallback: false,
+    pantryIncompatible: false,
     healthNutritionReferenced: false
   }
 }

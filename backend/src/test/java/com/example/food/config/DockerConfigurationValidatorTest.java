@@ -23,7 +23,6 @@ class DockerConfigurationValidatorTest {
         ).validate())
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("JWT_SECRET")
-                .hasMessageContaining("DASHSCOPE_API_KEY")
                 .hasMessageContaining("MYSQL_URL")
                 .hasMessageNotContaining("secret-value")
                 .hasMessageNotContaining("api-key-value");

@@ -74,6 +74,7 @@ app:
       connect-timeout: ${PNVS_CONNECT_TIMEOUT:5s}
       read-timeout: ${PNVS_READ_TIMEOUT:10s}
   ai:
+    env-file: ${APP_AI_ENV_FILE:../.env}
     qwen:
       api-key: ${DASHSCOPE_API_KEY:}
       model: ${DASHSCOPE_MODEL:qwen-plus}

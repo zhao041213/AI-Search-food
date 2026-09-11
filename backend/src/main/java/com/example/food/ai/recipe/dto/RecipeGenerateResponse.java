@@ -25,7 +25,8 @@ public record RecipeGenerateResponse(
         Long searchLogId,
         boolean pantryReferenced,
         boolean pantryFallback,
-        boolean healthNutritionReferenced
+        boolean healthNutritionReferenced,
+        boolean pantryIncompatible
 ) {
     public RecipeGenerateResponse(
             String title,
@@ -127,7 +128,7 @@ public record RecipeGenerateResponse(
             Long searchLogId
     ) {
         this(title, summary, effects, ingredients, missingIngredients, steps, tips, videoKeywords,
-                explanation, nutritionEstimate, provider, model, searchLogId, false, false, false);
+                explanation, nutritionEstimate, provider, model, searchLogId, false, false, false, false);
     }
 
     public RecipeGenerateResponse {
@@ -157,7 +158,8 @@ public record RecipeGenerateResponse(
                 id,
                 pantryReferenced,
                 pantryFallback,
-                healthNutritionReferenced
+                healthNutritionReferenced,
+                pantryIncompatible
         );
     }
 
@@ -178,7 +180,8 @@ public record RecipeGenerateResponse(
                 searchLogId,
                 pantryReferenced,
                 pantryFallback,
-                healthNutritionReferenced
+                healthNutritionReferenced,
+                pantryIncompatible
         );
     }
 
@@ -186,6 +189,15 @@ public record RecipeGenerateResponse(
             boolean pantryReferenced,
             boolean pantryFallback,
             boolean healthNutritionReferenced
+    ) {
+        return withContextFlags(pantryReferenced, pantryFallback, healthNutritionReferenced, false);
+    }
+
+    public RecipeGenerateResponse withContextFlags(
+            boolean pantryReferenced,
+            boolean pantryFallback,
+            boolean healthNutritionReferenced,
+            boolean pantryIncompatible
     ) {
         return new RecipeGenerateResponse(
                 title,
@@ -203,7 +215,8 @@ public record RecipeGenerateResponse(
                 searchLogId,
                 pantryReferenced,
                 pantryFallback,
-                healthNutritionReferenced
+                healthNutritionReferenced,
+                pantryIncompatible
         );
     }
 

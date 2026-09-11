@@ -126,3 +126,9 @@ test('prioritizes multi-ingredient recommendations with Bilibili matches', () =>
 test('shows a distinct retry stage when the model repeats a recipe', () => {
   assert.match(homeViewSource, /retrying: '正在更换重复做法'/)
 })
+
+test('uses the backend batch total for dynamically sized recipe batches', () => {
+  assert.match(homeViewSource, /:aria-label="`\$\{recommendationRecipes\.length\}道推荐菜谱`"/)
+  assert.match(homeViewSource, /recommendationReadyCount\.value >= \(recommendationBatch\.value\?\.total \|\| recommendationRecipes\.value\.length\)/)
+  assert.match(homeViewSource, /Math\.max\(3, Number\(data\?\.total\) \|\| 3\)/)
+})

@@ -12,6 +12,7 @@ import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -151,6 +152,45 @@ class QwenRecipeClientTest {
     }
 
     @Test
+    void disablesThinkingAndLimitsOutputForQwen3RecipeModels() {
+        RestTemplate restTemplate = new RestTemplateBuilder().build();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restTemplate).build();
+        AiModelConfigService configService = mock(AiModelConfigService.class);
+        when(configService.textRecipeRuntimeConfig()).thenReturn(new AiModelRuntimeConfig(
+                "qwen",
+                "openai",
+                "qwen3.8-max",
+                "https://dashscope.test/compatible-mode/v1",
+                "admin-api-key"
+        ));
+        QwenRecipeClient client = new QwenRecipeClient(
+                restTemplate,
+                new ObjectMapper(),
+                new QwenProperties("env-api-key", "qwen-plus", "https://dashscope.env/v1"),
+                configService
+        );
+
+        server.expect(once(), requestTo("https://dashscope.test/compatible-mode/v1/chat/completions"))
+                .andExpect(jsonPath("$.model").value("qwen3.8-max"))
+                .andExpect(jsonPath("$.enable_thinking").value(false))
+                .andExpect(jsonPath("$.max_tokens").value(2400))
+                .andRespond(withSuccess("""
+                        {
+                          "choices": [
+                            {
+                              "message": {
+                                "content": "{\\\"title\\\":\\\"快速菜谱\\\",\\\"summary\\\":\\\"简短做法\\\",\\\"ingredients\\\":[],\\\"steps\\\":[]}"
+                              }
+                            }
+                          ]
+                        }
+                        """, MediaType.APPLICATION_JSON));
+
+        assertThat(client.generateRecipe("请生成快速菜谱").title()).isEqualTo("快速菜谱");
+        server.verify();
+    }
+
+    @Test
     void generateWeeklyMenuParsesStructuredSelections() {
         RestTemplate restTemplate = new RestTemplateBuilder().build();
         MockRestServiceServer server = MockRestServiceServer.bindTo(restTemplate).build();
@@ -214,6 +254,49 @@ class QwenRecipeClientTest {
         assertThat(client.generateWeeklyMenu("请安排一周菜单")).containsExactly(
                 new QwenRecipeClient.WeeklyMenuSelection("2026-09-01", "DINNER", 8L)
         );
+        server.verify();
+    }
+
+    @Test
+    void generateRecipeUsesAnthropicCompatibleRequestAndResponse() throws Exception {
+        RestTemplate restTemplate = new RestTemplateBuilder().build();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restTemplate).build();
+        QwenProperties properties = new QwenProperties(
+                "env-api-key",
+                "qwen-plus",
+                "https://dashscope.env/compatible-mode/v1/chat/completions"
+        );
+        AiModelConfigService configService = mock(AiModelConfigService.class);
+        when(configService.textRecipeRuntimeConfig()).thenReturn(new AiModelRuntimeConfig(
+                "qwen",
+                "anthropic",
+                "qwen-plus",
+                "https://dashscope.test/apps/anthropic",
+                "anthropic-api-key"
+        ));
+        QwenRecipeClient client = new QwenRecipeClient(restTemplate, new ObjectMapper(), properties, configService);
+
+        String recipeJson = """
+                {"title":"清蒸螃蟹","summary":"原汁原味","ingredients":[],"steps":[]}
+                """;
+        String anthropicResponse = new ObjectMapper().writeValueAsString(Map.of(
+                "content", List.of(Map.of("type", "text", "text", recipeJson))
+        ));
+
+        server.expect(once(), requestTo("https://dashscope.test/apps/anthropic"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(header("x-api-key", "anthropic-api-key"))
+                .andExpect(header("anthropic-version", "2023-06-01"))
+                .andExpect(jsonPath("$.model").value("qwen-plus"))
+                .andExpect(jsonPath("$.max_tokens").value(4096))
+                .andExpect(jsonPath("$.system").value(org.hamcrest.Matchers.containsString("只输出可解析的 JSON")))
+                .andExpect(jsonPath("$.messages[0].role").value("user"))
+                .andRespond(withSuccess(anthropicResponse, MediaType.APPLICATION_JSON));
+
+        RecipeGenerateResponse response = client.generateRecipe("请生成螃蟹菜谱");
+
+        assertThat(response.title()).isEqualTo("清蒸螃蟹");
+        assertThat(response.provider()).isEqualTo("qwen");
         server.verify();
     }
 }

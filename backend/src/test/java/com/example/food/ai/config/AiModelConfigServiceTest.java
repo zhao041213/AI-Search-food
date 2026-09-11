@@ -42,6 +42,23 @@ class AiModelConfigServiceTest {
         assertThat(runtimeConfig.apiKey()).isBlank();
     }
 
+    @Test
+    void visionRuntimeConfigUsesSavedQwenTextEndpointWhenVisionSeedHasNoEndpoint() {
+        AiModelConfigMapper mapper = mock(AiModelConfigMapper.class);
+        AiModelConfig vision = config("qwen", "qwen-vl-plus", "vision", null);
+        AiModelConfig text = config("qwen", "qwen3.8-max", "text_recipe", "qwen-dashboard-key");
+        text.setApiProtocol("openai");
+        text.setEndpointUrl("https://dashscope.admin/compatible-mode/v1");
+        when(mapper.selectOne(any())).thenReturn(vision, text);
+        AiModelConfigService service = new AiModelConfigService(mapper, qwenProperties(""));
+
+        AiModelRuntimeConfig runtimeConfig = service.visionRuntimeConfig();
+
+        assertThat(runtimeConfig.modelName()).isEqualTo("qwen-vl-plus");
+        assertThat(runtimeConfig.endpoint()).isEqualTo("https://dashscope.admin/compatible-mode/v1");
+        assertThat(runtimeConfig.apiKey()).isEqualTo("qwen-dashboard-key");
+    }
+
     private QwenProperties qwenProperties(String apiKey) {
         QwenProperties properties = new QwenProperties(apiKey, "qwen-plus", "https://dashscope.test/chat/completions");
         properties.setVisionModel("qwen-vl-plus");

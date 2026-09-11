@@ -269,6 +269,7 @@
                 </div>
                 <div v-if="recipe" class="result-context-tags" aria-label="本次生成参考范围">
                   <span v-if="recipe.pantryReferenced" class="context-tag context-tag-stock">已参考库存</span>
+                  <span v-else-if="recipe.pantryIncompatible" class="context-tag context-tag-warning">当前库存食材不可参考</span>
                   <span v-else class="context-tag">未参考库存</span>
                   <span v-if="recipe.healthNutritionReferenced" class="context-tag">已参考健康与营养</span>
                 </div>
@@ -370,7 +371,11 @@
               </div>
               <span>{{ recommendationReadyCount }} / {{ recommendationRecipes.length }} 道已完成</span>
             </div>
-            <div class="recommendation-selector-track" role="tablist" aria-label="三道推荐菜谱">
+            <div
+              class="recommendation-selector-track"
+              role="tablist"
+              :aria-label="`${recommendationRecipes.length}道推荐菜谱`"
+            >
               <button
                 v-for="(item, index) in recommendationRecipes"
                 :id="`recommendation-card-${item.id}`"
@@ -407,7 +412,10 @@
             </el-button>
           </div>
 
-          <div v-if="recipe?.pantryFallback" class="context-fallback-alert" role="alert">
+          <div v-if="recipe?.pantryIncompatible" class="context-fallback-alert" role="alert">
+            当前库存食材不可参考，已按原输入食材生成菜谱。
+          </div>
+          <div v-else-if="recipe?.pantryFallback" class="context-fallback-alert" role="alert">
             本次库存读取失败，已降级为仅按输入食材生成；你可以稍后开启“参考我的库存”重试。
           </div>
 
@@ -1318,7 +1326,8 @@ const recommendationModeLabel = computed(() => (
 const recipeComplete = computed(() => Boolean(
   generationCompleted.value
   && !generating.value
-  && (recommendationRecipes.value.length <= 1 || recommendationReadyCount.value >= 3)
+  && (recommendationRecipes.value.length <= 1
+    || recommendationReadyCount.value >= (recommendationBatch.value?.total || recommendationRecipes.value.length))
   && isRecipeReady(recipe.value)
 ))
 const resultPriorityMode = computed(() => isRecipeResultPriority(lastSearch.value, editingConditions.value))
@@ -1886,7 +1895,8 @@ async function runRecipeGeneration(request, successMessage) {
     if (requestId !== generationRequestId.value) {
       return false
     }
-    if (!recommendationBatch.value || recommendationReadyCount.value < 3) {
+    if (!recommendationBatch.value
+      || recommendationReadyCount.value < (recommendationBatch.value.total || recommendationRecipes.value.length)) {
       throw new RecipeStreamError('AI 返回的菜谱内容不完整，请点击重试')
     }
     generationStage.value = recommendationBatch.value.mode === 'MEAL_COMBO'
@@ -1899,7 +1909,9 @@ async function runRecipeGeneration(request, successMessage) {
     recentSearchLoaded.value = false
     await loadShoppingChecks()
     await loadPantryReadiness()
-    if (recipe.value?.pantryFallback) {
+    if (recipe.value?.pantryIncompatible) {
+      ElMessage.warning('当前库存食材不可参考，本次已按原输入食材生成')
+    } else if (recipe.value?.pantryFallback) {
       ElMessage.warning(lastSearch.value?.useAiIngredientRecommendation
         ? '库存读取失败，本次仍由 AI 自主推荐食材'
         : '库存读取失败，本次已按输入食材生成')
@@ -4548,6 +4560,11 @@ h3 {
   color: var(--el-color-success);
 }
 
+.context-tag-warning {
+  border-color: color-mix(in srgb, var(--el-color-warning) 42%, var(--app-line));
+  color: #8d631b;
+}
+
 .ingredient-input-hint {
   margin: 5px 0 0;
   color: var(--app-text-faint);
@@ -4688,15 +4705,11 @@ h3 {
 
 .recommendation-selector-track {
   display: grid;
-  grid-auto-columns: minmax(190px, 1fr);
-  grid-auto-flow: column;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  grid-auto-flow: row;
   gap: 8px;
   min-width: 0;
-  overflow-x: auto;
-  overscroll-behavior-inline: contain;
-  scroll-snap-type: x mandatory;
-  scrollbar-width: thin;
+  overflow: hidden;
 }
 
 .recommendation-card {
@@ -4777,7 +4790,6 @@ h3 {
 @container scene-window-content (max-width: 620px) {
   .recommendation-selector-track {
     grid-template-columns: repeat(1, minmax(0, 1fr));
-    grid-auto-columns: minmax(0, 100%);
   }
 }
 
@@ -4790,7 +4802,6 @@ h3 {
 @media (max-width: 640px) {
   .recommendation-selector-track {
     grid-template-columns: repeat(1, minmax(0, 1fr));
-    grid-auto-columns: minmax(0, 100%);
   }
 }
 

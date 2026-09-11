@@ -38,9 +38,24 @@
           <el-form class="config-form" label-position="top" @submit.prevent="saveConfig">
             <div class="config-grid">
               <el-form-item label="服务商">
-                <el-select v-model="aiConfig.provider" placeholder="请选择服务商">
+                <el-select
+                  v-model="aiConfig.provider"
+                  placeholder="请选择服务商"
+                  @change="handleProviderChange"
+                >
                   <el-option label="千问" value="qwen" />
                   <el-option label="DeepSeek" value="deepseek" />
+                </el-select>
+              </el-form-item>
+
+              <el-form-item label="接口协议">
+                <el-select
+                  v-model="aiConfig.protocol"
+                  placeholder="请选择接口协议"
+                  @change="handleProtocolChange"
+                >
+                  <el-option label="OpenAI 兼容" value="openai" />
+                  <el-option label="Anthropic 兼容" value="anthropic" />
                 </el-select>
               </el-form-item>
 
@@ -48,11 +63,12 @@
                 <el-input v-model.trim="aiConfig.modelName" placeholder="例如：qwen-plus" />
               </el-form-item>
 
-              <el-form-item label="接口地址">
+              <el-form-item label="接口地址（Base URL）">
                 <el-input
                   v-model.trim="aiConfig.endpoint"
-                  placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+                  placeholder="会根据接口协议自动生成"
                 />
+                <p class="config-hint">已自动填入标准地址，也可以按服务商文档手动修改。</p>
               </el-form-item>
 
               <el-form-item label="API Key">
@@ -61,8 +77,9 @@
                   type="password"
                   show-password
                   autocomplete="off"
-                  placeholder="留空则保留现有 Key"
+                  placeholder="留空则保留已保存的 Key"
                 />
+                <p class="config-hint">密钥不会回显，留空保存时不会覆盖已有密钥。</p>
               </el-form-item>
             </div>
 
@@ -80,12 +97,24 @@
                   inactive-text="停用"
                   inline-prompt
                 />
+                <el-button :loading="testingConfig" @click="testConnection">
+                  <PlugZap :size="16" aria-hidden="true" />
+                  <span>测试连接</span>
+                </el-button>
                 <el-button type="primary" :loading="savingConfig" @click="saveConfig">
                   <Save :size="16" aria-hidden="true" />
                   <span>保存配置</span>
                 </el-button>
               </div>
             </div>
+            <p
+              v-if="connectionMessage"
+              class="connection-feedback"
+              :class="`is-${connectionStatus}`"
+              aria-live="polite"
+            >
+              {{ connectionMessage }}
+            </p>
           </el-form>
         </section>
 
@@ -104,7 +133,11 @@ import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRoute } from 'vue-router'
 import { PlugZap, Save } from 'lucide-vue-next'
-import { getTextRecipeAiConfig, saveTextRecipeAiConfig } from '../api/adminAiConfig'
+import {
+  getTextRecipeAiConfig,
+  saveTextRecipeAiConfig,
+  testTextRecipeAiConfig
+} from '../api/adminAiConfig'
 import AdminHotIngredientsPanel from '../components/AdminHotIngredientsPanel.vue'
 import AdminErrorLogs from '../components/AdminErrorLogs.vue'
 import AdminOperationLogs from '../components/AdminOperationLogs.vue'
@@ -113,19 +146,24 @@ import AdminUserManagement from '../components/AdminUserManagement.vue'
 import AdminFeatureSuggestions from '../components/AdminFeatureSuggestions.vue'
 import { useAuthStore } from '../stores/auth'
 import { resolveAdminPanel } from '../utils/hotIngredientNavigation'
+import { defaultAiEndpoint, isAiPresetEndpoint } from '../utils/adminAiConfig'
 
 const auth = useAuthStore()
 const route = useRoute()
 const roleLabel = computed(() => ({ ADMIN: '管理员', USER: '普通用户' })[auth.role] || auth.role)
 const configLoading = ref(false)
 const savingConfig = ref(false)
+const testingConfig = ref(false)
 const apiKeyConfigured = ref(false)
 const apiKeyPreview = ref('')
+const connectionStatus = ref('idle')
+const connectionMessage = ref('')
 const activePanel = computed(() => resolveAdminPanel(route.query.panel))
 const aiConfig = ref({
   provider: 'qwen',
+  protocol: 'openai',
   modelName: 'qwen-plus',
-  endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
+  endpoint: defaultAiEndpoint('qwen', 'openai'),
   apiKey: '',
   enabled: true
 })
@@ -147,7 +185,7 @@ async function loadConfig() {
 }
 
 async function saveConfig() {
-  if (!aiConfig.value.provider || !aiConfig.value.modelName || !aiConfig.value.endpoint) {
+  if (!validateConfig()) {
     ElMessage.warning('请完整填写服务商、模型名称和接口地址')
     return
   }
@@ -156,12 +194,14 @@ async function saveConfig() {
   try {
     const response = await saveTextRecipeAiConfig({
       provider: aiConfig.value.provider,
+      protocol: aiConfig.value.protocol,
       modelName: aiConfig.value.modelName,
       endpoint: aiConfig.value.endpoint,
       apiKey: aiConfig.value.apiKey,
       enabled: aiConfig.value.enabled
     })
     applyConfigResponse(response.data.data)
+    resetConnectionFeedback()
     ElMessage.success('AI 接入配置已保存')
   } catch (error) {
     ElMessage.error(errorMessage(error, 'AI 接入配置保存失败'))
@@ -170,16 +210,77 @@ async function saveConfig() {
   }
 }
 
+async function testConnection() {
+  if (!validateConfig()) {
+    ElMessage.warning('请完整填写服务商、模型名称和接口地址')
+    return
+  }
+
+  testingConfig.value = true
+  connectionStatus.value = 'loading'
+  connectionMessage.value = '正在测试连接，请稍候…'
+  try {
+    const response = await testTextRecipeAiConfig({
+      provider: aiConfig.value.provider,
+      protocol: aiConfig.value.protocol,
+      modelName: aiConfig.value.modelName,
+      endpoint: aiConfig.value.endpoint,
+      apiKey: aiConfig.value.apiKey,
+      enabled: aiConfig.value.enabled
+    })
+    const result = response.data.data
+    connectionStatus.value = 'success'
+    connectionMessage.value = `${result?.modelName || aiConfig.value.modelName} 连接成功，当前配置尚未保存。`
+  } catch (error) {
+    connectionStatus.value = 'error'
+    connectionMessage.value = errorMessage(error, '连接测试失败，请检查协议、地址和 API Key')
+  } finally {
+    testingConfig.value = false
+  }
+}
+
 function applyConfigResponse(config) {
   aiConfig.value = {
     provider: config?.provider || 'qwen',
+    protocol: config?.protocol || 'openai',
     modelName: config?.modelName || 'qwen-plus',
-    endpoint: config?.endpoint || 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
+    endpoint: config?.endpoint || defaultAiEndpoint(config?.provider || 'qwen', config?.protocol || 'openai'),
     apiKey: '',
     enabled: config?.enabled ?? true
   }
   apiKeyConfigured.value = Boolean(config?.apiKeyConfigured)
   apiKeyPreview.value = config?.apiKeyPreview || ''
+}
+
+function validateConfig() {
+  if (!aiConfig.value.endpoint) {
+    aiConfig.value.endpoint = defaultAiEndpoint(aiConfig.value.provider, aiConfig.value.protocol)
+  }
+  return Boolean(
+    aiConfig.value.provider &&
+      aiConfig.value.protocol &&
+      aiConfig.value.modelName &&
+      aiConfig.value.endpoint
+  )
+}
+
+function handleProviderChange(provider) {
+  if (!aiConfig.value.endpoint || isAiPresetEndpoint(aiConfig.value.endpoint)) {
+    aiConfig.value.endpoint = defaultAiEndpoint(provider, aiConfig.value.protocol)
+  }
+  resetConnectionFeedback()
+}
+
+function handleProtocolChange(protocol) {
+  if (!aiConfig.value.endpoint || isAiPresetEndpoint(aiConfig.value.endpoint)) {
+    aiConfig.value.endpoint = defaultAiEndpoint(aiConfig.value.provider, protocol)
+  }
+  resetConnectionFeedback()
+}
+
+function resetConnectionFeedback() {
+  connectionStatus.value = 'idle'
+  connectionMessage.value = ''
 }
 
 function errorMessage(error, fallback) {
@@ -322,6 +423,10 @@ h2 {
   margin-bottom: 0;
 }
 
+.config-form :deep(.el-form-item__content) {
+  display: block;
+}
+
 .config-form :deep(.el-select) {
   width: 100%;
 }
@@ -332,8 +437,8 @@ h2 {
   gap: 10px;
 }
 
-.config-grid :deep(.el-form-item:nth-child(3)),
-.config-grid :deep(.el-form-item:nth-child(4)) {
+.config-grid :deep(.el-form-item:nth-child(4)),
+.config-grid :deep(.el-form-item:nth-child(5)) {
   grid-column: span 2;
 }
 
@@ -356,6 +461,31 @@ h2 {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+}
+
+.config-hint {
+  margin: 5px 0 0;
+  color: var(--app-text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.connection-feedback {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.connection-feedback.is-loading {
+  color: var(--app-text-muted);
+}
+
+.connection-feedback.is-success {
+  color: var(--app-success, #198754);
+}
+
+.connection-feedback.is-error {
+  color: var(--app-danger, #c2410c);
 }
 
 @media (max-width: 980px) {
@@ -391,14 +521,18 @@ h2 {
     grid-template-columns: 1fr;
   }
 
-  .config-grid :deep(.el-form-item:nth-child(3)),
-  .config-grid :deep(.el-form-item:nth-child(4)) {
+  .config-grid :deep(.el-form-item:nth-child(4)),
+  .config-grid :deep(.el-form-item:nth-child(5)) {
     grid-column: auto;
   }
 
   .config-footer {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .config-actions {
+    flex-wrap: wrap;
   }
 }
 </style>
