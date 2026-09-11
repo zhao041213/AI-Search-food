@@ -35,6 +35,7 @@ public class RecipeStreamingService {
 
     private static final long STREAM_TIMEOUT_MILLIS = 300_000L;
     private static final int RECOMMENDATION_COUNT = 3;
+    private static final int MAX_RECIPE_ATTEMPTS = 2;
 
     private final RecipeRecommendationService recipeRecommendationService;
     private final QwenRecipeClient qwenRecipeClient;
@@ -149,30 +150,58 @@ public class RecipeStreamingService {
                         "label", recipeLabel(mode, recipeIndex)
                 ));
 
-                RecipeStreamFieldParser parser = new RecipeStreamFieldParser(new com.fasterxml.jackson.databind.ObjectMapper());
-                String recipePrompt = recipeRecommendationService.batchRecipePrompt(
-                        prepared.prompt(), request, recipeIndex, RECOMMENDATION_COUNT
-                );
-                QwenRecipeClient.RecipeStreamResult streamResult = qwenRecipeClient.streamRecipe(
-                        recipePrompt,
-                        delta -> {
-                            requireActive(cancelled);
-                            Map<String, JsonNode> fields = parser.accept(delta);
-                            sendFieldGroups(emitter, cancelled, recipeId, recipeIndex, fields);
-                        },
-                        () -> sendStatusOrCancel(cancelled, emitter, "receiving", recipeIndex)
-                );
-                requireActive(cancelled);
-                sendStatusOrCancel(emitter, cancelled, "parsing", "正在整理第 " + (recipeIndex + 1) + " 道菜谱");
+                List<RecipeGenerateResponse> previousResponses = generatedRecipes.stream()
+                        .map(GeneratedRecipe::response)
+                        .toList();
+                RecipeGenerateResponse response = null;
+                for (int attempt = 0; attempt < MAX_RECIPE_ATTEMPTS; attempt++) {
+                    requireActive(cancelled);
+                    if (attempt > 0) {
+                        sendStatusOrCancel(
+                                emitter,
+                                cancelled,
+                                "retrying",
+                                "检测到重复菜谱，正在换一种做法生成第 " + (recipeIndex + 1) + " 道菜谱"
+                        );
+                    }
+                    RecipeStreamFieldParser parser = new RecipeStreamFieldParser(new com.fasterxml.jackson.databind.ObjectMapper());
+                    String recipePrompt = recipeRecommendationService.batchRecipePrompt(
+                            prepared.prompt(), request, recipeIndex, RECOMMENDATION_COUNT, previousResponses
+                    );
+                    if (attempt > 0) {
+                        recipePrompt += duplicateRetryInstruction(recipeIndex);
+                    }
+                    QwenRecipeClient.RecipeStreamResult streamResult = qwenRecipeClient.streamRecipe(
+                            recipePrompt,
+                            delta -> {
+                                requireActive(cancelled);
+                                Map<String, JsonNode> fields = parser.accept(delta);
+                                sendFieldGroups(emitter, cancelled, recipeId, recipeIndex, fields);
+                            },
+                            () -> sendStatusOrCancel(cancelled, emitter, "receiving", recipeIndex)
+                    );
+                    requireActive(cancelled);
+                    sendStatusOrCancel(emitter, cancelled, "parsing", "正在整理第 " + (recipeIndex + 1) + " 道菜谱");
 
-                RecipeGenerateResponse response = streamResult.fallbackResponse();
+                    response = streamResult.fallbackResponse();
+                    if (response == null) {
+                        response = qwenRecipeClient.parseRecipeContent(
+                                streamResult.content(),
+                                qwenRecipeClient.currentRuntimeConfig()
+                        );
+                    }
+                    validateRecipe(response);
+                    if (!recipeRecommendationService.isDuplicateRecipe(response, previousResponses)) {
+                        break;
+                    }
+                    response = null;
+                }
                 if (response == null) {
-                    response = qwenRecipeClient.parseRecipeContent(
-                            streamResult.content(),
-                            qwenRecipeClient.currentRuntimeConfig()
+                    throw new ResponseStatusException(
+                            HttpStatus.BAD_GATEWAY,
+                            "AI 返回了重复菜谱，请点击重试"
                     );
                 }
-                validateRecipe(response);
                 generatedRecipes.add(new GeneratedRecipe(recipeId, recipeIndex, response));
             }
 
@@ -372,6 +401,16 @@ public class RecipeStreamingService {
             return "AI 生成超时，请检查网络后重试";
         }
         return "AI 菜谱生成暂时失败，请检查网络后重试";
+    }
+
+    private String duplicateRetryInstruction(int recipeIndex) {
+        return """
+
+
+                【重复校正】
+                上一次生成的第 %d 道菜谱与前面结果重复，本次必须完全换一种菜名和做法。
+                禁止复制前面菜谱的标题、简介、食材清单或步骤；请输出同一输入食材下另一种真实可执行的家常做法。
+                """.formatted(recipeIndex + 1);
     }
 
     private String recipeLabel(String mode, int index) {

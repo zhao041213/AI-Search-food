@@ -1462,6 +1462,7 @@ const generationStageLabel = computed(() => ({
   idle: '准备生成',
   preparing: '正在准备',
   generating: '正在连接 AI',
+  retrying: '正在更换重复做法',
   receiving: '正在生成菜谱',
   parsing: '正在整理内容',
   saving: '正在保存记录',

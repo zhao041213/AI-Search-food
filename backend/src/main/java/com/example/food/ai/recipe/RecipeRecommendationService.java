@@ -124,6 +124,16 @@ public class RecipeRecommendationService {
             int recipeIndex,
             int total
     ) {
+        return batchRecipePrompt(basePrompt, request, recipeIndex, total, List.of());
+    }
+
+    public String batchRecipePrompt(
+            String basePrompt,
+            RecipeGenerateRequest request,
+            int recipeIndex,
+            int total,
+            List<RecipeGenerateResponse> previousRecipes
+    ) {
         String mode = recommendationBatchMode(request);
         String variant = mode.equals("MEAL_COMBO")
                 ? switch (recipeIndex) {
@@ -137,7 +147,7 @@ public class RecipeRecommendationService {
                     default -> "快速省时风格，适合工作日快速完成";
                 };
         if (!mode.equals("MEAL_COMBO")) {
-            return basePrompt + """
+            return appendDistinctRecipeContext(basePrompt + """
 
 
                     【多菜谱组合生成规则】
@@ -146,11 +156,11 @@ public class RecipeRecommendationService {
                     菜名只描述本道菜实际使用的核心食材，不要把所有输入食材拼接成一个超长菜名。
                     本道菜至少使用一种用户指定食材；ingredients 和 steps 必须与本道菜名及实际做法一致。
                     三道菜的风格、烹饪方式或搭配角色必须有明显区别。以上规则优先于前文要求将所有输入食材放入单道菜谱的描述。
-                    """.formatted(recipeIndex + 1, total, variant);
+                    """.formatted(recipeIndex + 1, total, variant), previousRecipes);
         }
 
         String corePair = String.join("、", ingredientPairForBatch(request, recipeIndex));
-        return basePrompt + """
+        return appendDistinctRecipeContext(basePrompt + """
 
 
                 【多菜谱组合生成规则】
@@ -161,7 +171,92 @@ public class RecipeRecommendationService {
                 菜名必须使用家常、常见、适合直接搜索的菜名，优先选择在 B 站容易找到教程的经典做法，避免生造菜名和过度创意组合。
                 videoKeywords 必须提供 1 至 3 个可直接用于 B 站搜索的短关键词，至少包含“核心食材组合 + 家常做法”或常见菜名，不要使用无法检索的描述性长句。
                 三道菜的核心食材组合、风格或烹饪方式必须有明显区别。以上规则优先于前文要求将所有输入食材放入单道菜谱的描述。
-                """.formatted(recipeIndex + 1, total, variant, corePair);
+                """.formatted(recipeIndex + 1, total, variant, corePair), previousRecipes);
+    }
+
+    public boolean isDuplicateRecipe(
+            RecipeGenerateResponse candidate,
+            List<RecipeGenerateResponse> previousRecipes
+    ) {
+        if (candidate == null || previousRecipes == null || previousRecipes.isEmpty()) {
+            return false;
+        }
+        String candidateTitle = normalizeRecipeText(candidate.title());
+        String candidateContent = recipeContentKey(candidate);
+        return previousRecipes.stream()
+                .filter(java.util.Objects::nonNull)
+                .anyMatch(previous -> {
+                    String previousTitle = normalizeRecipeText(previous.title());
+                    return (!candidateTitle.isBlank() && candidateTitle.equals(previousTitle))
+                            || (!candidateContent.isBlank() && candidateContent.equals(recipeContentKey(previous)));
+                });
+    }
+
+    private String appendDistinctRecipeContext(
+            String prompt,
+            List<RecipeGenerateResponse> previousRecipes
+    ) {
+        if (previousRecipes == null || previousRecipes.isEmpty()) {
+            return prompt;
+        }
+        String previousText = previousRecipes.stream()
+                .filter(java.util.Objects::nonNull)
+                .map(this::compactRecipeDescription)
+                .filter(this::hasText)
+                .collect(java.util.stream.Collectors.joining("\n"));
+        if (!hasText(previousText)) {
+            return prompt;
+        }
+        return prompt + """
+
+
+                【去重约束】
+                前面已经生成的菜谱如下，本菜必须与它们明显不同：
+                %s
+                不得复用前面菜谱的菜名，也不得只更换菜名却复制相同的 summary、ingredients 或 steps。
+                必须更换主要烹饪方式或成品形态，让步骤顺序、调味重点和成品描述有明显差异。
+                """.formatted(previousText);
+    }
+
+    private String compactRecipeDescription(RecipeGenerateResponse response) {
+        String ingredients = response.ingredients().stream()
+                .filter(item -> item != null && hasText(item.name()))
+                .map(RecipeGenerateResponse.Ingredient::name)
+                .limit(8)
+                .collect(java.util.stream.Collectors.joining("、"));
+        String steps = response.steps().stream()
+                .filter(item -> item != null && (hasText(item.title()) || hasText(item.description())))
+                .map(item -> hasText(item.title()) ? item.title() : item.description())
+                .map(this::compactText)
+                .limit(4)
+                .collect(java.util.stream.Collectors.joining("、"));
+        return "- 菜名：" + compactText(response.title())
+                + "；简介：" + compactText(response.summary())
+                + "；食材：" + compactText(ingredients)
+                + "；做法关键词：" + compactText(steps);
+    }
+
+    private String recipeContentKey(RecipeGenerateResponse response) {
+        String ingredients = response.ingredients().stream()
+                .filter(item -> item != null)
+                .map(item -> safeText(item.name()) + safeText(item.amount()))
+                .collect(java.util.stream.Collectors.joining());
+        String steps = response.steps().stream()
+                .filter(item -> item != null)
+                .map(item -> safeText(item.title()) + safeText(item.description()))
+                .collect(java.util.stream.Collectors.joining());
+        return normalizeRecipeText(response.title() + response.summary() + ingredients + steps);
+    }
+
+    private String normalizeRecipeText(String text) {
+        return safeText(text)
+                .replaceAll("[\\s\\p{Punct}，。！？、；：‘’“”《》〈〉（）【】…·]+", "")
+                .toLowerCase(Locale.ROOT);
+    }
+
+    private String compactText(String text) {
+        String value = safeText(text).replaceAll("\\s+", " ").trim();
+        return value.length() <= 80 ? value : value.substring(0, 80);
     }
 
     public PreparedPrompt preparePrompt(RecipeGenerateRequest request, AuthPrincipal principal) {

@@ -122,3 +122,7 @@ test('prioritizes multi-ingredient recommendations with Bilibili matches', () =>
   assert.match(homeViewSource, /'matching-videos': '正在匹配 B 站参考'/)
   assert.match(homeViewSource, /prioritizeRecommendationsByBilibili\(requestId\)/)
 })
+
+test('shows a distinct retry stage when the model repeats a recipe', () => {
+  assert.match(homeViewSource, /retrying: '正在更换重复做法'/)
+})

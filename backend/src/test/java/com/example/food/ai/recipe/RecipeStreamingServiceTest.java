@@ -11,6 +11,7 @@ import java.util.function.Consumer;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -31,7 +32,7 @@ class RecipeStreamingServiceTest {
                 new RecipeRecommendationService.PreparedPrompt("prompt", false, false, false)
         );
         when(recommendationService.recommendationBatchMode(any())).thenReturn("MEAL_COMBO");
-        when(recommendationService.batchRecipePrompt(anyString(), any(), anyInt(), anyInt()))
+        when(recommendationService.batchRecipePrompt(anyString(), any(), anyInt(), anyInt(), anyList()))
                 .thenAnswer(invocation -> invocation.getArgument(0));
         when(recommendationService.persist(any(), any(), any(), anyString())).thenReturn(response);
         when(qwenClient.streamRecipe(anyString(), any(), any())).thenAnswer(invocation -> {
@@ -53,6 +54,38 @@ class RecipeStreamingServiceTest {
     }
 
     @Test
+    void retriesARecipeWhenItsTitleRepeatsAnEarlierRecipe() {
+        RecipeGenerateResponse first = recipe("番茄炒蛋", "炒制");
+        RecipeGenerateResponse replacement = recipe("番茄蛋花汤", "煮制");
+        RecipeGenerateResponse third = recipe("番茄蒸蛋", "蒸制");
+        when(recommendationService.preparePrompt(any(), any())).thenReturn(
+                new RecipeRecommendationService.PreparedPrompt("prompt", false, false, false)
+        );
+        when(recommendationService.recommendationBatchMode(any())).thenReturn("STYLE_VARIANTS");
+        when(recommendationService.batchRecipePrompt(anyString(), any(), anyInt(), anyInt(), anyList()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(recommendationService.isDuplicateRecipe(any(), anyList())).thenAnswer(invocation -> {
+            RecipeGenerateResponse candidate = invocation.getArgument(0);
+            List<RecipeGenerateResponse> previous = invocation.getArgument(1);
+            return previous.stream().anyMatch(item -> item != null && item.title().equals(candidate.title()));
+        });
+        when(recommendationService.persist(any(), any(), any(), anyString()))
+                .thenAnswer(invocation -> invocation.getArgument(1));
+        when(qwenClient.streamRecipe(anyString(), any(), any()))
+                .thenReturn(streamResult(first), streamResult(first), streamResult(replacement), streamResult(third));
+
+        SseEmitter emitter = service.generate(
+                new RecipeGenerateRequest("番茄", "dinner", "light", "text"),
+                null,
+                "anon-001"
+        );
+
+        verify(qwenClient, timeout(2000).times(4)).streamRecipe(anyString(), any(), any());
+        verify(recommendationService, timeout(2000).times(3)).persist(any(), any(), any(), anyString());
+        emitter.complete();
+    }
+
+    @Test
     void doesNotPersistAnIncompleteRecipe() {
         RecipeGenerateResponse response = new RecipeGenerateResponse(
                 "",
@@ -69,7 +102,7 @@ class RecipeStreamingServiceTest {
                 new RecipeRecommendationService.PreparedPrompt("prompt", false, false, false)
         );
         when(recommendationService.recommendationBatchMode(any())).thenReturn("STYLE_VARIANTS");
-        when(recommendationService.batchRecipePrompt(anyString(), any(), anyInt(), anyInt()))
+        when(recommendationService.batchRecipePrompt(anyString(), any(), anyInt(), anyInt(), anyList()))
                 .thenAnswer(invocation -> invocation.getArgument(0));
         when(qwenClient.streamRecipe(anyString(), any(), any())).thenReturn(
                 new QwenRecipeClient.RecipeStreamResult("", response, "qwen", "qwen-plus", false)
@@ -82,16 +115,24 @@ class RecipeStreamingServiceTest {
     }
 
     private RecipeGenerateResponse recipe() {
+        return recipe("番茄炒蛋", "炒制");
+    }
+
+    private RecipeGenerateResponse recipe(String title, String stepTitle) {
         return new RecipeGenerateResponse(
-                "番茄炒蛋",
+                title,
                 "家常菜",
                 List.of(),
                 List.of(new RecipeGenerateResponse.Ingredient("番茄", "2个")),
-                List.of(new RecipeGenerateResponse.Step(1, "炒制", "炒熟", 5)),
+                List.of(new RecipeGenerateResponse.Step(1, stepTitle, "完成烹饪", 5)),
                 List.of(),
                 List.of(),
                 "qwen",
                 "qwen-plus"
         );
+    }
+
+    private QwenRecipeClient.RecipeStreamResult streamResult(RecipeGenerateResponse response) {
+        return new QwenRecipeClient.RecipeStreamResult("", response, "qwen", "qwen-plus", false);
     }
 }

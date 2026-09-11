@@ -472,6 +472,38 @@ class RecipeRecommendationServiceTest {
     }
 
     @Test
+    void laterSingleIngredientPromptsIncludeEarlierRecipesToPreventRepetition() {
+        RecipeGenerateRequest request = new RecipeGenerateRequest("螃蟹", "dinner", "balanced", "text");
+        String prompt = recipeRecommendationService.batchRecipePrompt(
+                recipeRecommendationService.promptFor(request, null),
+                request,
+                1,
+                3,
+                List.of(recipeResponseWithTitle("清蒸大闸蟹", "蒸制", "螃蟹"))
+        );
+
+        assertThat(prompt)
+                .contains("清蒸大闸蟹")
+                .contains("去重约束")
+                .contains("不得复用前面菜谱的菜名")
+                .contains("必须更换主要烹饪方式或成品形态");
+    }
+
+    @Test
+    void identifiesRepeatedRecipeByTitleOrCompleteContent() {
+        RecipeGenerateResponse earlier = recipeResponseWithTitle("清蒸大闸蟹", "蒸制", "螃蟹");
+
+        assertThat(recipeRecommendationService.isDuplicateRecipe(
+                recipeResponseWithTitle("清蒸大闸蟹", "蒸制", "螃蟹"),
+                List.of(earlier)
+        )).isTrue();
+        assertThat(recipeRecommendationService.isDuplicateRecipe(
+                recipeResponseWithTitle("姜葱炒螃蟹", "炒制", "螃蟹"),
+                List.of(earlier)
+        )).isFalse();
+    }
+
+    @Test
     void validatesEveryBatchRecipeContainsItsAssignedCorePair() {
         RecipeGenerateRequest request = new RecipeGenerateRequest(
                 "番茄、鸡蛋、牛肉",
@@ -528,14 +560,18 @@ class RecipeRecommendationServiceTest {
     }
 
     private RecipeGenerateResponse recipeResponseWithIngredients(String... names) {
+        return recipeResponseWithTitle("家常菜", "烹饪", names);
+    }
+
+    private RecipeGenerateResponse recipeResponseWithTitle(String title, String stepTitle, String... names) {
         return new RecipeGenerateResponse(
-                "家常菜",
+                title,
                 "家常做法",
                 List.of(),
                 java.util.Arrays.stream(names)
                         .map(name -> new RecipeGenerateResponse.Ingredient(name, "适量"))
                         .toList(),
-                List.of(new RecipeGenerateResponse.Step(1, "烹饪", "完成烹饪", 10)),
+                List.of(new RecipeGenerateResponse.Step(1, stepTitle, "完成烹饪", 10)),
                 List.of(),
                 List.of("家常做法"),
                 "qwen",
