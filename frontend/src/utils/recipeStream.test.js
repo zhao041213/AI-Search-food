@@ -107,3 +107,18 @@ test('keeps streaming feedback local instead of masking the result container', (
   assert.match(homeViewSource, /class="stream-progress-panel"/)
   assert.match(homeViewSource, /@media \(prefers-reduced-motion: reduce\)/)
 })
+
+test('recipe detail pages expose a top-right close control', () => {
+  assert.equal((homeViewSource.match(/class="detail-close-button"/g) || []).length, 4)
+  assert.match(homeViewSource, /aria-label="关闭菜谱详情"/)
+  assert.match(homeViewSource, /class="detail-close-button"[\s\S]*@click="closeDetailView"/)
+  assert.doesNotMatch(homeViewSource, /推荐摘要与智能说明/)
+  assert.match(homeViewSource, /\.section-heading\s*\{[\s\S]*position:\s*relative;/)
+  assert.match(homeViewSource, /\.detail-close-button\s*\{[\s\S]*position:\s*absolute;/)
+})
+
+test('prioritizes multi-ingredient recommendations with Bilibili matches', () => {
+  assert.match(homeViewSource, /import \{ searchCookingVideos \} from '\.\.\/api\/videos'/)
+  assert.match(homeViewSource, /'matching-videos': '正在匹配 B 站参考'/)
+  assert.match(homeViewSource, /prioritizeRecommendationsByBilibili\(requestId\)/)
+})

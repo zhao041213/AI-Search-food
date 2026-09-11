@@ -78,6 +78,13 @@ The review should check:
 - Whether obvious bugs, broken tests, formatting issues, or encoding issues were introduced.
 - Whether the change needs additional tests.
 
+## 错误记录要求
+
+- 每次对话中遇到 bug、测试失败、构建错误或运行异常时，在结束前将问题现象、原因、解决方案和验证结果追加记录到 `D:\AI-Search-food\错误报告.txt`。
+- 只记录本次对话实际遇到的问题，不记录没有发生的假设性问题；不得在错误报告中写入 API Key、密码、验证码等敏感信息。
+- 同一问题经过多轮对话才最终解决时，在该条记录标题开头加 `*`，例如 `* 菜谱详情关闭按钮缺失`。
+- 追加记录前先读取现有内容，保留历史记录，不得覆盖已有报告；记录使用中文并注明日期。
+
 ## Rollback Requirement
 
 After every modification, treat the current pre-change state as the previous version.

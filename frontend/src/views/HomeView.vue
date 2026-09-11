@@ -572,7 +572,15 @@
                       <span class="section-index">01</span>
                       <h3 id="recipe-overview-title">概览</h3>
                     </div>
-                    <span>推荐摘要与智能说明</span>
+                    <button
+                      class="detail-close-button"
+                      type="button"
+                      aria-label="关闭菜谱详情"
+                      title="关闭菜谱详情"
+                      @click="closeDetailView"
+                    >
+                      <X :size="19" aria-hidden="true" />
+                    </button>
                   </div>
                   <div class="overview-card">
                     <p>{{ recipe.summary || '暂无菜谱简介' }}</p>
@@ -601,7 +609,15 @@
                       <span class="section-index">02</span>
                       <h3 id="recipe-ingredients-title">准备食材</h3>
                     </div>
-                    <span>食材、库存与采购</span>
+                    <button
+                      class="detail-close-button"
+                      type="button"
+                      aria-label="关闭菜谱详情"
+                      title="关闭菜谱详情"
+                      @click="closeDetailView"
+                    >
+                      <X :size="19" aria-hidden="true" />
+                    </button>
                   </div>
                   <div class="section-card-grid">
                     <article v-if="recipe.ingredients?.length" class="detail-card ingredients-detail-card">
@@ -706,7 +722,15 @@
                       <span class="section-index">03</span>
                       <h3 id="recipe-steps-title">烹饪过程</h3>
                     </div>
-                    <span>{{ recipe.steps?.length || 0 }} 个步骤</span>
+                    <button
+                      class="detail-close-button"
+                      type="button"
+                      aria-label="关闭菜谱详情"
+                      title="关闭菜谱详情"
+                      @click="closeDetailView"
+                    >
+                      <X :size="19" aria-hidden="true" />
+                    </button>
                   </div>
                   <ol v-if="recipe.steps?.length" class="full-step-list">
                     <li v-for="(step, index) in recipe.steps" :key="step.order || `${step.title}-${index}`" class="full-step-item">
@@ -741,7 +765,15 @@
                       <span class="section-index">04</span>
                       <h3 id="recipe-more-title">更多信息</h3>
                     </div>
-                    <span>相关烹饪视频</span>
+                    <button
+                      class="detail-close-button"
+                      type="button"
+                      aria-label="关闭菜谱详情"
+                      title="关闭菜谱详情"
+                      @click="closeDetailView"
+                    >
+                      <X :size="19" aria-hidden="true" />
+                    </button>
                   </div>
                   <div v-if="recipe.tips?.length" class="tips-card">
                     <div class="detail-card-head">
@@ -1079,7 +1111,8 @@ import {
   SlidersHorizontal,
   Sparkles,
   TriangleAlert,
-  Video
+  Video,
+  X
 } from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
 import {
@@ -1090,6 +1123,7 @@ import {
   saveRecipe,
   setRecommendationReaction
 } from '../api/recipes'
+import { searchCookingVideos } from '../api/videos'
 import { getRecentSearches } from '../api/searchHistory'
 import { getDietPreference, saveDietPreference } from '../api/userPreferences'
 import { getNutritionTarget } from '../api/nutritionTargets'
@@ -1118,6 +1152,11 @@ import {
   nextRecommendationReaction,
   normalizeRecommendationFeedback
 } from '../utils/recommendationFeedback'
+import { normalizeCookingVideoItems } from '../utils/cookingVideos'
+import {
+  getRecipeVideoSearchKeyword,
+  prioritizeRecipeRecommendations
+} from '../utils/recipeVideoPriority'
 import {
   buildPurchaseLinks,
   buildBilibiliSearchLink,
@@ -1426,6 +1465,7 @@ const generationStageLabel = computed(() => ({
   receiving: '正在生成菜谱',
   parsing: '正在整理内容',
   saving: '正在保存记录',
+  'matching-videos': '正在匹配 B 站参考',
   complete: '菜谱已生成',
   error: '生成未完成'
 }[generationStage.value] || '正在处理'))
@@ -1705,6 +1745,55 @@ function handleBatchComplete(data) {
   if (active) recipe.value = active
 }
 
+async function prioritizeRecommendationsByBilibili(requestId) {
+  if (recommendationBatch.value?.mode !== 'MEAL_COMBO') {
+    return
+  }
+
+  const candidates = recommendationRecipes.value.filter((item) => isRecipeReady(item))
+  if (!candidates.length) {
+    return
+  }
+
+  const responses = await Promise.allSettled(candidates.map((item) => {
+    const keyword = getRecipeVideoSearchKeyword(item)
+    if (!keyword) {
+      return Promise.resolve(null)
+    }
+    return searchCookingVideos({
+      recipeTitle: item.title,
+      keyword,
+      page: 1,
+      limit: 1
+    })
+  }))
+
+  if (requestId !== generationRequestId.value) {
+    return
+  }
+
+  const availability = {}
+  responses.forEach((result, index) => {
+    if (result.status !== 'fulfilled') return
+    const payload = result.value?.data?.data || {}
+    if (!payload.degraded && normalizeCookingVideoItems(payload.items).length) {
+      availability[candidates[index].id] = true
+    }
+  })
+
+  if (!Object.keys(availability).length) {
+    return
+  }
+
+  const activeId = activeRecipeId.value
+  recommendationRecipes.value = prioritizeRecipeRecommendations(
+    recommendationRecipes.value,
+    availability
+  )
+  recipe.value = recommendationRecipes.value.find((item) => item.id === activeId)
+    || recommendationRecipes.value[0]
+}
+
 function selectRecommendationRecipe(recipeId) {
   const selected = recommendationRecipes.value.find((item) => item.id === recipeId)
   if (!selected || selected.id === activeRecipeId.value) return
@@ -1789,8 +1878,6 @@ async function runRecipeGeneration(request, successMessage) {
         }
         if (event.event === 'complete') {
           handleBatchComplete(event.data)
-          generationCompleted.value = true
-          generationStage.value = 'complete'
         }
       }
     })
@@ -1798,9 +1885,15 @@ async function runRecipeGeneration(request, successMessage) {
     if (requestId !== generationRequestId.value) {
       return false
     }
-    if (!generationCompleted.value || recommendationReadyCount.value < 3) {
+    if (!recommendationBatch.value || recommendationReadyCount.value < 3) {
       throw new RecipeStreamError('AI 返回的菜谱内容不完整，请点击重试')
     }
+    generationStage.value = recommendationBatch.value.mode === 'MEAL_COMBO'
+      ? 'matching-videos'
+      : 'complete'
+    await prioritizeRecommendationsByBilibili(requestId)
+    generationCompleted.value = true
+    generationStage.value = 'complete'
     await loadRecommendationFeedback(recipe.value?.searchLogId)
     recentSearchLoaded.value = false
     await loadShoppingChecks()
@@ -3731,6 +3824,33 @@ h3 {
   gap: 8px;
 }
 
+.detail-close-button {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  transform: translateY(-50%);
+  padding: 0;
+  border: 1px solid var(--app-line-strong);
+  border-radius: 7px;
+  color: var(--app-text);
+  background: var(--app-surface);
+  cursor: pointer;
+  transition: color 140ms ease, border-color 140ms ease, background-color 140ms ease;
+}
+
+.detail-close-button:hover,
+.detail-close-button:focus-visible {
+  border-color: var(--app-accent);
+  color: var(--app-text);
+  background: var(--app-accent-soft);
+  outline: 2px solid color-mix(in srgb, var(--app-accent) 55%, transparent);
+  outline-offset: 2px;
+}
+
 .recipe-entry-nav {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -4070,10 +4190,13 @@ h3 {
 }
 
 .section-heading {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  min-height: 40px;
+  padding-right: 52px;
   padding-bottom: 10px;
   border-bottom: 1px solid var(--app-line);
 }
@@ -4082,12 +4205,6 @@ h3 {
   display: flex;
   align-items: baseline;
   gap: 9px;
-}
-
-.section-heading > span {
-  color: var(--app-text-muted);
-  font-size: 12px;
-  font-weight: 700;
 }
 
 .section-index {

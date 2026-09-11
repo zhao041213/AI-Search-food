@@ -127,25 +127,41 @@ public class RecipeRecommendationService {
         String mode = recommendationBatchMode(request);
         String variant = mode.equals("MEAL_COMBO")
                 ? switch (recipeIndex) {
-                    case 0 -> "以第一个核心食材为主角，设计一道适合搭配主食的主菜";
-                    case 1 -> "以另一个核心食材为主角，设计一道清爽的配菜或汤菜";
-                    default -> "综合剩余食材设计一道口味和烹饪方式不同的配菜";
+                    case 0 -> "家常快手做法，适合搭配主食";
+                    case 1 -> "清爽少油做法，突出两种食材的原味";
+                    default -> "不同于前两道的下饭做法，步骤适合家庭操作";
                 }
                 : switch (recipeIndex) {
                     case 0 -> "家常下饭风格，步骤清晰、适合日常家庭烹饪";
                     case 1 -> "清爽低油风格，突出食材原味和营养搭配";
                     default -> "快速省时风格，适合工作日快速完成";
                 };
+        if (!mode.equals("MEAL_COMBO")) {
+            return basePrompt + """
+
+
+                    【多菜谱组合生成规则】
+                    本次请求必须生成第 %d 道，共 %d 道相互独立的菜谱，本道菜的定位是：%s。
+                    多种输入食材不要求全部放进同一道菜，应该拆分到三道可以搭配成一餐的独立菜品中。
+                    菜名只描述本道菜实际使用的核心食材，不要把所有输入食材拼接成一个超长菜名。
+                    本道菜至少使用一种用户指定食材；ingredients 和 steps 必须与本道菜名及实际做法一致。
+                    三道菜的风格、烹饪方式或搭配角色必须有明显区别。以上规则优先于前文要求将所有输入食材放入单道菜谱的描述。
+                    """.formatted(recipeIndex + 1, total, variant);
+        }
+
+        String corePair = String.join("、", ingredientPairForBatch(request, recipeIndex));
         return basePrompt + """
 
 
                 【多菜谱组合生成规则】
                 本次请求必须生成第 %d 道，共 %d 道相互独立的菜谱，本道菜的定位是：%s。
-                多种输入食材不要求全部放进同一道菜，应该拆分到三道可以搭配成一餐的独立菜品中。
-                菜名只描述本道菜实际使用的核心食材，不要把所有输入食材拼接成一个超长菜名。
-                本道菜至少使用一种用户指定食材；ingredients 和 steps 必须与本道菜名及实际做法一致。
-                三道菜的风格、烹饪方式或搭配角色必须有明显区别。以上规则优先于前文要求将所有输入食材放入单道菜谱的描述。
-                """.formatted(recipeIndex + 1, total, variant);
+                本道菜的两种核心食材固定为：%s。
+                本道菜严格只能使用这一至两种核心食材，必须同时使用这两种核心食材，并在 ingredients 和 steps 中明确体现；本次其他指定食材不得写入本道菜的 ingredients、steps 或菜名。
+                允许补充葱、姜、蒜、食用油、盐等常见调味辅料和必要基础配料，但不要把辅料冒充为核心食材。
+                菜名必须使用家常、常见、适合直接搜索的菜名，优先选择在 B 站容易找到教程的经典做法，避免生造菜名和过度创意组合。
+                videoKeywords 必须提供 1 至 3 个可直接用于 B 站搜索的短关键词，至少包含“核心食材组合 + 家常做法”或常见菜名，不要使用无法检索的描述性长句。
+                三道菜的核心食材组合、风格或烹饪方式必须有明显区别。以上规则优先于前文要求将所有输入食材放入单道菜谱的描述。
+                """.formatted(recipeIndex + 1, total, variant, corePair);
     }
 
     public PreparedPrompt preparePrompt(RecipeGenerateRequest request, AuthPrincipal principal) {
@@ -251,6 +267,9 @@ public class RecipeRecommendationService {
         if (request.includeAiIngredientRecommendation()) {
             return "食材使用要求：本次由 AI 自主推荐食材，不得读取或复用历史输入食材。";
         }
+        if (recommendationBatchMode(request).equals("MEAL_COMBO")) {
+            return "食材使用要求：本次为多食材组合生成，每一道菜严格只能使用本次输入食材中的一至两种，不得把第三种输入食材混入本道菜的 ingredients 或 steps；可以补充葱、姜、蒜、食用油、盐等常见辅料，但不得用未输入的其他主要食材替换输入食材。每道菜的核心搭配以后续组合规则为准。";
+        }
         if (isRecognitionInput(request)) {
             return "食材使用要求：本次指定食材来自食材识别台，是用户刚刚确认的识别结果，必须严格围绕这些食材生成菜谱。每一种指定食材都必须出现在 ingredients 中并在 steps 中实际使用；不得忽略、替换为无关食材，或只把它放入 missingIngredients。可以补充必要辅料，但菜名、简介、步骤和食材清单必须与识别食材一致。";
         }
@@ -295,10 +314,7 @@ public class RecipeRecommendationService {
         List<String> requested = splitIngredientNames(request.ingredients());
         Set<String> generated = responses == null ? Set.of() : responses.stream()
                 .filter(java.util.Objects::nonNull)
-                .flatMap(response -> response.ingredients().stream())
-                .filter(item -> item != null && hasText(item.name()))
-                .map(RecipeGenerateResponse.Ingredient::name)
-                .map(this::normalizeIngredientName)
+                .flatMap(response -> generatedIngredientNames(response).stream())
                 .collect(java.util.stream.Collectors.toSet());
         List<String> missing = requested.stream()
                 .filter(item -> generated.stream().noneMatch(actual -> ingredientMatches(item, actual)))
@@ -309,6 +325,70 @@ public class RecipeRecommendationService {
                     "AI 返回的菜谱组合未覆盖输入食材（缺少：" + String.join("、", missing) + "），请点击重试"
             );
         }
+
+        if (requested.size() > 1) {
+            for (int index = 0; index < Math.min(3, responses == null ? 0 : responses.size()); index++) {
+                List<String> requiredPair = ingredientPairForBatch(request, index);
+                Set<String> pairGenerated = generatedIngredientNames(responses.get(index));
+                List<String> usedRequested = requested.stream()
+                        .filter(item -> pairGenerated.stream().anyMatch(actual -> ingredientMatches(item, actual)))
+                        .toList();
+                if (usedRequested.size() > 2) {
+                    throw new org.springframework.web.server.ResponseStatusException(
+                            org.springframework.http.HttpStatus.BAD_GATEWAY,
+                            "第 " + (index + 1) + " 道菜谱只能使用一至两种本次输入食材（当前包含："
+                                    + String.join("、", usedRequested) + "），请点击重试"
+                    );
+                }
+                List<String> missingPair = requiredPair.stream()
+                        .filter(item -> pairGenerated.stream().noneMatch(actual -> ingredientMatches(item, actual)))
+                        .toList();
+                if (!missingPair.isEmpty()) {
+                    throw new org.springframework.web.server.ResponseStatusException(
+                            org.springframework.http.HttpStatus.BAD_GATEWAY,
+                            "第 " + (index + 1) + " 道菜谱未同时使用指定的两种核心食材（缺少："
+                                    + String.join("、", missingPair) + "），请点击重试"
+                    );
+                }
+            }
+        }
+    }
+
+    private Set<String> generatedIngredientNames(RecipeGenerateResponse response) {
+        return response == null || response.ingredients() == null
+                ? Set.of()
+                : response.ingredients().stream()
+                        .filter(item -> item != null && hasText(item.name()))
+                        .map(RecipeGenerateResponse.Ingredient::name)
+                        .map(this::normalizeIngredientName)
+                        .collect(java.util.stream.Collectors.toSet());
+    }
+
+    private List<String> ingredientPairForBatch(RecipeGenerateRequest request, int recipeIndex) {
+        List<String> requested = splitIngredientNames(request == null ? null : request.ingredients());
+        if (requested.size() <= 2) {
+            return requested;
+        }
+        if (requested.size() == 3) {
+            return switch (Math.min(recipeIndex, 2)) {
+                case 0 -> List.of(requested.get(0), requested.get(1));
+                case 1 -> List.of(requested.get(0), requested.get(2));
+                default -> List.of(requested.get(1), requested.get(2));
+            };
+        }
+        if (recipeIndex == 0) {
+            return List.of(requested.get(0), requested.get(1));
+        }
+        if (recipeIndex == 1) {
+            return List.of(requested.get(2), requested.get(3));
+        }
+        if (requested.size() == 4) {
+            return List.of(requested.get(0), requested.get(2));
+        }
+        if (requested.size() == 5) {
+            return List.of(requested.get(4), requested.get(0));
+        }
+        return List.of(requested.get(4), requested.get(5));
     }
 
     private List<String> splitIngredientNames(String ingredients) {

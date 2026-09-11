@@ -24,6 +24,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
@@ -124,9 +125,8 @@ class RecipeRecommendationServiceTest {
 
         assertThat(prompt)
                 .contains("输入方式：image")
-                .contains("本次指定食材来自食材识别台")
-                .contains("每一种指定食材都必须出现在 ingredients 中并在 steps 中实际使用")
-                .contains("不得忽略、替换为无关食材");
+                .contains("每一道菜严格只能使用本次输入食材中的一至两种")
+                .contains("每道菜的核心搭配以后续组合规则为准");
     }
 
     @Test
@@ -449,6 +449,70 @@ class RecipeRecommendationServiceTest {
         verifyNoInteractions(searchLogService);
     }
 
+    @Test
+    void batchPromptPinsEachRecipeToTwoCoreIngredientsAndSearchableBilibiliKeywords() {
+        RecipeGenerateRequest request = new RecipeGenerateRequest(
+                "番茄、鸡蛋、牛肉",
+                "dinner",
+                "balanced",
+                "text"
+        );
+        String basePrompt = recipeRecommendationService.promptFor(request, null);
+
+        assertThat(recipeRecommendationService.recommendationBatchMode(request)).isEqualTo("MEAL_COMBO");
+        assertThat(recipeRecommendationService.batchRecipePrompt(basePrompt, request, 0, 3))
+                .contains("本道菜的两种核心食材固定为：番茄、鸡蛋")
+                .contains("严格只能使用这一至两种核心食材")
+                .contains("优先选择在 B 站容易找到教程")
+                .contains("videoKeywords 必须提供");
+        assertThat(recipeRecommendationService.batchRecipePrompt(basePrompt, request, 1, 3))
+                .contains("本道菜的两种核心食材固定为：番茄、牛肉");
+        assertThat(recipeRecommendationService.batchRecipePrompt(basePrompt, request, 2, 3))
+                .contains("本道菜的两种核心食材固定为：鸡蛋、牛肉");
+    }
+
+    @Test
+    void validatesEveryBatchRecipeContainsItsAssignedCorePair() {
+        RecipeGenerateRequest request = new RecipeGenerateRequest(
+                "番茄、鸡蛋、牛肉",
+                "dinner",
+                "balanced",
+                "text"
+        );
+
+        assertThatCode(() -> recipeRecommendationService.validateBatchIngredientAlignment(request, List.of(
+                recipeResponseWithIngredients("番茄", "鸡蛋"),
+                recipeResponseWithIngredients("番茄", "牛肉"),
+                recipeResponseWithIngredients("鸡蛋", "牛肉")
+        ))).doesNotThrowAnyException();
+
+        assertThatThrownBy(() -> recipeRecommendationService.validateBatchIngredientAlignment(request, List.of(
+                recipeResponseWithIngredients("番茄", "鸡蛋"),
+                recipeResponseWithIngredients("番茄"),
+                recipeResponseWithIngredients("鸡蛋", "牛肉")
+        )))
+                .hasMessageContaining("第 2 道菜谱未同时使用指定的两种核心食材")
+                .hasMessageContaining("牛肉");
+    }
+
+    @Test
+    void rejectsBatchRecipeThatUsesMoreThanTwoRequestedIngredients() {
+        RecipeGenerateRequest request = new RecipeGenerateRequest(
+                "番茄、鸡蛋、牛肉",
+                "dinner",
+                "balanced",
+                "text"
+        );
+
+        assertThatThrownBy(() -> recipeRecommendationService.validateBatchIngredientAlignment(request, List.of(
+                recipeResponseWithIngredients("番茄", "鸡蛋", "牛肉"),
+                recipeResponseWithIngredients("番茄", "牛肉"),
+                recipeResponseWithIngredients("鸡蛋", "牛肉")
+        )))
+                .hasMessageContaining("第 1 道菜谱只能使用一至两种本次输入食材")
+                .hasMessageContaining("牛肉");
+    }
+
     private RecipeGenerateResponse recipeResponse() {
         return new RecipeGenerateResponse(
                 "番茄炒蛋",
@@ -458,6 +522,22 @@ class RecipeRecommendationServiceTest {
                 List.of(new RecipeGenerateResponse.Step(1, "备菜", "番茄切块", 5)),
                 List.of("先炒鸡蛋"),
                 List.of("番茄炒蛋教程"),
+                "qwen",
+                "qwen-plus"
+        );
+    }
+
+    private RecipeGenerateResponse recipeResponseWithIngredients(String... names) {
+        return new RecipeGenerateResponse(
+                "家常菜",
+                "家常做法",
+                List.of(),
+                java.util.Arrays.stream(names)
+                        .map(name -> new RecipeGenerateResponse.Ingredient(name, "适量"))
+                        .toList(),
+                List.of(new RecipeGenerateResponse.Step(1, "烹饪", "完成烹饪", 10)),
+                List.of(),
+                List.of("家常做法"),
                 "qwen",
                 "qwen-plus"
         );
