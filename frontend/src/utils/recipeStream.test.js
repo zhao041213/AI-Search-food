@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import {
   applyRecipeStreamEvent,
   createRecipeBatchDraft,
@@ -108,6 +108,20 @@ test('keeps streaming feedback local instead of masking the result container', (
   assert.match(homeViewSource, /@media \(prefers-reduced-motion: reduce\)/)
 })
 
+test('replaces the waiting recipe brief with a static cooking character on the loading surface', async () => {
+  const cookingCharacter = await stat(new URL('../../public/images/chef-cooking.png', import.meta.url))
+
+  assert.ok(cookingCharacter.size > 0)
+  assert.match(homeViewSource, /v-if="!detailViewOpen && generating" class="recipe-generation-loading"/)
+  assert.match(homeViewSource, /src="\/images\/chef-cooking\.png"/)
+  assert.match(homeViewSource, /v-else-if="!detailViewOpen" class="result-header"/)
+  assert.match(homeViewSource, /\.recipe-generation-loading-art img \{[\s\S]*mix-blend-mode: multiply;/)
+  assert.doesNotMatch(homeViewSource, /@keyframes chef-cooking-bob/)
+  assert.doesNotMatch(homeViewSource, /@keyframes cooking-fire-pulse/)
+  assert.doesNotMatch(homeViewSource, /@keyframes cooking-loading-dots/)
+  assert.doesNotMatch(homeViewSource, /\.recipe-generation-loading-art::after/)
+})
+
 test('recipe detail pages expose a top-right close control', () => {
   assert.equal((homeViewSource.match(/class="detail-close-button"/g) || []).length, 4)
   assert.match(homeViewSource, /aria-label="关闭菜谱详情"/)
@@ -115,6 +129,21 @@ test('recipe detail pages expose a top-right close control', () => {
   assert.doesNotMatch(homeViewSource, /推荐摘要与智能说明/)
   assert.match(homeViewSource, /\.section-heading\s*\{[\s\S]*position:\s*relative;/)
   assert.match(homeViewSource, /\.detail-close-button\s*\{[\s\S]*position:\s*absolute;/)
+})
+
+test('detail view stacks the fallback alert before its content without overlap', () => {
+  const fallbackIndex = homeViewSource.indexOf('class="context-fallback-alert"')
+  const detailHeaderIndex = homeViewSource.indexOf('class="recipe-detail-view-header"')
+
+  assert.ok(fallbackIndex >= 0 && fallbackIndex < detailHeaderIndex)
+  assert.match(
+    homeViewSource,
+    /\.home-page\.is-detail-view \.result-panel \{[\s\S]*display: flex;[\s\S]*flex-direction: column;/
+  )
+  assert.match(
+    homeViewSource,
+    /\.home-page\.is-detail-view \.result-content \{[\s\S]*flex: 1 1 0;/
+  )
 })
 
 test('prioritizes multi-ingredient recommendations with Bilibili matches', () => {
