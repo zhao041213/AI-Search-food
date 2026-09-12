@@ -258,12 +258,22 @@
         </section>
 
         <section class="result-panel" aria-label="菜谱搜索结果">
-          <div v-if="!detailViewOpen" class="result-header">
+          <div v-if="!detailViewOpen && generating" class="recipe-generation-loading" role="status" aria-live="polite">
+            <div class="recipe-generation-loading-stage">
+              <div class="recipe-generation-loading-art" aria-hidden="true">
+                <img src="/images/chef-cooking.png" alt="" />
+              </div>
+              <div class="recipe-generation-loading-copy">
+                <strong>正在生成菜谱</strong>
+                <span>{{ generationStageLabel }}，稍候即可查看结果</span>
+              </div>
+            </div>
+          </div>
+          <div v-else-if="!detailViewOpen" class="result-header">
               <div>
                 <p class="eyebrow">菜谱输出窗口</p>
                 <h2>{{ resultTitle }}</h2>
                 <p v-if="recipe?.summary" class="result-summary-line">{{ recipe.summary }}</p>
-                <div v-else-if="generating" class="recipe-skeleton-line recipe-skeleton-line-wide" aria-hidden="true"></div>
                 <div v-if="recipe?.effects?.length" class="result-header-tags" aria-label="菜谱关键标签">
                   <span v-for="effect in recipe.effects" :key="effect" class="system-tag">{{ effect }}</span>
                 </div>
@@ -1371,6 +1381,9 @@ const searchModeLabel = computed(() => modeLabels[lastSearch.value?.searchMode |
 const resultTitle = computed(() => {
   if (recipe.value?.title) {
     return recipe.value.title
+  }
+  if (streamFailed.value) {
+    return '生成未完成'
   }
   return hasSearch.value ? '菜谱匹配简报' : '等待搜索'
 })
@@ -3751,13 +3764,15 @@ h3 {
 }
 
 .home-page.is-detail-view .result-panel {
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  display: flex;
+  flex-direction: column;
   min-height: 0;
   overflow: hidden;
 }
 
 .home-page.is-detail-view .result-content {
   display: block;
+  flex: 1 1 0;
   min-height: 0;
   overflow: hidden;
 }
@@ -4522,6 +4537,58 @@ h3 {
   gap: 12px;
 }
 
+.recipe-generation-loading {
+  display: grid;
+  min-height: 132px;
+  place-items: center;
+  border: 1px solid var(--app-line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--app-surface) 88%, var(--app-accent-soft));
+  overflow: hidden;
+}
+
+.recipe-generation-loading-stage {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  min-width: min(100%, 340px);
+  padding: 8px 18px;
+}
+
+.recipe-generation-loading-art {
+  display: grid;
+  width: 94px;
+  height: 108px;
+  place-items: end center;
+  flex: 0 0 auto;
+}
+
+.recipe-generation-loading-art img {
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+  mix-blend-mode: multiply;
+}
+
+.recipe-generation-loading-copy {
+  display: grid;
+  gap: 5px;
+  color: var(--app-text-muted);
+}
+
+.recipe-generation-loading-copy strong {
+  color: var(--app-text);
+  font-size: 17px;
+}
+
+.recipe-generation-loading-copy span {
+  color: var(--app-text-soft);
+  font-size: 12px;
+}
+
 .result-summary-line {
   max-width: 720px;
   margin: 7px 0 0;
@@ -4891,6 +4958,21 @@ h3 {
 }
 
 @media (max-width: 520px) {
+  .recipe-generation-loading-stage {
+    gap: 8px;
+    min-width: 0;
+    padding: 8px 12px;
+  }
+
+  .recipe-generation-loading-art {
+    width: 78px;
+    height: 92px;
+  }
+
+  .recipe-generation-loading-copy strong {
+    font-size: 15px;
+  }
+
   .stream-progress-panel {
     grid-template-columns: 1fr;
   }
@@ -5352,11 +5434,13 @@ h3 {
   }
 
   .home-page.is-detail-view .result-panel {
-    grid-template-rows: auto minmax(0, 1fr) auto;
+    display: flex;
+    flex-direction: column;
   }
 
   .home-page.is-detail-view .result-content {
     display: block;
+    flex: 1 1 0;
     overflow: hidden;
   }
 

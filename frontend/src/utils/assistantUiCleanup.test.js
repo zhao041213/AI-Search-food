@@ -31,3 +31,13 @@ test('小厨灵和主场景不保留已删除的主题浮动入口或角色快�
   assert.match(sceneSource, /canvas\.setAttribute\('aria-label', '点击厨房中的人物打开对应功能'\)/)
   assert.match(sceneSource, /drawCharacter\(characterLayer/)
 })
+
+test('顶部品牌区使用小厨灵像素菜谱书标识和英文副标题', () => {
+  assert.ok(fs.existsSync(new URL('../../public/images/brand-cookbook.png', import.meta.url)))
+  assert.match(appSource, /<RouterLink class="brand" to="\/" aria-label="小厨灵 AI COOKING ASSISTANT 首页">/)
+  assert.match(appSource, /class="brand-mark"[\s\S]*src="\/images\/brand-cookbook\.png"[\s\S]*alt=""/)
+  assert.match(appSource, /class="brand-copy"[\s\S]*<strong>小厨灵<\/strong>[\s\S]*<small>AI COOKING ASSISTANT<\/small>/)
+  assert.match(appSource, /\.brand-mark img[\s\S]*image-rendering: pixelated;/)
+  assert.match(appSource, /\.brand-copy strong[\s\S]*font-size: 22px;/)
+  assert.match(appSource, /\.brand-copy small[\s\S]*font-size: 10px;/)
+})

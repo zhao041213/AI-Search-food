@@ -6,11 +6,14 @@
       :data-theme="activeTheme"
     >
     <el-header class="app-header">
-      <RouterLink class="brand" to="/" aria-label="AI 智能菜谱首页">
+      <RouterLink class="brand" to="/" aria-label="小厨灵 AI COOKING ASSISTANT 首页">
         <span class="brand-mark" aria-hidden="true">
-          <Utensils :size="20" />
+          <img src="/images/brand-cookbook.png" alt="" />
         </span>
-        <span>AI 智能菜谱</span>
+        <span class="brand-copy">
+          <strong>小厨灵</strong>
+          <small>AI COOKING ASSISTANT</small>
+        </span>
       </RouterLink>
 
       <div class="account">
@@ -134,7 +137,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
-import { Bell, CircleAlert, ClipboardList, Flame, Gauge, Home, LogIn, LogOut, MessageSquare, Settings, ShieldCheck, Users, UserCircle, Utensils } from 'lucide-vue-next'
+import { Bell, CircleAlert, ClipboardList, Flame, Gauge, Home, LogIn, LogOut, MessageSquare, Settings, ShieldCheck, Users, UserCircle } from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
 import { getUnreadNotificationCount } from './api/notifications'
 import { getMyAccount, loadMyAvatar } from './api/userAccount'
@@ -669,20 +672,52 @@ function applyTheme(theme) {
 .brand {
   min-width: max-content;
   color: var(--app-text);
-  font-weight: 900;
   letter-spacing: 0;
+  text-decoration: none;
 }
 
 .brand-mark {
   display: inline-grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
-  border: 1px solid var(--app-accent);
-  border-radius: 6px;
-  color: var(--app-accent-text);
-  background: var(--app-accent);
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  border: 1px solid color-mix(in srgb, var(--app-accent) 58%, var(--app-line));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--app-accent-soft) 42%, transparent);
   box-shadow: var(--app-brand-shadow);
+}
+
+.brand-mark img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.brand-copy {
+  display: grid;
+  align-content: center;
+  gap: 3px;
+}
+
+.brand-copy strong {
+  color: var(--app-text);
+  font-size: 22px;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0.08em;
+}
+
+.brand-copy small {
+  color: var(--app-text-muted);
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
 }
 
 .nav-links {
@@ -971,6 +1006,20 @@ function applyTheme(theme) {
 
   .brand {
     width: 100%;
+  }
+
+  .brand-mark {
+    width: 40px;
+    height: 40px;
+    flex-basis: 40px;
+  }
+
+  .brand-copy strong {
+    font-size: 20px;
+  }
+
+  .brand-copy small {
+    font-size: 9px;
   }
 
   .account {
